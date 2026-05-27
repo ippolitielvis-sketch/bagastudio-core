@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
 import { useConfigStore } from "@/core/state/config.state";
 import { demoProduct2 } from "@/core/products/demo-product-2";
@@ -169,7 +169,18 @@ const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "admin"
 >("config");
+const viewerShellRef = useRef<HTMLElement | null>(null);
 
+function goNextView() {
+  const views = runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS;
+  const currentIndex = views.findIndex((view: any) => view.id === activeViewId);
+  const nextView = views[(currentIndex + 1 + views.length) % views.length];
+  setActiveView(nextView?.id || "iso");
+}
+
+function requestViewerFullscreen() {
+  viewerShellRef.current?.requestFullscreen?.();
+}
  const runtimeProduct = useMemo(() => {
   return product ? normalizeProduct(product) : normalizeProduct(demoProduct2);
 }, [product]);
@@ -921,40 +932,67 @@ const availableAccessories = useMemo(() => {
 )}
         </aside>
 
-        <section className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
-          <div className="pointer-events-none absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
-            {["↖", "✥", "↻", "□", "⌁", "⌖", "◎", "⤢"].map((icon) => (
-              <div key={icon} className="flex h-10 w-11 items-center justify-center rounded-lg text-lg text-neutral-200 first:bg-sky-500">
-                {icon}
-              </div>
-            ))}
-          </div>
-          {runtimeProduct ? (
-            <Viewer3D
-              width={dimensions?.width}
-              height={dimensions?.height}
-              depth={dimensions?.depth}
-              materials={materials}
-              accessories={accessories}
-              inserts={inserts}
-              insertMaterials={insertMaterials}
-              insertSizes={insertSizes}
-              visibility={visibility}
-              ledKelvin={ledKelvin}
-              ledIntensity={ledIntensity}
-              activeViewId={activeViewId}
-              productModel={getModelUrl(runtimeProduct)}
-              productMaterials={MATERIAL_LIBRARY}
-              productParts={runtimeProduct.parts}
-              views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
-              woodDirection={woodDirection}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-400">
-              Importa un JSON prodotto dalla sidebar.
-            </div>
-          )}
-          </section>
+<section
+  ref={viewerShellRef}
+  className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)]"
+>
+  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
+    {[
+      ["↖", "Selezione", null],
+      ["✥", "Vista frontale", "front"],
+      ["↻", "Vista successiva", "next"],
+      ["□", "Vista 3D", "iso"],
+      ["⌁", "Vista frontale", "front"],
+      ["↕", "Vista dall'alto", "top"],
+      ["◎", "Vista laterale", "right"],
+      ["↗", "Fullscreen", "fullscreen"],
+    ].map(([icon, title, action]: any, index) => (
+      <button
+        key={`${icon}-${index}`}
+        type="button"
+        title={title}
+        onClick={() => {
+          if (action === "next") goNextView();
+          else if (action === "fullscreen") requestViewerFullscreen();
+          else if (action) setActiveView(action);
+        }}
+        className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
+          index === 0
+            ? "bg-sky-500 text-white"
+            : "text-neutral-200 hover:bg-sky-500/20"
+        }`}
+      >
+        {icon}
+      </button>
+    ))}
+  </div>
+
+  {runtimeProduct ? (
+    <Viewer3D
+      width={dimensions?.width}
+      height={dimensions?.height}
+      depth={dimensions?.depth}
+      materials={materials}
+      accessories={accessories}
+      inserts={inserts}
+      insertMaterials={insertMaterials}
+      insertSizes={insertSizes}
+      visibility={visibility}
+      ledKelvin={ledKelvin}
+      ledIntensity={ledIntensity}
+      activeViewId={activeViewId}
+      productModel={getModelUrl(runtimeProduct)}
+      productMaterials={MATERIAL_LIBRARY}
+      productParts={runtimeProduct.parts}
+      views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
+      woodDirection={woodDirection}
+    />
+  ) : (
+    <div className="flex h-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-400">
+      Importa un JSON prodotto dalla sidebar.
+    </div>
+  )}
+</section>
 
         <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
