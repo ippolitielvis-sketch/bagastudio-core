@@ -940,11 +940,11 @@ const availableAccessories = useMemo(() => {
     {[
       ["↖", "Selezione", null],
       ["✥", "Vista frontale", "front"],
-      ["↻", "Vista successiva", "next"],
+      ["↻", "Reset camera", "reset"],
       ["□", "Vista 3D", "iso"],
-      ["⌁", "Vista frontale", "front"],
+      ["⌁", "Focus oggetto", "focus"],
       ["↕", "Vista dall'alto", "top"],
-      ["◎", "Vista laterale", "right"],
+      ["◎", "Screenshot", "shot"],
       ["↗", "Fullscreen", "fullscreen"],
     ].map(([icon, title, action]: any, index) => (
       <button
@@ -952,10 +952,20 @@ const availableAccessories = useMemo(() => {
         type="button"
         title={title}
         onClick={() => {
-          if (action === "next") goNextView();
-          else if (action === "fullscreen") requestViewerFullscreen();
-          else if (action) setActiveView(action);
-        }}
+  if (action === "reset") {
+    window.dispatchEvent(new Event("bagastudio:reset-camera"));
+  } else if (action === "focus") {
+    window.dispatchEvent(new Event("bagastudio:focus-selection"));
+  } else if (action === "shot") {
+    window.dispatchEvent(new Event("bagastudio:screenshot"));
+  } else if (action === "fullscreen") {
+    requestViewerFullscreen();
+  } else if (action === "next") {
+    goNextView();
+  } else if (action) {
+    setActiveView(action);
+  }
+}}
         className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
           index === 0
             ? "bg-sky-500 text-white"

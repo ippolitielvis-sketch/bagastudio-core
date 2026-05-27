@@ -765,6 +765,156 @@ function CameraController({
   return null;
 }
 
+function ViewerRuntimeControls({
+  activeViewId,
+  views,
+  productParts = [],
+}: {
+  activeViewId?: string | null;
+  views?: any[];
+  productParts?: any[];
+}) {
+  const { camera, gl, scene } = useThree();
+  const selectedPartId = useConfigStore((state) => state.selectedPartId);
+
+  useEffect(() => {
+    const DEFAULT_CAMERA_VIEWS: Record<string, {
+      position: [number, number, number];
+      target: [number, number, number];
+    }> = {
+      iso: { position: [20, 10, 22], target: [0, 0, 0] },
+      "3d": { position: [20, 10, 22], target: [0, 0, 0] },
+      front: { position: [0, 6, 28], target: [0, 0, 0] },
+      back: { position: [0, 6, -28], target: [0, 0, 0] },
+      left: { position: [-28, 6, 0], target: [0, 0, 0] },
+      right: { position: [28, 6, 0], target: [0, 0, 0] },
+      top: { position: [0, 35, 0.1], target: [0, 0, 0] },
+    };
+
+    const applyCameraView = (viewId = activeViewId || "iso") => {
+      const selectedView = views?.find((v) => v.id === viewId);
+      const cameraData =
+        selectedView?.camera ||
+        DEFAULT_CAMERA_VIEWS[viewId] ||
+        DEFAULT_CAMERA_VIEWS.iso;
+
+      camera.position.set(
+        cameraData.position[0],
+        cameraData.position[1],
+        cameraData.position[2]
+      );
+
+      camera.lookAt(
+        cameraData.target[0],
+        cameraData.target[1],
+        cameraData.target[2]
+      );
+
+      camera.updateProjectionMatrix();
+
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
+      if (controls?.target) {
+        controls.target.set(
+          cameraData.target[0],
+          cameraData.target[1],
+          cameraData.target[2]
+        );
+        controls.update?.();
+      }
+    };
+
+    const getTargetObjects = () => {
+      const objects: THREE.Object3D[] = [];
+
+      const selectedPart = productParts.find((part: any) => {
+        return part.id === selectedPartId || part.meshName === selectedPartId;
+      });
+
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+
+        if (!selectedPartId) {
+          objects.push(mesh);
+          return;
+        }
+
+        const objectName = String(mesh.name || "");
+        const selectedMeshName = String(selectedPart?.meshName || "");
+        const selectedId = String(selectedPartId || "");
+
+        if (
+          objectName === selectedId ||
+          objectName === selectedMeshName ||
+          objectName.includes(selectedMeshName) ||
+          objectName.includes(selectedId)
+        ) {
+          objects.push(mesh);
+        }
+      });
+
+      return objects;
+    };
+
+    const focusObjects = () => {
+      const objects = getTargetObjects();
+      if (!objects.length) return;
+
+      const box = new THREE.Box3();
+      objects.forEach((object) => box.expandByObject(object));
+
+      if (box.isEmpty()) return;
+
+      const center = new THREE.Vector3();
+      const size = new THREE.Vector3();
+      box.getCenter(center);
+      box.getSize(size);
+
+      const maxSize = Math.max(size.x, size.y, size.z);
+      const distance = Math.max(maxSize * 2.2, 8);
+
+      camera.position.set(
+        center.x + distance,
+        center.y + distance * 0.45,
+        center.z + distance
+      );
+      camera.lookAt(center);
+      camera.updateProjectionMatrix();
+
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
+      if (controls?.target) {
+        controls.target.copy(center);
+        controls.update?.();
+      }
+    };
+
+    const downloadScreenshot = () => {
+      requestAnimationFrame(() => {
+        const link = document.createElement("a");
+        link.download = `bagastudio-render-${Date.now()}.png`;
+        link.href = gl.domElement.toDataURL("image/png");
+        link.click();
+      });
+    };
+
+    const handleReset = () => applyCameraView("iso");
+    const handleFocus = () => focusObjects();
+    const handleScreenshot = () => downloadScreenshot();
+
+    window.addEventListener("bagastudio:reset-camera", handleReset);
+    window.addEventListener("bagastudio:focus-selection", handleFocus);
+    window.addEventListener("bagastudio:screenshot", handleScreenshot);
+
+    return () => {
+      window.removeEventListener("bagastudio:reset-camera", handleReset);
+      window.removeEventListener("bagastudio:focus-selection", handleFocus);
+      window.removeEventListener("bagastudio:screenshot", handleScreenshot);
+    };
+  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
+
+  return null;
+}
+
 export default function Viewer3D({
   width,
   height,
@@ -798,6 +948,7 @@ productMaterials?.length
           antialias: true,
           alpha: false,
           powerPreference: "high-performance",
+          preserveDrawingBuffer: true,
         }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -830,6 +981,7 @@ productMaterials?.length
         <Environment preset="apartment" />
 
 <CameraController activeViewId={activeViewId} views={views} />
+<ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
 
         <ProductModel
   width={width}
