@@ -59,7 +59,7 @@ function normalizeProduct(product: AnyProduct) {
     assets: product.assets || {},
     dimensions: product.dimensions || {},
     parts: Array.isArray(product.parts) ? product.parts : [],
-  materials: product.materials?.length ? product.materials : DEFAULT_MATERIALS,
+    materials: product.materials?.length ? product.materials : DEFAULT_MATERIALS,
     accessories:
       Array.isArray(product.accessories) && product.accessories.length
         ? product.accessories
@@ -150,15 +150,15 @@ export default function HomePage() {
   const accessories = useConfigStore((state) => state.accessories);
   const inserts = useConfigStore((state) => state.inserts);
   const insertMaterials = useConfigStore((state) => state.insertMaterials);
-const setInsertMaterial = useConfigStore((state) => state.setInsertMaterial);
-const insertSizes = useConfigStore((state) => state.insertSizes);
-const setInsertSize = useConfigStore((state) => state.setInsertSize);
+  const setInsertMaterial = useConfigStore((state) => state.setInsertMaterial);
+  const insertSizes = useConfigStore((state) => state.insertSizes);
+  const setInsertSize = useConfigStore((state) => state.setInsertSize);
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensity = useConfigStore((state) => state.ledIntensity);
   const visibility = useConfigStore((state) => state.visibility);
   const activeViewId = useConfigStore((state) => state.activeViewId);
   const woodDirection = useConfigStore((state) => state.woodDirection);
-const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
+  const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
   const pricing = useConfigStore((state) => state.pricing);
 
@@ -432,10 +432,10 @@ const availableAccessories = useMemo(() => {
     </header>
 
     <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_330px] gap-3 bg-[#07111c] p-3">
-  <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+  <aside className="overflow-y-auto rounded-3xl border border-sky-400/20 bg-gradient-to-b from-[#081827] to-[#050b12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.35)]">
 {activePanel === "config" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-4 text-lg font-semibold text-white">Importa prodotto JSON</h2>
       <input
         type="file"
@@ -476,7 +476,7 @@ const availableAccessories = useMemo(() => {
       </div>
     </section>
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-4 text-lg font-semibold text-white">Pezzo selezionato</h2>
       <p className="text-sm text-neutral-300">
         {selectedPart?.name || selectedPartId || "Nessun pezzo selezionato"}
@@ -484,7 +484,7 @@ const availableAccessories = useMemo(() => {
     </section>
 
     {runtimeProduct && (
-      <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
         <h2 className="mb-4 text-xl font-semibold">Dimensioni</h2>
 
         {(["width", "height", "depth"] as const).map((key) => {
@@ -515,7 +515,7 @@ const availableAccessories = useMemo(() => {
       </section>
     )}
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-3 text-xl font-semibold">Visibilità</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {selectedPart?.name || selectedPartId || "-"}
@@ -657,7 +657,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "accessories" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-3 text-xl font-semibold">Accessori</h2>
       <p className="mb-3 text-sm text-neutral-400">
         Applichi accessori a: {selectedPart?.name || selectedPartId || "-"}
@@ -824,7 +824,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "materials" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-3 text-xl font-semibold">Materiali</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {selectedPart?.name || selectedPartId || "-"}
@@ -893,7 +893,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "views" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-3 text-xl font-semibold">Viste</h2>
       <div className="grid grid-cols-2 gap-2">
         {(runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS).map(
@@ -914,7 +914,7 @@ const availableAccessories = useMemo(() => {
       </div>
     </section>
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
       <h2 className="mb-3 text-xl font-semibold">Runtime JSON</h2>
       <button
         onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
@@ -954,9 +954,9 @@ const availableAccessories = useMemo(() => {
 
 <section
   ref={viewerShellRef}
-  className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)]"
+  className="relative overflow-hidden rounded-3xl border border-sky-400/20 bg-[#05080d] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.55)]"
 >
-  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
+  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-2xl border border-sky-400/20 bg-[#07111c]/90 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.45)] backdrop-blur-xl">
     {[
       ["↖", "Modalità selezione", "select"],
 ["✥", "Modalità pan", "pan"],
@@ -996,10 +996,10 @@ const availableAccessories = useMemo(() => {
             setActiveView(action);
           }
         }}
-        className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
+        className={`flex h-11 w-12 items-center justify-center rounded-xl text-lg transition-all duration-200 ${
           activeViewerTool === action
-            ? "bg-sky-500 text-white"
-            : "text-neutral-200 hover:bg-sky-500/20"
+            ? "bg-sky-500 text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] scale-[1.02]"
+            : "text-neutral-200 hover:bg-sky-500/20 hover:text-white hover:shadow-[0_0_18px_rgba(14,165,233,0.16)]"
         }`}
       >
         {icon}
@@ -1034,8 +1034,8 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+        <aside className="overflow-y-auto rounded-3xl border border-sky-400/20 bg-gradient-to-b from-[#081827] to-[#050b12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.35)]">
+          <section className="mb-3 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-wide text-white">Riepilogo progetto</h2>
               <span className="text-neutral-400">⌃</span>
@@ -1071,7 +1071,7 @@ const availableAccessories = useMemo(() => {
             </div>
           </section>
 
-          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <section className="mb-3 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-wide text-white">Proprietà oggetto</h2>
               <span className="text-neutral-400">⌃</span>
