@@ -650,24 +650,24 @@ const importBackupFile = async (file: File | undefined) => {
 };
 
   return (
-    <main className="min-h-screen bg-[#02070d] text-white">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.10),transparent_28%),#02070d] text-white">
       <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">
-        <header className="overflow-hidden rounded-[28px] border border-sky-500/20 bg-gradient-to-r from-[#03111f] via-[#06131f] to-[#02070d] shadow-2xl shadow-sky-950/40">
-          <div className="flex flex-col gap-5 border-b border-sky-500/15 px-5 py-5 xl:flex-row xl:items-center xl:justify-between">
+        <header className="overflow-hidden rounded-[34px] border border-cyan-400/20 bg-gradient-to-r from-[#061827]/95 via-[#07131f]/95 to-[#02070d]/95 shadow-[0_30px_120px_rgba(14,165,233,0.16)] backdrop-blur-2xl">
+          <div className="flex flex-col gap-5 border-b border-cyan-400/10 px-6 py-6 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-5">
               <img
                 src="/bagastudio-core-brand.png"
                 alt="BagaStudio Core"
-                className="h-24 w-auto rounded-2xl object-contain shadow-lg shadow-sky-500/10"
+                className="h-28 w-auto rounded-3xl object-contain shadow-[0_0_45px_rgba(14,165,233,0.18)]"
               />
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.45em] text-sky-300/80">
+                <p className="text-xs font-black uppercase tracking-[0.48em] text-cyan-300/90">
                   BAGASTUDIO CORE
                 </p>
-                <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
+                <h1 className="mt-1 text-4xl font-black tracking-tight text-white sm:text-5xl">
                   Admin Panel
                 </h1>
-                <p className="mt-2 max-w-3xl text-sm text-slate-300">
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
                   Importa modelli, configura componenti, materiali, accessori e genera il package JSON prodotto.
                 </p>
               </div>
@@ -676,40 +676,40 @@ const importBackupFile = async (file: File | undefined) => {
             <div className="flex flex-wrap items-center gap-3">
               <a
                 href="/"
-                className="rounded-2xl border border-sky-400/30 bg-sky-500/10 px-5 py-3 text-sm font-bold text-sky-100 transition hover:bg-sky-500/20"
+                className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 shadow-[0_0_22px_rgba(14,165,233,0.10)] transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
               >
                 Torna al Viewer
               </a>
               <button
                 type="button"
                 onClick={downloadAdminBackup}
-                className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-sky-500/25 transition hover:bg-sky-400"
+                className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)] transition hover:bg-cyan-400"
               >
                 Scarica backup
               </button>
             </div>
           </div>
 
-          <nav className="grid grid-cols-2 gap-2 px-5 py-4 md:grid-cols-4">
-            <div className="rounded-2xl bg-sky-500 px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-sky-500/25">
+          <nav className="grid grid-cols-2 gap-2 px-6 py-4 md:grid-cols-4">
+            <div className="rounded-2xl bg-cyan-500 px-4 py-3 text-center text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)]">
               Importer
             </div>
-            <div className="rounded-2xl border border-sky-500/15 bg-white/5 px-4 py-3 text-center text-sm font-bold text-slate-200">
+            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               Catalogo prodotti
             </div>
-            <div className="rounded-2xl border border-sky-500/15 bg-white/5 px-4 py-3 text-center text-sm font-bold text-slate-200">
+            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               Materiali
             </div>
-            <div className="rounded-2xl border border-sky-500/15 bg-white/5 px-4 py-3 text-center text-sm font-bold text-slate-200">
+            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               Accessori / Pricing
             </div>
           </nav>
         </header>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-4 rounded-[26px] border border-sky-500/15 bg-[#06111d]/95 p-5 shadow-xl shadow-black/30">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="space-y-5 rounded-[30px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.40)] backdrop-blur-xl">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-300">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
                 Control Center
               </p>
               <h2 className="mt-2 text-2xl font-black">Admin Tools</h2>
@@ -719,26 +719,26 @@ const importBackupFile = async (file: File | undefined) => {
             </div>
 
             <div className="grid gap-2">
-              <button type="button" className="rounded-2xl bg-sky-500 px-4 py-3 text-left text-sm font-black text-white">
+              <button type="button" className="rounded-2xl bg-cyan-500 px-4 py-3 text-left text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.25)]">
                 01 · Import modello
               </button>
-              <button type="button" className="rounded-2xl border border-sky-500/15 bg-white/5 px-4 py-3 text-left text-sm font-bold text-slate-200">
+              <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
                 02 · Mapping componenti
               </button>
-              <button type="button" className="rounded-2xl border border-sky-500/15 bg-white/5 px-4 py-3 text-left text-sm font-bold text-slate-200">
+              <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
                 03 · Product package
               </button>
             </div>
 
-            <div className="rounded-2xl border border-sky-500/15 bg-black/25 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-sky-300">Autosave</p>
+            <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4 shadow-inner shadow-cyan-950/20">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">Autosave</p>
               <p className="mt-2 text-sm text-slate-300">{backupStatus}</p>
             </div>
           </aside>
 
           <div className="space-y-6">
 
-        <section className="rounded-2xl border border-sky-500/20 bg-sky-500/10 shadow-xl shadow-sky-950/20 p-6">
+        <section className="rounded-[28px] border border-cyan-400/20 bg-cyan-400/10 p-6 shadow-[0_20px_70px_rgba(14,165,233,0.10)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-semibold">
@@ -747,7 +747,7 @@ const importBackupFile = async (file: File | undefined) => {
               <p className="mt-1 text-sm text-slate-400">
                 Autosave locale attivo. Usa backup manuale prima di modifiche importanti o prima di sostituire file.
               </p>
-              <p className="mt-2 text-xs text-sky-300">
+              <p className="mt-2 text-xs text-cyan-300">
                 {backupStatus}
               </p>
             </div>
@@ -756,7 +756,7 @@ const importBackupFile = async (file: File | undefined) => {
               <button
                 type="button"
                 onClick={downloadAdminBackup}
-                className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-sky-500/20"
+                className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-cyan-500/20"
               >
                 Scarica backup
               </button>
@@ -764,12 +764,12 @@ const importBackupFile = async (file: File | undefined) => {
               <button
                 type="button"
                 onClick={restoreLastAutosave}
-                className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-bold text-sky-100"
+                className="rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-bold text-cyan-100"
               >
                 Ripristina autosave
               </button>
 
-              <label className="cursor-pointer rounded-xl border border-sky-400/25 bg-white/5 px-4 py-2 text-sm font-bold text-white">
+              <label className="cursor-pointer rounded-xl border border-cyan-400/25 bg-white/5 px-4 py-2 text-sm font-bold text-white">
                 Importa backup
                 <input
                   type="file"
@@ -782,7 +782,7 @@ const importBackupFile = async (file: File | undefined) => {
           </div>
         </section>
 
-        <section className="rounded-[26px] border border-sky-500/15 bg-[#06111d]/85 p-6 shadow-xl shadow-black/30">
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
             1. Importa modello 3D
           </h2>
@@ -873,7 +873,7 @@ insertOffsetZ: "1",
       setMeshList(meshes);
     });
   }}
-  className="block w-full text-sm text-neutral-300 file:mr-4 file:rounded-xl file:border-0 file:bg-white file:px-4 file:py-2 file:text-black"
+  className="block w-full text-sm text-neutral-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-500 file:px-4 file:py-2 file:font-bold file:text-white"
 />
 
           <p className="text-xs text-slate-500 mt-3">
@@ -883,7 +883,7 @@ insertOffsetZ: "1",
   <button
     type="button"
     onClick={() => setModelRotationY(0)}
-    className="rounded-lg border border-sky-500/20 px-3 py-2 text-sm text-white"
+    className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
     Rotazione 0°
   </button>
@@ -891,7 +891,7 @@ insertOffsetZ: "1",
   <button
     type="button"
     onClick={() => setModelRotationY(Math.PI / 2)}
-    className="rounded-lg border border-sky-500/20 px-3 py-2 text-sm text-white"
+    className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
     Rotazione 90°
   </button>
@@ -899,7 +899,7 @@ insertOffsetZ: "1",
   <button
     type="button"
     onClick={() => setModelRotationY(Math.PI)}
-    className="rounded-lg border border-sky-500/20 px-3 py-2 text-sm text-white"
+    className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
     Rotazione 180°
   </button>
@@ -907,21 +907,21 @@ insertOffsetZ: "1",
   <button
     type="button"
     onClick={() => setModelRotationY((Math.PI * 3) / 2)}
-    className="rounded-lg border border-sky-500/20 px-3 py-2 text-sm text-white"
+    className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
     Rotazione 270°
   </button>
 </div>
         </section>
-<section className="rounded-[26px] border border-sky-500/15 bg-[#06111d]/85 p-6 shadow-xl shadow-black/30">
+<section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
   <h2 className="text-xl font-semibold mb-4">
     Preview 3D
   </h2>
 
-  <div className="h-[560px] overflow-hidden rounded-[26px] border border-sky-500/20 bg-slate-900 shadow-2xl shadow-black/40">
+  <div className="h-[600px] overflow-hidden rounded-[30px] border border-cyan-400/20 bg-[#030a12] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
     <Canvas
   camera={{ position: [4, 3, 6], fov: 45 }}
-  style={{ background: "#0b1220" }}
+  style={{ background: "linear-gradient(180deg, #07111c 0%, #02070d 100%)" }}
 >
   <ambientLight intensity={3} />
 <directionalLight position={[5, 8, 5]} intensity={4} />
@@ -946,12 +946,12 @@ insertOffsetZ: "1",
 </Canvas>
   </div>
 </section>
-        <section className="rounded-[26px] border border-sky-500/15 bg-[#06111d]/85 p-6 shadow-xl shadow-black/30">
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
             2. Mapping componenti
           </h2>
 
-          <div className="rounded-2xl border border-sky-500/15 bg-black/30 p-4">
+          <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
   {meshList.length === 0 ? (
     <p className="text-slate-400">
       Qui comparirà la lista mesh del modello importato.
@@ -969,15 +969,15 @@ insertOffsetZ: "1",
   }}
   className={`rounded-lg border p-3 space-y-2 ${
     selectedMeshName === mesh.meshName
-      ? "border-sky-400 bg-sky-500/10 shadow-lg shadow-sky-500/10"
-      : "border-sky-500/20"
+      ? "border-cyan-400 bg-cyan-500/10 shadow-lg shadow-sky-500/10"
+      : "border-cyan-400/20"
   }`}
 >
     {meshThumbnails[mesh.meshName] && (
   <img
     src={meshThumbnails[mesh.meshName]}
     alt={mesh.displayName}
-    className="mb-2 h-20 w-full rounded-lg border border-sky-500/20 object-contain bg-neutral-950"
+    className="mb-2 h-20 w-full rounded-lg border border-cyan-400/20 object-contain bg-neutral-950"
   />
 )}
 
@@ -995,7 +995,7 @@ insertOffsetZ: "1",
         updated[index].displayName = e.target.value;
         setMeshList(updated);
       }}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
     <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
   <label className="flex items-center gap-2">
@@ -1061,7 +1061,7 @@ insertOffsetZ: "1",
           updated[index].ledPosition = e.target.value;
           setMeshList(updated);
         }}
-        className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+        className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       >
         <option value="front">Front</option>
         <option value="top">Top</option>
@@ -1079,7 +1079,7 @@ insertOffsetZ: "1",
           updated[index].ledFrontOffset = e.target.value;
           setMeshList(updated);
         }}
-        className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+        className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
 
@@ -1093,7 +1093,7 @@ insertOffsetZ: "1",
           updated[index].ledSideMargin = e.target.value;
           setMeshList(updated);
         }}
-        className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+        className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
 
@@ -1107,7 +1107,7 @@ insertOffsetZ: "1",
           updated[index].ledYOffset = e.target.value;
           setMeshList(updated);
         }}
-        className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+        className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
   </div>
@@ -1123,7 +1123,7 @@ insertOffsetZ: "1",
         setMeshList(updated);
       }}
       placeholder="main, top, frontale"
-      className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+      className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
     />
   </div>
 
@@ -1137,7 +1137,7 @@ insertOffsetZ: "1",
         setMeshList(updated);
       }}
       placeholder="led, inserto, maniglia"
-      className="mt-1 w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white text-sm"
+      className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
     />
   </div>
 </div>
@@ -1148,11 +1148,11 @@ insertOffsetZ: "1",
 </div>
         </section>
 
-        <section className="rounded-[26px] border border-sky-500/15 bg-[#06111d]/85 p-6 shadow-xl shadow-black/30">
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
             3. Genera product package
           </h2>
-<div className="space-y-3 rounded-xl border border-sky-500/20 p-4">
+<div className="space-y-3 rounded-xl border border-cyan-400/20 p-4">
   <h3 className="text-sm font-semibold text-white">Informazioni prodotto</h3>
 
   <input
@@ -1160,7 +1160,7 @@ insertOffsetZ: "1",
     value={productId}
     onChange={(e) => setProductId(e.target.value)}
     placeholder="ID prodotto"
-    className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+    className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
 
   <input
@@ -1168,7 +1168,7 @@ insertOffsetZ: "1",
     value={productName}
     onChange={(e) => setProductName(e.target.value)}
     placeholder="Nome prodotto"
-    className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+    className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
 
   <input
@@ -1176,7 +1176,7 @@ insertOffsetZ: "1",
     value={productCategory}
     onChange={(e) => setProductCategory(e.target.value)}
     placeholder="Categoria"
-    className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+    className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
   <div className="grid grid-cols-3 gap-3 pt-3">
   <div>
@@ -1185,7 +1185,7 @@ insertOffsetZ: "1",
       type="number"
       value={widthMin}
       onChange={(e) => setWidthMin(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1195,7 +1195,7 @@ insertOffsetZ: "1",
       type="number"
       value={widthDefault}
       onChange={(e) => setWidthDefault(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1205,7 +1205,7 @@ insertOffsetZ: "1",
       type="number"
       value={widthMax}
       onChange={(e) => setWidthMax(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 </div>
@@ -1216,7 +1216,7 @@ insertOffsetZ: "1",
       type="number"
       value={heightMin}
       onChange={(e) => setHeightMin(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1226,7 +1226,7 @@ insertOffsetZ: "1",
       type="number"
       value={heightDefault}
       onChange={(e) => setHeightDefault(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1236,7 +1236,7 @@ insertOffsetZ: "1",
       type="number"
       value={heightMax}
       onChange={(e) => setHeightMax(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
   </div>
@@ -1247,7 +1247,7 @@ insertOffsetZ: "1",
       type="number"
       value={depthMin}
       onChange={(e) => setDepthMin(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1257,7 +1257,7 @@ insertOffsetZ: "1",
       type="number"
       value={depthDefault}
       onChange={(e) => setDepthDefault(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 
@@ -1267,7 +1267,7 @@ insertOffsetZ: "1",
       type="number"
       value={depthMax}
       onChange={(e) => setDepthMax(Number(e.target.value))}
-      className="w-full rounded-lg bg-[#02070d] border border-sky-500/20 px-3 py-2 text-white"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
   </div>
 </div>
@@ -1415,12 +1415,12 @@ link.click();
 
 URL.revokeObjectURL(url);
 }}
-  className="rounded-2xl bg-sky-500 px-5 py-3 text-white font-black shadow-lg shadow-sky-500/25"
+  className="rounded-2xl bg-cyan-500 px-5 py-3 font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.28)] transition hover:bg-cyan-400"
 >
   Genera JSON prodotto
 </button>
 {generatedJson && (
-  <pre className="mt-4 max-h-[400px] overflow-auto rounded-2xl border border-sky-500/15 bg-black/30 p-4 text-xs text-green-300">
+  <pre className="mt-4 max-h-[400px] overflow-auto rounded-2xl border border-cyan-400/15 bg-black/30 p-4 text-xs text-green-300">
     {generatedJson}
   </pre>
 )}
