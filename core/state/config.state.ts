@@ -94,6 +94,48 @@ const defaultPricing: RuntimePricing = {
 
 const BAGASTUDIO_RUNTIME_AUTOSAVE_KEY = "bagastudio_core_runtime_autosave_v1";
 
+function stripHeavyModelData(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(stripHeavyModelData);
+  }
+
+  if (value && typeof value === "object") {
+    const output: any = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      const normalizedKey = key.toLowerCase();
+      const isHeavyModelField =
+        normalizedKey.includes("embeddedmodel") ||
+        normalizedKey.includes("modeldataurl") ||
+        normalizedKey.includes("modelbase64") ||
+        normalizedKey.includes("filebase64") ||
+        normalizedKey.includes("filedataurl") ||
+        normalizedKey.includes("dataurl") ||
+        normalizedKey.includes("generatedjson");
+
+      if (isHeavyModelField) continue;
+
+      output[key] = stripHeavyModelData(item);
+    }
+
+    return output;
+  }
+
+  return value;
+}
+
+function createRuntimeAutosaveSnapshot(state: BagaConfigState) {
+  return {
+    schema: "bagastudio-runtime-autosave",
+    version: 1,
+    savedAt: new Date().toISOString(),
+    product: stripHeavyModelData(state.product),
+    runtimeProduct: stripHeavyModelData(state.runtimeProduct),
+    configuration: state.exportConfiguration(),
+    pricing: state.pricing,
+  };
+}
+
 export const useConfigStore = create<BagaConfigState>((set, get) => ({
   product: null,
 runtimeProduct: null,
@@ -348,11 +390,17 @@ setSelectedPart: (partId) => {
   saveAutosave: () => {
     if (typeof window === "undefined") return;
 
-    const snapshot = get().createBackupSnapshot();
-    window.localStorage.setItem(
-      BAGASTUDIO_RUNTIME_AUTOSAVE_KEY,
-      JSON.stringify(snapshot)
-    );
+    const snapshot = createRuntimeAutosaveSnapshot(get());
+
+    try {
+      window.localStorage.setItem(
+        BAGASTUDIO_RUNTIME_AUTOSAVE_KEY,
+        JSON.stringify(snapshot)
+      );
+    } catch (error) {
+      console.warn("BagaStudio runtime autosave skipped: localStorage quota exceeded", error);
+      window.localStorage.removeItem(BAGASTUDIO_RUNTIME_AUTOSAVE_KEY);
+    }
   },
 
   restoreAutosave: () => {

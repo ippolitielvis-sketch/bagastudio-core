@@ -120,6 +120,85 @@ function forcePreviewMaterials(root: THREE.Object3D) {
   });
 }
 
+
+function normalizePartKey(value: any) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[-.]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+function collectMeshCandidateNames(mesh: THREE.Mesh) {
+  const names = new Set<string>();
+  let current: THREE.Object3D | null = mesh;
+
+  while (current) {
+    if (current.name) names.add(current.name);
+    current = current.parent;
+  }
+
+  const data = (mesh.userData || {}) as any;
+  [
+    data.bagastudioPartId,
+    data.bagastudioPartKey,
+    data.originalName,
+    data.meshName,
+  ].forEach((value) => {
+    if (value) names.add(String(value));
+  });
+
+  return Array.from(names).filter(Boolean);
+}
+
+function findProductPartForMesh(
+  mesh: THREE.Mesh,
+  productParts: any[] = [],
+  meshIndex = -1
+) {
+  const candidates = collectMeshCandidateNames(mesh);
+  const normalizedCandidates = candidates.map(normalizePartKey);
+
+  const byExact = productParts.find((part: any) => {
+    const partKeys = [part?.id, part?.meshName, part?.name, part?.label, part?.originalName] 
+      .filter(Boolean)
+      .map(normalizePartKey);
+
+    return partKeys.some((key) => normalizedCandidates.includes(key));
+  });
+
+  if (byExact) return byExact;
+
+  const byContains = productParts.find((part: any) => {
+    const partKeys = [part?.id, part?.meshName, part?.name, part?.label, part?.originalName]
+      .filter(Boolean)
+      .map(normalizePartKey)
+      .filter(Boolean);
+
+    return partKeys.some((key) =>
+      normalizedCandidates.some((candidate) =>
+        candidate.includes(key) || key.includes(candidate)
+      )
+    );
+  });
+
+  if (byContains) return byContains;
+
+  if (meshIndex >= 0 && productParts[meshIndex]) return productParts[meshIndex];
+
+  return null;
+}
+
+function getStableMeshName(mesh: THREE.Mesh, productPart: any, meshIndex: number) {
+  return (
+    productPart?.meshName ||
+    productPart?.id ||
+    mesh.name ||
+    `Mesh_${meshIndex + 1}`
+  );
+}
+
 function buildObjectFromGeometry(geometry: THREE.BufferGeometry) {
   geometry.computeVertexNormals();
   const material = new THREE.MeshStandardMaterial({
@@ -213,24 +292,29 @@ const highlightedRef = useRef<{
 
     const clonedScene = loadedRoot.clone(true);
 
-    clonedScene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        if (mesh.name.includes("Piano")) {
-}
-        const partKey = mesh.name;
+    const sceneMeshes: THREE.Mesh[] = [];
 
-        const productPart =
-  productParts.find((p) => p.meshName === mesh.name) ||
-  productParts.find((p) => mesh.name.includes(p.meshName)) ||
-  productParts.find((p) =>
-    mesh.name.toLowerCase().includes("mirror") &&
-    String(p.id).toLowerCase().includes("mirror")
-  ) ||
-  productParts.find((p) =>
-    mesh.name.toLowerCase().includes("specch") &&
-    String(p.id).toLowerCase().includes("mirror")
-  );
+    clonedScene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) sceneMeshes.push(child as THREE.Mesh);
+    });
+
+    sceneMeshes.forEach((mesh, meshIndex) => {
+        const productPart = findProductPartForMesh(mesh, productParts, meshIndex);
+        const stableMeshName = getStableMeshName(mesh, productPart, meshIndex);
+        const originalMeshName = mesh.name || stableMeshName;
+
+        mesh.userData = {
+          ...mesh.userData,
+          originalName: originalMeshName,
+          bagastudioPartId: productPart?.id || stableMeshName,
+          bagastudioPartKey: stableMeshName,
+        };
+
+        if (!mesh.name || /^\d+$/.test(mesh.name)) {
+          mesh.name = stableMeshName;
+        }
+
+        const partKey = stableMeshName;
 
         //console.log("PRODUCT PART:", productPart);
 
@@ -707,7 +791,6 @@ if (wirelessActive) {
 //   const mirrorLed = createMirrorLedAccessory(mesh);
 //   clonedScene.add(mirrorLed);
 // }
-}
 });
 
 
@@ -819,35 +902,16 @@ if (position === "top") {
     onClick={(e: any) => {
       e.stopPropagation();
 
-      const clickedName =
-        e.object.name ||
-        e.object.parent?.name ||
-        "unknown-part";
-const clickedPart =
-  productParts.find((p) => p.meshName === clickedName) ||
-  productParts.find((p) => clickedName.includes(p.meshName)) ||
-  productParts.find((p) =>
-    clickedName.toLowerCase().includes("mirror") &&
-    String(p.id).toLowerCase().includes("mirror")
-  ) ||
-  productParts.find((p) =>
-    clickedName.toLowerCase().includes("specch") &&
-    String(p.id).toLowerCase().includes("mirror")
-  );
-  productParts.find((p) =>
-    clickedName.toLowerCase().includes("mirror") &&
-    String(p.id).toLowerCase().includes("mirror")
-  ) ||
-  productParts.find((p) =>
-    clickedName.toLowerCase().includes("specchio") &&
-    String(p.id).toLowerCase().includes("mirror")
-  );
+      const clickedMesh = e.object as THREE.Mesh;
+      const allMeshes: THREE.Mesh[] = [];
+      scene.traverse((object) => {
+        if ((object as THREE.Mesh).isMesh) allMeshes.push(object as THREE.Mesh);
+      });
 
-const realPartKey = clickedPart?.id || clickedName;
-
-    const clickedMesh =
-  scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
-  (e.object as THREE.Mesh);
+      const meshIndex = Math.max(0, allMeshes.indexOf(clickedMesh));
+      const clickedPart = findProductPartForMesh(clickedMesh, productParts, meshIndex);
+      const clickedName = getStableMeshName(clickedMesh, clickedPart, meshIndex);
+      const realPartKey = clickedPart?.id || clickedName;
 
       if (highlightedRef.current) {
         highlightedRef.current.mesh.material =
