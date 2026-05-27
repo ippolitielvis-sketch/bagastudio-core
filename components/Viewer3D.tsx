@@ -978,13 +978,12 @@ productMaterials?.length
 
         <ambientLight intensity={0.45} />
 
-        <directionalLight
-          castShadow
-          position={[5, 8, 5]}
-          intensity={1.6}
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-        />
+      <directionalLight
+  position={[3, 8, 5]}
+  intensity={1.15}
+  shadow-mapSize-width={1024}
+  shadow-mapSize-height={1024}
+/>
 
         <directionalLight
           position={[-4, 4, -3]}
