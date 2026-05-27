@@ -46,6 +46,327 @@ const DEFAULT_VIEWS = [
   },
 ];
 
+
+const DICTIONARY = {
+  it: {
+    language: "Lingua",
+    italian: "Italiano",
+    english: "Inglese",
+    totalPrice: "Prezzo totale",
+    vatIncluded: "IVA inclusa",
+    configurator: "CONFIGURATORE 3D",
+    realisticRender: "RENDER REALISTICI",
+    ar: "REALTÀ AUMENTATA",
+    quotes: "PREVENTIVI ISTANTANEI",
+    project: "PROGETTO",
+    materials: "MATERIALI",
+    accessories: "ACCESSORI",
+    views: "VISTE",
+    studioTools: "STUDIO TOOLS",
+    save: "Salva",
+    export: "Esporta",
+    quote: "Preventivo",
+    addToQuote: "Aggiungi al preventivo",
+    adminPanel: "Admin Panel",
+    adminPanelDescription: "Importer modelli, mapping componenti, catalogo prodotti, materiali, accessori e strumenti avanzati.",
+    importProductJson: "Importa prodotto JSON",
+    restoreAutosave: "Ripristina autosave",
+    importBackup: "Importa backup",
+    selectedPart: "Pezzo selezionato",
+    noSelectedPart: "Nessun pezzo selezionato",
+    noPart: "Nessun pezzo",
+    dimensions: "Dimensioni",
+    width: "Larghezza",
+    height: "Altezza",
+    depth: "Profondità",
+    max: "Max",
+    visibility: "Visibilità",
+    showComponent: "Mostra componente",
+    loadedFile: "File caricato",
+    backupAutosave: "Backup / Autosave",
+    saveAutosave: "Salva autosave",
+    downloadFullBackup: "Scarica backup completo",
+    lastAutosave: "Ultimo autosave",
+    autosaveReady: "Autosave pronto.",
+    noAutosaveAvailable: "Nessun autosave disponibile.",
+    customerConfiguration: "Configurazione cliente",
+    exportConfiguration: "Esporta configurazione",
+    importConfiguration: "Importa configurazione",
+    applyAccessoriesTo: "Applichi accessori a",
+    selectPartFromModel: "Seleziona un pezzo dal modello.",
+    insertDimensions: "Dimensioni inserto",
+    insertMaterial: "Materiale inserto",
+    ledTemperature: "Temperatura LED",
+    ledIntensity: "Intensità LED",
+    selectMaterial: "Seleziona materiale",
+    woodDirection: "Senso venatura",
+    horizontal: "Orizzontale",
+    vertical: "Verticale",
+    runtimeJson: "Runtime JSON",
+    importProductFromSidebar: "Importa un JSON prodotto dalla sidebar.",
+    projectSummary: "Riepilogo progetto",
+    product: "Prodotto",
+    included: "Inclusi",
+    configured: "Configurati",
+    ready: "Pronto",
+    projectTotal: "Totale progetto",
+    objectProperties: "Proprietà oggetto",
+    name: "Nome",
+    view: "Vista",
+    closeLogo: "Chiudi logo",
+    openLogo: "Apri logo BagaStudio Core",
+    enlargedLogoAlt: "BagaStudio Core logo ingrandito",
+    viewFront: "Frontale",
+    viewBack: "Retro",
+    viewLeft: "Sinistra",
+    viewRight: "Destra",
+    viewTop: "Alto",
+    viewIso: "3D",
+    toolSelect: "Modalità selezione",
+    toolPan: "Modalità pan",
+    toolReset: "Reset camera",
+    toolOrbit: "Modalità orbit",
+    toolFocus: "Focus oggetto",
+    toolTop: "Vista dall'alto",
+    toolScreenshot: "Screenshot",
+    toolFullscreen: "Fullscreen",
+    accessoryInsert: "Inserto",
+    accessoryLed: "LED",
+    on: "ON",
+    off: "OFF",
+    insertWidthPercent: "Larghezza %",
+    insertDepthPercent: "Profondità %",
+    insertOffsetX: "Sposta X",
+    insertOffsetZ: "Sposta Z",
+    materialMarble: "Marmo",
+    materialCalacatta: "Calacatta",
+    materialMarquinia: "Marquinia",
+    materialStatuario: "Statuario",
+    materialTravertino: "Travertino",
+    materialOnice: "Onice",
+    materialEmperador: "Emperador",
+    backup: "Backup",
+    autosave: "Autosave",
+    led: "LED",
+    partTop: "Piano",
+    partSideRight: "Fianco destro",
+    partSideLeft: "Fianco sinistro",
+    partBack: "Schiena",
+    partFront: "Frontale",
+    partDoor: "Anta",
+    partDrawer: "Cassetto",
+    partHandle: "Maniglia",
+    partShelf: "Ripiano",
+    partMirror: "Specchio",
+    partBase: "Base",
+    partPanel: "Pannello",
+    invalidProductJson: "JSON prodotto non valido.",
+    invalidBackupJson: "Backup non valido.",
+    invalidConfigurationJson: "Configurazione non valida.",
+    productImported: "Prodotto importato correttamente.",
+    backupImported: "Backup importato correttamente.",
+    configurationImported: "Configurazione importata correttamente.",
+    autosaveRestored: "Autosave ripristinato.",
+    autosaveSavedManual: "Autosave salvato.",
+  },
+  en: {
+    language: "Language",
+    italian: "Italian",
+    english: "English",
+    totalPrice: "Total price",
+    vatIncluded: "VAT included",
+    configurator: "3D CONFIGURATOR",
+    realisticRender: "REALISTIC RENDERS",
+    ar: "AUGMENTED REALITY",
+    quotes: "INSTANT QUOTES",
+    project: "PROJECT",
+    materials: "MATERIALS",
+    accessories: "ACCESSORIES",
+    views: "VIEWS",
+    studioTools: "STUDIO TOOLS",
+    save: "Save",
+    export: "Export",
+    quote: "Quote",
+    addToQuote: "Add to quote",
+    adminPanel: "Admin Panel",
+    adminPanelDescription: "Model importer, component mapping, product catalog, materials, accessories and advanced tools.",
+    importProductJson: "Import product JSON",
+    restoreAutosave: "Restore autosave",
+    importBackup: "Import backup",
+    selectedPart: "Selected part",
+    noSelectedPart: "No part selected",
+    noPart: "No part",
+    dimensions: "Dimensions",
+    width: "Width",
+    height: "Height",
+    depth: "Depth",
+    max: "Max",
+    visibility: "Visibility",
+    showComponent: "Show component",
+    loadedFile: "Loaded file",
+    backupAutosave: "Backup / Autosave",
+    saveAutosave: "Save autosave",
+    downloadFullBackup: "Download full backup",
+    lastAutosave: "Last autosave",
+    autosaveReady: "Autosave ready.",
+    noAutosaveAvailable: "No autosave available.",
+    customerConfiguration: "Customer configuration",
+    exportConfiguration: "Export configuration",
+    importConfiguration: "Import configuration",
+    applyAccessoriesTo: "Apply accessories to",
+    selectPartFromModel: "Select a part from the model.",
+    insertDimensions: "Insert dimensions",
+    insertMaterial: "Insert material",
+    ledTemperature: "LED temperature",
+    ledIntensity: "LED intensity",
+    selectMaterial: "Select material",
+    woodDirection: "Wood grain direction",
+    horizontal: "Horizontal",
+    vertical: "Vertical",
+    runtimeJson: "Runtime JSON",
+    importProductFromSidebar: "Import a product JSON from the sidebar.",
+    projectSummary: "Project summary",
+    product: "Product",
+    included: "Included",
+    configured: "Configured",
+    ready: "Ready",
+    projectTotal: "Project total",
+    objectProperties: "Object properties",
+    name: "Name",
+    view: "View",
+    closeLogo: "Close logo",
+    openLogo: "Open BagaStudio Core logo",
+    enlargedLogoAlt: "Enlarged BagaStudio Core logo",
+    viewFront: "Front",
+    viewBack: "Back",
+    viewLeft: "Left",
+    viewRight: "Right",
+    viewTop: "Top",
+    viewIso: "3D",
+    toolSelect: "Selection mode",
+    toolPan: "Pan mode",
+    toolReset: "Reset camera",
+    toolOrbit: "Orbit mode",
+    toolFocus: "Focus object",
+    toolTop: "Top view",
+    toolScreenshot: "Screenshot",
+    toolFullscreen: "Fullscreen",
+    accessoryInsert: "Insert",
+    accessoryLed: "LED",
+    on: "ON",
+    off: "OFF",
+    insertWidthPercent: "Width %",
+    insertDepthPercent: "Depth %",
+    insertOffsetX: "Move X",
+    insertOffsetZ: "Move Z",
+    materialMarble: "Marble",
+    materialCalacatta: "Calacatta",
+    materialMarquinia: "Marquinia",
+    materialStatuario: "Statuario",
+    materialTravertino: "Travertino",
+    materialOnice: "Onyx",
+    materialEmperador: "Emperador",
+    backup: "Backup",
+    autosave: "Autosave",
+    led: "LED",
+    partTop: "Top",
+    partSideRight: "Right side",
+    partSideLeft: "Left side",
+    partBack: "Back panel",
+    partFront: "Front",
+    partDoor: "Door",
+    partDrawer: "Drawer",
+    partHandle: "Handle",
+    partShelf: "Shelf",
+    partMirror: "Mirror",
+    partBase: "Base",
+    partPanel: "Panel",
+    invalidProductJson: "Invalid product JSON.",
+    invalidBackupJson: "Invalid backup.",
+    invalidConfigurationJson: "Invalid configuration.",
+    productImported: "Product imported successfully.",
+    backupImported: "Backup imported successfully.",
+    configurationImported: "Configuration imported successfully.",
+    autosaveRestored: "Autosave restored.",
+    autosaveSavedManual: "Autosave saved.",
+  },
+};
+
+const VIEW_LABEL_KEYS: Record<string, keyof typeof DICTIONARY.it> = {
+  front: "viewFront",
+  back: "viewBack",
+  left: "viewLeft",
+  right: "viewRight",
+  top: "viewTop",
+  iso: "viewIso",
+  "3d": "viewIso",
+};
+
+const DIMENSION_LABEL_KEYS: Record<string, keyof typeof DICTIONARY.it> = {
+  width: "width",
+  height: "height",
+  depth: "depth",
+};
+
+function translateViewName(view: any, t: typeof DICTIONARY.it) {
+  const key = VIEW_LABEL_KEYS[String(view?.id || view?.name || "").toLowerCase()];
+  return key ? t[key] : view?.name || "3D";
+}
+
+function translateDimensionName(key: string, t: typeof DICTIONARY.it) {
+  const labelKey = DIMENSION_LABEL_KEYS[key];
+  return labelKey ? t[labelKey] : key;
+}
+
+function translateAccessoryName(accessory: any, t: typeof DICTIONARY.it) {
+  const id = String(accessory?.id || "").toLowerCase();
+  if (id === "insert") return t.accessoryInsert;
+  if (id === "led") return t.accessoryLed;
+  return accessory?.name || id;
+}
+
+const PART_LABEL_KEY_MATCHERS: Array<[RegExp, keyof typeof DICTIONARY.it]> = [
+  [/^(piano|top)$/i, "partTop"],
+  [/(fianco|side).*(destro|right)|^(right)$/i, "partSideRight"],
+  [/(fianco|side).*(sinistro|left)|^(left)$/i, "partSideLeft"],
+  [/(schiena|retro|back)/i, "partBack"],
+  [/(frontale|front)/i, "partFront"],
+  [/(anta|door)/i, "partDoor"],
+  [/(cassetto|drawer)/i, "partDrawer"],
+  [/(maniglia|handle)/i, "partHandle"],
+  [/(ripiano|shelf)/i, "partShelf"],
+  [/(specchio|mirror)/i, "partMirror"],
+  [/(base|zoccolo)/i, "partBase"],
+  [/(pannello|panel)/i, "partPanel"],
+];
+
+function translatePartName(part: any, t: typeof DICTIONARY.it) {
+  const label = String(part?.label || part?.name || part?.id || "").trim();
+  const source = label.toLowerCase();
+  const match = PART_LABEL_KEY_MATCHERS.find(([regex]) => regex.test(source));
+  return match ? t[match[1]] : label;
+}
+
+const MATERIAL_LABEL_KEYS: Record<string, keyof typeof DICTIONARY.it> = {
+  marmo: "materialMarble",
+  marble: "materialMarble",
+  calacatta: "materialCalacatta",
+  marquinia: "materialMarquinia",
+  statuario: "materialStatuario",
+  travertino: "materialTravertino",
+  onice: "materialOnice",
+  onyx: "materialOnice",
+  emperador: "materialEmperador",
+};
+
+function translateMaterialName(material: any, t: typeof DICTIONARY.it) {
+  const rawId = String(material?.id || "").toLowerCase().trim();
+  const rawName = String(material?.name || "").toLowerCase().trim();
+  const key = MATERIAL_LABEL_KEYS[rawId] || MATERIAL_LABEL_KEYS[rawName];
+  return key ? t[key] : material?.name || material?.id || "";
+}
+
+
 function mergeById(primary: any[] = [], fallback: any[] = []) {
   const map = new Map<string, any>();
   fallback.forEach((item) => map.set(item.id, item));
@@ -59,7 +380,7 @@ function normalizeProduct(product: AnyProduct) {
     assets: product.assets || {},
     dimensions: product.dimensions || {},
     parts: Array.isArray(product.parts) ? product.parts : [],
-    materials: product.materials?.length ? product.materials : DEFAULT_MATERIALS,
+  materials: product.materials?.length ? product.materials : DEFAULT_MATERIALS,
     accessories:
       Array.isArray(product.accessories) && product.accessories.length
         ? product.accessories
@@ -127,6 +448,12 @@ function downloadJson(filename: string, data: any) {
   URL.revokeObjectURL(url);
 }
 
+function getInitialLanguage(): "it" | "en" {
+  if (typeof window === "undefined") return "it";
+  const savedLanguage = window.localStorage.getItem("bagastudio-language");
+  return savedLanguage === "en" ? "en" : "it";
+}
+
 export default function HomePage() {
   const product = useConfigStore((state) => state.runtimeProduct || state.product);
   const setRuntimeProduct = useConfigStore((state) => state.setRuntimeProduct);
@@ -150,15 +477,15 @@ export default function HomePage() {
   const accessories = useConfigStore((state) => state.accessories);
   const inserts = useConfigStore((state) => state.inserts);
   const insertMaterials = useConfigStore((state) => state.insertMaterials);
-  const setInsertMaterial = useConfigStore((state) => state.setInsertMaterial);
-  const insertSizes = useConfigStore((state) => state.insertSizes);
-  const setInsertSize = useConfigStore((state) => state.setInsertSize);
+const setInsertMaterial = useConfigStore((state) => state.setInsertMaterial);
+const insertSizes = useConfigStore((state) => state.insertSizes);
+const setInsertSize = useConfigStore((state) => state.setInsertSize);
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensity = useConfigStore((state) => state.ledIntensity);
   const visibility = useConfigStore((state) => state.visibility);
   const activeViewId = useConfigStore((state) => state.activeViewId);
   const woodDirection = useConfigStore((state) => state.woodDirection);
-  const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
+const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
   const pricing = useConfigStore((state) => state.pricing);
 
@@ -171,7 +498,13 @@ const [activePanel, setActivePanel] = useState<
 >("config");
 const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
 const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
+const [language, setLanguage] = useState<"it" | "en">(() => getInitialLanguage());
+const t = DICTIONARY[language];
 const viewerShellRef = useRef<HTMLElement | null>(null);
+
+useEffect(() => {
+  window.localStorage.setItem("bagastudio-language", language);
+}, [language]);
 
 function goNextView() {
   const views = runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS;
@@ -267,7 +600,7 @@ const availableAccessories = useMemo(() => {
 
     const timer = window.setTimeout(() => {
       saveAutosave();
-      setAutosaveLabel(new Date().toLocaleTimeString());
+      setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US"));
     }, 600);
 
     return () => window.clearTimeout(timer);
@@ -282,41 +615,55 @@ const availableAccessories = useMemo(() => {
     woodDirection,
     activeViewId,
     selectedPartId,
+    language,
     saveAutosave,
   ]);
 
   async function handleProductJsonImport(file: File) {
-    const text = await file.text();
-    const rawProduct = JSON.parse(text);
-    const nextProduct = normalizeProduct(rawProduct);
+    try {
+      const text = await file.text();
+      const rawProduct = JSON.parse(text);
+      const nextProduct = normalizeProduct(rawProduct);
 
-    setRuntimeProduct(nextProduct);
+      setRuntimeProduct(nextProduct);
 
-    setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
-    setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
-    setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
+      setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
+      setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
+      setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
 
-    nextProduct.parts.forEach((part: any) => {
-      setVisibility(part.id, part.visible !== false);
-      if (part.meshName) setVisibility(part.meshName, part.visible !== false);
-    });
+      nextProduct.parts.forEach((part: any) => {
+        setVisibility(part.id, part.visible !== false);
+        if (part.meshName) setVisibility(part.meshName, part.visible !== false);
+      });
 
-    setActiveView(nextProduct.views?.[0]?.id || "iso");
-    setSelectedPart(null);
-    setImportName(file.name);
+      setActiveView(nextProduct.views?.[0]?.id || "iso");
+      setSelectedPart(null);
+      setImportName(file.name);
+      alert(t.productImported);
+    } catch (error) {
+      console.error("BagaStudio product import error", error);
+      alert(t.invalidProductJson);
+    }
   }
 
   async function handleBackupImport(file: File) {
-    const text = await file.text();
-    const data = JSON.parse(text);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
 
-    if (data.product || data.runtimeProduct) {
-      const nextProduct = normalizeProduct(data.runtimeProduct || data.product);
-      setRuntimeProduct(nextProduct);
-    }
+      if (data.product || data.runtimeProduct) {
+        const nextProduct = normalizeProduct(data.runtimeProduct || data.product);
+        setRuntimeProduct(nextProduct);
+      }
 
-    if (data.configuration) {
-      importConfiguration(data.configuration);
+      if (data.configuration) {
+        importConfiguration(data.configuration);
+      }
+
+      alert(t.backupImported);
+    } catch (error) {
+      console.error("BagaStudio backup import error", error);
+      alert(t.invalidBackupJson);
     }
   }
 
@@ -330,7 +677,7 @@ const availableAccessories = useMemo(() => {
             <button
               type="button"
               onClick={() => setIsLogoModalOpen(true)}
-              title="Apri logo BagaStudio Core"
+              title={t.openLogo}
               className="group rounded-2xl border border-transparent p-1 transition hover:border-sky-400/30 hover:bg-sky-400/5"
             >
               <img
@@ -343,10 +690,10 @@ const availableAccessories = useMemo(() => {
 
           <div className="hidden flex-1 items-center justify-center gap-0 xl:flex">
             {[
-              ["⬡", "CONFIGURATORE 3D"],
-              ["◉", "RENDER REALISTICI"],
-              ["AR", "REALTÀ AUMENTATA"],
-              ["▤", "PREVENTIVI ISTANTANEI"],
+              ["⬡", t.configurator],
+              ["◉", t.realisticRender],
+              ["AR", t.ar],
+              ["▤", t.quotes],
             ].map((item, index) => (
               <div
                 key={item[1]}
@@ -366,11 +713,11 @@ const availableAccessories = useMemo(() => {
 
           <div className="flex items-center gap-4">
             <div className="rounded-2xl border border-sky-400/20 bg-[#0b1826] px-6 py-4 shadow-[0_0_24px_rgba(14,165,233,0.08)]">
-              <p className="text-xs font-bold uppercase tracking-widest text-neutral-300">Prezzo totale</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-neutral-300">{t.totalPrice}</p>
               <p className="mt-1 text-3xl font-black text-sky-400">
                 € {displayPricing.total.toFixed(2)}
               </p>
-              <p className="text-xs text-neutral-400">IVA inclusa</p>
+              <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
             </div>
 
            <div
@@ -382,25 +729,39 @@ const availableAccessories = useMemo(() => {
   </div>
 
   <h3 className="mt-3 flex items-center gap-2 text-xl font-black text-white">
-    ⚙ Admin Panel
+    ⚙ {t.adminPanel}
   </h3>
 
   <p className="mt-2 text-xs leading-5 text-neutral-300">
-    Importer modelli, mapping componenti, catalogo prodotti,
-    materiali, accessori e strumenti avanzati.
+    {t.adminPanelDescription}
   </p>
 </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-neutral-400">{t.language}</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as "it" | "en")}
+              className="rounded-xl border border-sky-500/30 bg-slate-950 px-3 py-2 text-sm font-semibold text-white outline-none"
+            >
+              <option className="bg-slate-950 text-white" value="it">
+                {t.italian}
+              </option>
+              <option className="bg-slate-950 text-white" value="en">
+                {t.english}
+              </option>
+            </select>
+          </div>
           </div>
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
           <div className="flex items-center gap-2">
             {[
-              ["config", "⌂", "PROGETTO"],
-              ["materials", "▧", "MATERIALI"],
-              ["accessories", "✦", "ACCESSORI"],
-              ["views", "◱", "VISTE"],
-              ["admin", "⚙", "STUDIO TOOLS"],
+              ["config", "⌂", t.project],
+              ["materials", "▧", t.materials],
+              ["accessories", "✦", t.accessories],
+              ["views", "◱", t.views],
+              ["admin", "⚙", t.studioTools],
             ].map((tab: any) => (
               <button
                 key={tab[0]}
@@ -418,13 +779,13 @@ const availableAccessories = useMemo(() => {
 
           <div className="flex items-center gap-3">
             <button onClick={() => saveAutosave()} className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
-              Salva
+              {t.save}
             </button>
             <button onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
-              Esporta
+              {t.export}
             </button>
             <button onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
-              Preventivo
+              {t.quote}
             </button>
           </div>
         </div>
@@ -432,11 +793,11 @@ const availableAccessories = useMemo(() => {
     </header>
 
     <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_330px] gap-3 bg-[#07111c] p-3">
-  <aside className="overflow-y-auto rounded-3xl border border-sky-400/20 bg-gradient-to-b from-[#081827] to-[#050b12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.35)]">
+  <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
 {activePanel === "config" && (
   <>
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-4 text-lg font-semibold text-white">Importa prodotto JSON</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-4 text-lg font-semibold text-white">{t.importProductJson}</h2>
       <input
         type="file"
         accept=".json"
@@ -454,15 +815,16 @@ const availableAccessories = useMemo(() => {
         <button
           onClick={() => {
             const ok = restoreAutosave();
-            if (!ok) alert("Nessun autosave disponibile.");
+            if (!ok) alert(t.noAutosaveAvailable);
+            if (ok) alert(t.autosaveRestored);
           }}
           className="rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
         >
-          Ripristina autosave
+          {t.restoreAutosave}
         </button>
 
         <label className="cursor-pointer rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm">
-          Importa backup
+          {t.importBackup}
           <input
             type="file"
             accept=".json"
@@ -476,16 +838,16 @@ const availableAccessories = useMemo(() => {
       </div>
     </section>
 
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-4 text-lg font-semibold text-white">Pezzo selezionato</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
       <p className="text-sm text-neutral-300">
-        {selectedPart?.name || selectedPartId || "Nessun pezzo selezionato"}
+        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
       </p>
     </section>
 
     {runtimeProduct && (
-      <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-        <h2 className="mb-4 text-xl font-semibold">Dimensioni</h2>
+      <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+        <h2 className="mb-4 text-xl font-semibold">{t.dimensions}</h2>
 
         {(["width", "height", "depth"] as const).map((key) => {
           const dim = runtimeProduct.dimensions?.[key];
@@ -493,7 +855,7 @@ const availableAccessories = useMemo(() => {
 
           return (
             <div key={key} className="mb-4">
-              <label className="block text-sm capitalize">{key}</label>
+              <label className="block text-sm capitalize">{translateDimensionName(key, t)}</label>
               <input
                 type="range"
                 min={dim.min}
@@ -508,17 +870,17 @@ const availableAccessories = useMemo(() => {
               <p className="text-sm font-semibold">
                 {Number(dimensions?.[key] ?? dim.default)} cm
               </p>
-              <p className="text-xs text-neutral-500">Max: {dim.max} cm</p>
+              <p className="text-xs text-neutral-500">{t.max}: {dim.max} cm</p>
             </div>
           );
         })}
       </section>
     )}
 
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-3 text-xl font-semibold">Visibilità</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
       <p className="mb-3 text-sm text-neutral-400">
-        {selectedPart?.name || selectedPartId || "-"}
+        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
       </p>
 
       {selectedStoreKey && (
@@ -533,7 +895,7 @@ const availableAccessories = useMemo(() => {
               }
             }}
           />
-          Mostra componente
+          {t.showComponent}
         </label>
       )}
     </section>
@@ -550,7 +912,7 @@ const availableAccessories = useMemo(() => {
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">Importa prodotto JSON</h2>
+      <h2 className="mb-4 text-lg font-black text-white">{t.importProductJson}</h2>
       <input
         type="file"
         accept=".json"
@@ -562,34 +924,36 @@ const availableAccessories = useMemo(() => {
       />
       {importName && (
         <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-neutral-300">
-          File caricato: {importName}
+          {t.loadedFile}: {importName}
         </p>
       )}
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">Backup / Autosave</h2>
+      <h2 className="mb-4 text-lg font-black text-white">{t.backupAutosave}</h2>
       <div className="grid gap-3">
         <button
           type="button"
           onClick={() => {
             saveAutosave();
-            setAutosaveLabel(new Date().toLocaleTimeString());
+            setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US"));
+            alert(t.autosaveSavedManual);
           }}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
         >
-          Salva autosave
+          {t.saveAutosave}
         </button>
 
         <button
           type="button"
           onClick={() => {
             const ok = restoreAutosave();
-            if (!ok) alert("Nessun autosave disponibile.");
+            if (!ok) alert(t.noAutosaveAvailable);
+            if (ok) alert(t.autosaveRestored);
           }}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
         >
-          Ripristina autosave
+          {t.restoreAutosave}
         </button>
 
         <button
@@ -597,11 +961,11 @@ const availableAccessories = useMemo(() => {
           onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
           className="rounded-2xl border border-sky-400/30 bg-sky-500 px-4 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.25)]"
         >
-          Scarica backup completo
+          {t.downloadFullBackup}
         </button>
 
         <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
-          Importa backup
+          {t.importBackup}
           <input
             type="file"
             accept=".json,application/json"
@@ -616,23 +980,23 @@ const availableAccessories = useMemo(() => {
       </div>
 
       <p className="mt-4 text-xs text-neutral-400">
-        {autosaveLabel ? `Ultimo autosave: ${autosaveLabel}` : "Autosave pronto."}
+        {autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}
       </p>
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">Configurazione cliente</h2>
+      <h2 className="mb-4 text-lg font-black text-white">{t.customerConfiguration}</h2>
       <div className="grid gap-3">
         <button
           type="button"
           onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
         >
-          Esporta configurazione
+          {t.exportConfiguration}
         </button>
 
         <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
-          Importa configurazione
+          {t.importConfiguration}
           <input
             type="file"
             accept=".json,application/json"
@@ -641,10 +1005,16 @@ const availableAccessories = useMemo(() => {
               const file = event.target.files?.[0];
               if (!file) return;
 
-              const fileText = await file.text();
-              const data = JSON.parse(fileText);
+              try {
+                const fileText = await file.text();
+                const data = JSON.parse(fileText);
 
-              importConfiguration(data);
+                importConfiguration(data);
+                alert(t.configurationImported);
+              } catch (error) {
+                console.error("BagaStudio configuration import error", error);
+                alert(t.invalidConfigurationJson);
+              }
 
               event.target.value = "";
             }}
@@ -657,14 +1027,14 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "accessories" && (
   <>
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-3 text-xl font-semibold">Accessori</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.accessories}</h2>
       <p className="mb-3 text-sm text-neutral-400">
-        Applichi accessori a: {selectedPart?.name || selectedPartId || "-"}
+        {t.applyAccessoriesTo}: {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
       </p>
 
       {!selectedPart && (
-        <p className="text-sm text-neutral-500">Seleziona un pezzo dal modello.</p>
+        <p className="text-sm text-neutral-500">{t.selectPartFromModel}</p>
       )}
 
       {availableAccessories.map((accessory: any) => {
@@ -693,7 +1063,7 @@ const availableAccessories = useMemo(() => {
             }`}
           >
             <div className="flex items-center justify-between gap-3">
-              <span>{accessory.name}</span>
+              <span>{translateAccessoryName(accessory, t)}</span>
               <span
                 className={`rounded-full px-2 py-1 text-[10px] font-bold ${
                   isActive
@@ -701,7 +1071,7 @@ const availableAccessories = useMemo(() => {
                     : "bg-neutral-800 text-neutral-400"
                 }`}
               >
-                {isActive ? "ON" : "OFF"}
+                {isActive ? t.on : t.off}
               </span>
             </div>
           </button>
@@ -711,13 +1081,13 @@ const availableAccessories = useMemo(() => {
       {selectedStoreKey && inserts?.[selectedStoreKey] && (
         <>
           <div className="mt-4 rounded-2xl border border-neutral-700 bg-neutral-900 p-3">
-            <p className="mb-3 text-sm font-semibold text-white">Dimensioni inserto</p>
+            <p className="mb-3 text-sm font-semibold text-white">{t.insertDimensions}</p>
 
             {[
-              { key: "width", label: "Larghezza %", min: 5, max: 100 },
-              { key: "depth", label: "Profondità %", min: 5, max: 100 },
-              { key: "offsetX", label: "Sposta X", min: -600, max: 600 },
-              { key: "offsetZ", label: "Sposta Z", min: -300, max: 300 },
+              { key: "width", label: t.insertWidthPercent, min: 5, max: 100 },
+              { key: "depth", label: t.insertDepthPercent, min: 5, max: 100 },
+              { key: "offsetX", label: t.insertOffsetX, min: -600, max: 600 },
+              { key: "offsetZ", label: t.insertOffsetZ, min: -300, max: 300 },
             ].map((control) => {
               const insertDefaults = getDefaultInsertConfig();
 
@@ -755,7 +1125,7 @@ const availableAccessories = useMemo(() => {
           </div>
 
           <label className="mt-4 block text-xs text-neutral-300">
-            Materiale inserto
+            {t.insertMaterial}
             <select
               value={insertMaterials?.[selectedStoreKey] || "marmo"}
               onChange={(event) =>
@@ -763,13 +1133,13 @@ const availableAccessories = useMemo(() => {
               }
               className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-white"
             >
-              <option value="marmo">Marmo</option>
-              <option value="calacatta">Calacatta</option>
-              <option value="marquinia">Marquinia</option>
-              <option value="statuario">Statuario</option>
-              <option value="travertino">Travertino</option>
-              <option value="onice">Onice</option>
-              <option value="emperador">Emperador</option>
+              <option value="marmo">{t.materialMarble}</option>
+              <option value="calacatta">{t.materialCalacatta}</option>
+              <option value="marquinia">{t.materialMarquinia}</option>
+              <option value="statuario">{t.materialStatuario}</option>
+              <option value="travertino">{t.materialTravertino}</option>
+              <option value="onice">{t.materialOnice}</option>
+              <option value="emperador">{t.materialEmperador}</option>
             </select>
           </label>
         </>
@@ -778,7 +1148,7 @@ const availableAccessories = useMemo(() => {
       {selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") && (
         <>
           <div className="mt-4">
-            <label className="mb-2 block text-sm">Temperatura LED</label>
+            <label className="mb-2 block text-sm">{t.ledTemperature}</label>
             <div className="flex gap-2">
               {[4500, 6000].map((kelvin) => (
                 <button
@@ -800,7 +1170,7 @@ const availableAccessories = useMemo(() => {
 
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span>Intensità LED</span>
+              <span>{t.ledIntensity}</span>
               <span>{Number(ledIntensity?.[selectedStoreKey] ?? 1).toFixed(1)}x</span>
             </div>
 
@@ -824,10 +1194,10 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "materials" && (
   <>
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-3 text-xl font-semibold">Materiali</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.materials}</h2>
       <p className="mb-3 text-sm text-neutral-400">
-        {selectedPart?.name || selectedPartId || "-"}
+        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
       </p>
 
       <select
@@ -842,10 +1212,10 @@ const availableAccessories = useMemo(() => {
         }}
         className="w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-white"
       >
-        <option value="">Seleziona materiale</option>
+        <option value="">{t.selectMaterial}</option>
         {filteredMaterials.map((material: any) => (
           <option key={material.id} value={material.id}>
-            {material.name}
+            {translateMaterialName(material, t)}
           </option>
         ))}
       </select>
@@ -853,7 +1223,7 @@ const availableAccessories = useMemo(() => {
       {selectedStoreKey && (
         <div className="mt-3">
           <label className="mb-2 block text-sm text-neutral-300">
-            Senso venatura
+            {t.woodDirection}
           </label>
 
           <div className="grid grid-cols-2 gap-2">
@@ -868,7 +1238,7 @@ const availableAccessories = useMemo(() => {
                   : "border-neutral-700 bg-neutral-900 text-white"
               }`}
             >
-              Orizzontale
+              {t.horizontal}
             </button>
 
             <button
@@ -882,7 +1252,7 @@ const availableAccessories = useMemo(() => {
                   : "border-neutral-700 bg-neutral-900 text-white"
               }`}
             >
-              Verticale
+              {t.vertical}
             </button>
           </div>
         </div>
@@ -893,8 +1263,8 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "views" && (
   <>
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-3 text-xl font-semibold">Viste</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.views}</h2>
       <div className="grid grid-cols-2 gap-2">
         {(runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS).map(
           (view: any) => (
@@ -907,23 +1277,23 @@ const availableAccessories = useMemo(() => {
                   : "border-neutral-700 bg-neutral-900 text-white"
               }`}
             >
-              {view.name}
+              {translateViewName(view, t)}
             </button>
           )
         )}
       </div>
     </section>
 
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <h2 className="mb-3 text-xl font-semibold">Runtime JSON</h2>
+    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.runtimeJson}</h2>
       <button
         onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
         className="mb-2 w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
       >
-        Esporta configurazione
+        {t.exportConfiguration}
       </button>
       <label className="mb-2 block w-full cursor-pointer rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm text-white">
-        Importa configurazione
+        {t.importConfiguration}
         <input
           type="file"
           accept=".json,application/json"
@@ -932,10 +1302,16 @@ const availableAccessories = useMemo(() => {
             const file = event.target.files?.[0];
             if (!file) return;
 
-            const text = await file.text();
-            const data = JSON.parse(text);
+            try {
+              const text = await file.text();
+              const data = JSON.parse(text);
 
-            importConfiguration(data);
+              importConfiguration(data);
+              alert(t.configurationImported);
+            } catch (error) {
+              console.error("BagaStudio configuration import error", error);
+              alert(t.invalidConfigurationJson);
+            }
 
             event.target.value = "";
           }}
@@ -945,7 +1321,7 @@ const availableAccessories = useMemo(() => {
         onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
         className="w-full rounded-2xl bg-sky-500 px-3 py-2 text-sm text-black"
       >
-        Scarica backup completo
+        {t.downloadFullBackup}
       </button>
     </section>
   </>
@@ -954,18 +1330,18 @@ const availableAccessories = useMemo(() => {
 
 <section
   ref={viewerShellRef}
-  className="relative overflow-hidden rounded-3xl border border-sky-400/20 bg-[#05080d] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.55)]"
+  className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)]"
 >
-  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-2xl border border-sky-400/20 bg-[#07111c]/90 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
     {[
-      ["↖", "Modalità selezione", "select"],
-["✥", "Modalità pan", "pan"],
-["↻", "Reset camera", "reset"],
-["□", "Modalità orbit", "orbit"],
-["⌁", "Focus oggetto", "focus"],
-["↕", "Vista dall'alto", "top"],
-["◎", "Screenshot", "shot"],
-["↗", "Fullscreen", "fullscreen"],
+      ["↖", t.toolSelect, "select"],
+["✥", t.toolPan, "pan"],
+["↻", t.toolReset, "reset"],
+["□", t.toolOrbit, "orbit"],
+["⌁", t.toolFocus, "focus"],
+["↕", t.toolTop, "top"],
+["◎", t.toolScreenshot, "shot"],
+["↗", t.toolFullscreen, "fullscreen"],
     ].map(([icon, title, action]: any, index) => (
       <button
         key={`${icon}-${index}`}
@@ -996,10 +1372,10 @@ const availableAccessories = useMemo(() => {
             setActiveView(action);
           }
         }}
-        className={`flex h-11 w-12 items-center justify-center rounded-xl text-lg transition-all duration-200 ${
+        className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
           activeViewerTool === action
-            ? "bg-sky-500 text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] scale-[1.02]"
-            : "text-neutral-200 hover:bg-sky-500/20 hover:text-white hover:shadow-[0_0_18px_rgba(14,165,233,0.16)]"
+            ? "bg-sky-500 text-white"
+            : "text-neutral-200 hover:bg-sky-500/20"
         }`}
       >
         {icon}
@@ -1029,65 +1405,65 @@ const availableAccessories = useMemo(() => {
     />
   ) : (
     <div className="flex h-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-400">
-      Importa un JSON prodotto dalla sidebar.
+      {t.importProductFromSidebar}
     </div>
   )}
 </section>
 
-        <aside className="overflow-y-auto rounded-3xl border border-sky-400/20 bg-gradient-to-b from-[#081827] to-[#050b12] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.35)]">
-          <section className="mb-3 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black uppercase tracking-wide text-white">Riepilogo progetto</h2>
+              <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.projectSummary}</h2>
               <span className="text-neutral-400">⌃</span>
             </div>
 
             <div className="space-y-4 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <span className="font-bold text-sky-400">⌂ {runtimeProduct?.name || "Prodotto"}</span>
+                <span className="font-bold text-sky-400">⌂ {runtimeProduct?.name || t.product}</span>
                 <span>€ {Number(runtimeProduct?.pricing?.basePrice ?? displayPricing.total ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>✦ Accessori</span>
-                <span>Inclusi</span>
+                <span>✦ {t.accessories}</span>
+                <span>{t.included}</span>
               </div>
               <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>◉ Materiali</span>
-                <span>Configurati</span>
+                <span>◉ {t.materials}</span>
+                <span>{t.configured}</span>
               </div>
               <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>▤ Backup</span>
-                <span>{autosaveLabel ? `Autosave ${autosaveLabel}` : "Pronto"}</span>
+                <span>▤ {t.backup}</span>
+                <span>{autosaveLabel ? `${t.autosave} ${autosaveLabel}` : t.ready}</span>
               </div>
             </div>
 
             <div className="mt-5 border-t border-white/10 pt-5">
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-sm font-bold uppercase tracking-wide text-white">Totale progetto</p>
-                  <p className="text-xs text-neutral-400">IVA inclusa</p>
+                  <p className="text-sm font-bold uppercase tracking-wide text-white">{t.projectTotal}</p>
+                  <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
                 </div>
                 <p className="text-3xl font-black text-sky-400">€ {displayPricing.total.toFixed(2)}</p>
               </div>
             </div>
           </section>
 
-          <section className="mb-3 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black uppercase tracking-wide text-white">Proprietà oggetto</h2>
+              <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.objectProperties}</h2>
               <span className="text-neutral-400">⌃</span>
             </div>
 
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">Nome</span><span className="text-right text-white">{selectedPart?.name || selectedPartId || "Nessun pezzo"}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">Prodotto</span><span className="text-right text-white">{runtimeProduct?.name || "-"}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">Dimensioni</span><span className="text-right text-white">{Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × {Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × {Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">Vista</span><span className="text-right text-white">{activeViewId || "3D"}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">LED</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] || 4000}K` : "Off"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.name}</span><span className="text-right text-white">{selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noPart}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.product}</span><span className="text-right text-white">{runtimeProduct?.name || "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.dimensions}</span><span className="text-right text-white">{Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × {Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × {Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.view}</span><span className="text-right text-white">{translateViewName({ id: activeViewId }, t)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.led}</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] || 4000}K` : t.off}</span></div>
             </div>
           </section>
 
           <button onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())} className="w-full rounded-2xl bg-sky-500 px-5 py-5 text-base font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.35)] hover:bg-sky-400">
-            Aggiungi al preventivo
+            {t.addToQuote}
           </button>
         </aside>
     </div>
@@ -1105,14 +1481,14 @@ const availableAccessories = useMemo(() => {
           type="button"
           onClick={() => setIsLogoModalOpen(false)}
           className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/50 text-xl text-white transition hover:border-sky-400/40 hover:bg-sky-500/20"
-          aria-label="Chiudi logo"
+          aria-label={t.closeLogo}
         >
           ×
         </button>
 
         <img
           src="/bagastudio-core-brand.png"
-          alt="BagaStudio Core logo ingrandito"
+          alt={t.enlargedLogoAlt}
           className="mx-auto max-h-[82vh] w-full rounded-[1.5rem] object-contain"
         />
       </div>
