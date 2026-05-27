@@ -961,6 +961,8 @@ productMaterials?.length
     <div className="h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
       <Canvas
         shadows
+        frameloop="demand"
+        dpr={[1, 1.35]}
         camera={{ position: [20, 10, 22], fov: 70 }}
         gl={{
           antialias: true,
