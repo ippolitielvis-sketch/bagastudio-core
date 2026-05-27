@@ -170,6 +170,7 @@ const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "admin"
 >("config");
 const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
+const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
 const viewerShellRef = useRef<HTMLElement | null>(null);
 
 function goNextView() {
@@ -251,6 +252,17 @@ const availableAccessories = useMemo(() => {
 }, [runtimeProduct, selectedPart]);
 
   useEffect(() => {
+    if (!isLogoModalOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsLogoModalOpen(false);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isLogoModalOpen]);
+
+  useEffect(() => {
     if (!runtimeProduct) return;
 
     const timer = window.setTimeout(() => {
@@ -315,11 +327,18 @@ const availableAccessories = useMemo(() => {
       <div className="rounded-2xl border border-sky-400/20 bg-[#07111c] px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
         <div className="flex items-center justify-between gap-6">
           <div className="flex min-w-[390px] items-center gap-4">
-            <img
-              src="/bagastudio-core-brand.png"
-              alt="BagaStudio Core"
-              className="h-28 w-auto shrink-0 object-contain drop-shadow-[0_0_22px_rgba(14,165,233,0.35)]"
-            />
+            <button
+              type="button"
+              onClick={() => setIsLogoModalOpen(true)}
+              title="Apri logo BagaStudio Core"
+              className="group rounded-2xl border border-transparent p-1 transition hover:border-sky-400/30 hover:bg-sky-400/5"
+            >
+              <img
+                src="/bagastudio-core-brand.png"
+                alt="BagaStudio Core"
+                className="h-28 w-auto shrink-0 object-contain drop-shadow-[0_0_22px_rgba(14,165,233,0.35)] transition group-hover:scale-[1.02]"
+              />
+            </button>
           </div>
 
           <div className="hidden flex-1 items-center justify-center gap-0 xl:flex">
@@ -1073,6 +1092,33 @@ const availableAccessories = useMemo(() => {
         </aside>
     </div>
   </div>
+  {isLogoModalOpen && (
+    <div
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/85 p-6 backdrop-blur-xl"
+      onClick={() => setIsLogoModalOpen(false)}
+    >
+      <div
+        className="relative w-full max-w-5xl rounded-[2rem] border border-sky-400/25 bg-[#07111c]/95 p-5 shadow-[0_0_80px_rgba(14,165,233,0.22)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={() => setIsLogoModalOpen(false)}
+          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/50 text-xl text-white transition hover:border-sky-400/40 hover:bg-sky-500/20"
+          aria-label="Chiudi logo"
+        >
+          ×
+        </button>
+
+        <img
+          src="/bagastudio-core-brand.png"
+          alt="BagaStudio Core logo ingrandito"
+          className="mx-auto max-h-[82vh] w-full rounded-[1.5rem] object-contain"
+        />
+      </div>
+    </div>
+  )}
+
 </main>
 );
 }
