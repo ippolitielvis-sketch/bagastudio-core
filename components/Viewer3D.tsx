@@ -25,6 +25,7 @@ import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
+const textureWaiters = new Map<string, Array<(texture: THREE.Texture) => void>>();
 
 type Viewer3DProps = {
   width?: number;
@@ -280,38 +281,91 @@ const rotateWood = selectedWoodDirection === "z";
 
 applyPlanarUV(mesh, rotateWood);
 console.log("MATERIAL DATA:", materialData);
-let texture = textureCache.get(materialData.textureUrl);
 
-if (!texture) {
-  texture = textureLoader.load(
-    materialData.textureUrl,
-    () => console.log("TEXTURE OK:", materialData.textureUrl),
-    undefined,
-    (err) => console.error("TEXTURE ERROR:", materialData.textureUrl, err)
+const textureUrl = materialData.textureUrl;
+const fallbackColor =
+  materialData.fallbackColor ||
+  materialData.color ||
+  "#c8c2b6";
+
+const configureTexture = (loadedTexture: THREE.Texture) => {
+  loadedTexture.colorSpace = THREE.SRGBColorSpace;
+  loadedTexture.wrapS = THREE.RepeatWrapping;
+  loadedTexture.wrapT = THREE.RepeatWrapping;
+  loadedTexture.flipY = false;
+
+  loadedTexture.repeat.set(
+    materialData.repeatX ?? 1,
+    materialData.repeatY ?? 1
   );
 
-  textureCache.set(materialData.textureUrl, texture);
+  loadedTexture.needsUpdate = true;
+};
+
+const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
+  const currentMaterial = mesh.material as THREE.MeshStandardMaterial;
+
+  if (
+    currentMaterial &&
+    (currentMaterial as any).userData?.bagastudioTextureUrl === textureUrl
+  ) {
+    currentMaterial.map = loadedTexture;
+    currentMaterial.color.set("#ffffff");
+    currentMaterial.needsUpdate = true;
+  }
+};
+
+let texture = textureCache.get(textureUrl);
+
+if (texture) {
+  configureTexture(texture);
+
+  material = new THREE.MeshStandardMaterial({
+    map: texture,
+    color: "#ffffff",
+    roughness: materialData.roughness ?? 0.65,
+    metalness: materialData.metalness ?? 0,
+    side: THREE.FrontSide,
+    transparent: false,
+    depthWrite: true,
+  });
+} else {
+  material = new THREE.MeshStandardMaterial({
+    color: fallbackColor,
+    roughness: materialData.roughness ?? 0.65,
+    metalness: materialData.metalness ?? 0,
+    side: THREE.FrontSide,
+    transparent: false,
+    depthWrite: true,
+  });
+
+  (material as any).userData.bagastudioTextureUrl = textureUrl;
+
+  const waiters = textureWaiters.get(textureUrl);
+
+  if (waiters) {
+    waiters.push(applyLoadedTexture);
+  } else {
+    textureWaiters.set(textureUrl, [applyLoadedTexture]);
+
+    textureLoader.load(
+      textureUrl,
+      (loadedTexture) => {
+        configureTexture(loadedTexture);
+        textureCache.set(textureUrl, loadedTexture);
+
+        const callbacks = textureWaiters.get(textureUrl) || [];
+        callbacks.forEach((callback) => callback(loadedTexture));
+        textureWaiters.delete(textureUrl);
+      },
+      undefined,
+      (err) => {
+        console.error("TEXTURE ERROR:", textureUrl, err);
+        textureWaiters.delete(textureUrl);
+      }
+    );
+  }
 }
-
- texture.colorSpace = THREE.SRGBColorSpace;
-texture.wrapS = THREE.RepeatWrapping;
-texture.wrapT = THREE.RepeatWrapping;
-texture.flipY = false;
-
-texture.repeat.set(
-  materialData.repeatX ?? 1,
-  materialData.repeatY ?? 1
-);
-
-material = new THREE.MeshStandardMaterial({
-  map: texture,
-  color: "#ffffff",
-  roughness: materialData.roughness ?? 0.65,
-  metalness: materialData.metalness ?? 0,
-  side: THREE.FrontSide,
-  transparent: false,
-  depthWrite: true,
-});
 
   break;
 }
@@ -723,7 +777,6 @@ function CameraController({
   views?: any[];
 }) {
   const { camera } = useThree();
-  const controls = useThree((state) => state.controls) as any;
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -760,17 +813,8 @@ function CameraController({
       cameraData.target[2]
     );
 
-    if (controls?.target) {
-      controls.target.set(
-        cameraData.target[0],
-        cameraData.target[1],
-        cameraData.target[2]
-      );
-      controls.update?.();
-    }
-
     camera.updateProjectionMatrix();
-  }, [activeViewId, views, camera, controls]);
+  }, [activeViewId, views, camera]);
 
   return null;
 }
@@ -785,7 +829,6 @@ function ViewerRuntimeControls({
   productParts?: any[];
 }) {
   const { camera, gl, scene } = useThree();
-  const controls = useThree((state) => state.controls) as any;
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
 
   useEffect(() => {
@@ -823,6 +866,7 @@ function ViewerRuntimeControls({
 
       camera.updateProjectionMatrix();
 
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
       if (controls?.target) {
         controls.target.set(
           cameraData.target[0],
@@ -891,6 +935,7 @@ function ViewerRuntimeControls({
       camera.lookAt(center);
       camera.updateProjectionMatrix();
 
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
       if (controls?.target) {
         controls.target.copy(center);
         controls.update?.();
@@ -919,7 +964,7 @@ function ViewerRuntimeControls({
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:screenshot", handleScreenshot);
     };
-  }, [activeViewId, views, camera, gl, scene, controls, selectedPartId, productParts]);
+  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
 
   return null;
 }
@@ -970,8 +1015,6 @@ productMaterials?.length
     <div className="h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
       <Canvas
         shadows
-        frameloop="demand"
-        dpr={[1, 1.35]}
         camera={{ position: [20, 10, 22], fov: 70 }}
         gl={{
           antialias: true,
@@ -989,12 +1032,13 @@ productMaterials?.length
 
         <ambientLight intensity={0.45} />
 
-      <directionalLight
-  position={[3, 8, 5]}
-  intensity={1.15}
-  shadow-mapSize-width={1024}
-  shadow-mapSize-height={1024}
-/>
+        <directionalLight
+          castShadow
+          position={[5, 8, 5]}
+          intensity={1.6}
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+        />
 
         <directionalLight
           position={[-4, 4, -3]}
