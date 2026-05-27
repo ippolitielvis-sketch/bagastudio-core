@@ -723,6 +723,7 @@ function CameraController({
   views?: any[];
 }) {
   const { camera } = useThree();
+  const controls = useThree((state) => state.controls) as any;
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -759,8 +760,17 @@ function CameraController({
       cameraData.target[2]
     );
 
+    if (controls?.target) {
+      controls.target.set(
+        cameraData.target[0],
+        cameraData.target[1],
+        cameraData.target[2]
+      );
+      controls.update?.();
+    }
+
     camera.updateProjectionMatrix();
-  }, [activeViewId, views, camera]);
+  }, [activeViewId, views, camera, controls]);
 
   return null;
 }
@@ -775,6 +785,7 @@ function ViewerRuntimeControls({
   productParts?: any[];
 }) {
   const { camera, gl, scene } = useThree();
+  const controls = useThree((state) => state.controls) as any;
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
 
   useEffect(() => {
@@ -812,7 +823,6 @@ function ViewerRuntimeControls({
 
       camera.updateProjectionMatrix();
 
-      const controls = (gl as any).__r3f?.root?.getState?.().controls;
       if (controls?.target) {
         controls.target.set(
           cameraData.target[0],
@@ -881,7 +891,6 @@ function ViewerRuntimeControls({
       camera.lookAt(center);
       camera.updateProjectionMatrix();
 
-      const controls = (gl as any).__r3f?.root?.getState?.().controls;
       if (controls?.target) {
         controls.target.copy(center);
         controls.update?.();
@@ -910,7 +919,7 @@ function ViewerRuntimeControls({
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:screenshot", handleScreenshot);
     };
-  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
+  }, [activeViewId, views, camera, gl, scene, controls, selectedPartId, productParts]);
 
   return null;
 }
