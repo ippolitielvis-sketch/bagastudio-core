@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -939,6 +939,24 @@ productMaterials?.length
     : MATERIAL_LIBRARY;
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensityStore = useConfigStore((state) => state.ledIntensity);
+  const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
+
+  useEffect(() => {
+    const setSelectMode = () => setViewerMode("select");
+    const setPanMode = () => setViewerMode("pan");
+    const setOrbitMode = () => setViewerMode("orbit");
+
+    window.addEventListener("bagastudio:tool-select", setSelectMode);
+    window.addEventListener("bagastudio:tool-pan", setPanMode);
+    window.addEventListener("bagastudio:tool-orbit", setOrbitMode);
+
+    return () => {
+      window.removeEventListener("bagastudio:tool-select", setSelectMode);
+      window.removeEventListener("bagastudio:tool-pan", setPanMode);
+      window.removeEventListener("bagastudio:tool-orbit", setOrbitMode);
+    };
+  }, []);
+
   return (
     <div className="h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
       <Canvas
@@ -1001,7 +1019,22 @@ productMaterials?.length
   woodDirection={woodDirection}
 />
 
-        <OrbitControls makeDefault />
+        <OrbitControls
+          makeDefault
+          enableRotate={viewerMode === "orbit"}
+          enablePan={viewerMode === "pan"}
+          enableZoom={true}
+          mouseButtons={{
+            LEFT:
+              viewerMode === "pan"
+                ? THREE.MOUSE.PAN
+                : viewerMode === "orbit"
+                ? THREE.MOUSE.ROTATE
+                : undefined,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          }}
+        />
       </Canvas>
     </div>
   );

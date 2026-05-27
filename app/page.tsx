@@ -169,6 +169,7 @@ const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "admin"
 >("config");
+const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
 const viewerShellRef = useRef<HTMLElement | null>(null);
 
 function goNextView() {
@@ -938,36 +939,46 @@ const availableAccessories = useMemo(() => {
 >
   <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
     {[
-      ["↖", "Selezione", null],
-      ["✥", "Vista frontale", "front"],
-      ["↻", "Reset camera", "reset"],
-      ["□", "Vista 3D", "iso"],
-      ["⌁", "Focus oggetto", "focus"],
-      ["↕", "Vista dall'alto", "top"],
-      ["◎", "Screenshot", "shot"],
-      ["↗", "Fullscreen", "fullscreen"],
+      ["↖", "Modalità selezione", "select"],
+["✥", "Modalità pan", "pan"],
+["↻", "Reset camera", "reset"],
+["□", "Modalità orbit", "orbit"],
+["⌁", "Focus oggetto", "focus"],
+["↕", "Vista dall'alto", "top"],
+["◎", "Screenshot", "shot"],
+["↗", "Fullscreen", "fullscreen"],
     ].map(([icon, title, action]: any, index) => (
       <button
         key={`${icon}-${index}`}
         type="button"
         title={title}
         onClick={() => {
-  if (action === "reset") {
-    window.dispatchEvent(new Event("bagastudio:reset-camera"));
-  } else if (action === "focus") {
-    window.dispatchEvent(new Event("bagastudio:focus-selection"));
-  } else if (action === "shot") {
-    window.dispatchEvent(new Event("bagastudio:screenshot"));
-  } else if (action === "fullscreen") {
-    requestViewerFullscreen();
-  } else if (action === "next") {
-    goNextView();
-  } else if (action) {
-    setActiveView(action);
-  }
-}}
+          if (action === "select") {
+            setActiveViewerTool("select");
+            window.dispatchEvent(new Event("bagastudio:tool-select"));
+          } else if (action === "pan") {
+            setActiveViewerTool("pan");
+            window.dispatchEvent(new Event("bagastudio:tool-pan"));
+          } else if (action === "orbit") {
+            setActiveViewerTool("orbit");
+            window.dispatchEvent(new Event("bagastudio:tool-orbit"));
+            setActiveView("iso");
+          } else if (action === "reset") {
+            window.dispatchEvent(new Event("bagastudio:reset-camera"));
+          } else if (action === "focus") {
+            window.dispatchEvent(new Event("bagastudio:focus-selection"));
+          } else if (action === "shot") {
+            window.dispatchEvent(new Event("bagastudio:screenshot"));
+          } else if (action === "fullscreen") {
+            requestViewerFullscreen();
+          } else if (action === "next") {
+            goNextView();
+          } else if (action) {
+            setActiveView(action);
+          }
+        }}
         className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
-          index === 0
+          activeViewerTool === action
             ? "bg-sky-500 text-white"
             : "text-neutral-200 hover:bg-sky-500/20"
         }`}
