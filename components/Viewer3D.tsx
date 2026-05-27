@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
-  useGLTF,
   Center,
   Environment,
   Edges,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { useConfigStore } from "@/core/state/config.state";
 import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { createLedBar } from "@/lib/engine/ledEngine";
@@ -44,6 +47,7 @@ type Viewer3DProps = {
 }>;
   visibility?: Record<string, boolean>;
   productModel: string;
+  productModelFormat?: string;
   activeViewId?: string | null;
  ledKelvin?: Record<string, number>;
  ledIntensity?: Record<string, number>;
@@ -81,6 +85,57 @@ led?: boolean;
 }[];
 };
 
+
+function inferModelFormat(url: string, explicitFormat?: string) {
+  const format = String(explicitFormat || "").toLowerCase().replace(".", "");
+  if (format) return format;
+
+  if (url.startsWith("data:")) {
+    if (url.includes("model/gltf") || url.includes("model/glb")) return "glb";
+    if (url.includes("model/stl")) return "stl";
+    if (url.includes("model/obj")) return "obj";
+    if (url.includes("model/fbx")) return "fbx";
+    return "glb";
+  }
+
+  const clean = url.split("?")[0].split("#")[0].toLowerCase();
+  return clean.split(".").pop() || "glb";
+}
+
+function forcePreviewMaterials(root: THREE.Object3D) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.frustumCulled = false;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    const apply = (mat: THREE.Material) => {
+      mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
+    };
+
+    if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
+    else if (mesh.material) apply(mesh.material as THREE.Material);
+  });
+}
+
+function buildObjectFromGeometry(geometry: THREE.BufferGeometry) {
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({
+    color: "#d8d8d8",
+    roughness: 0.55,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "STL_Mesh";
+  const group = new THREE.Group();
+  group.name = "Imported_STL";
+  group.add(mesh);
+  return group;
+}
+
 function ProductModel({
   materials = {},
   productMaterials = [],
@@ -92,6 +147,7 @@ function ProductModel({
   ledKelvin = {},
   ledIntensity = {},
   productModel,
+  productModelFormat,
   activeViewId,
   views = [],
   productParts = [],
@@ -102,7 +158,45 @@ function ProductModel({
     ? productMaterials
     : MATERIAL_LIBRARY;
 
-  const gltf = useGLTF(productModel);
+  const [loadedRoot, setLoadedRoot] = useState<THREE.Object3D | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadedRoot(null);
+    setLoadError(null);
+
+    const format = inferModelFormat(productModel, productModelFormat);
+
+    const onLoaded = (object: THREE.Object3D) => {
+      if (cancelled) return;
+      forcePreviewMaterials(object);
+      setLoadedRoot(object);
+    };
+
+    const onError = (error: unknown) => {
+      console.error("BagaStudio Viewer: model load failed", { productModel, format, error });
+      if (!cancelled) setLoadError(`Model load failed: ${format}`);
+    };
+
+    try {
+      if (format === "stl") {
+        new STLLoader().load(productModel, (geometry) => onLoaded(buildObjectFromGeometry(geometry)), undefined, onError);
+      } else if (format === "obj") {
+        new OBJLoader().load(productModel, onLoaded, undefined, onError);
+      } else if (format === "fbx") {
+        new FBXLoader().load(productModel, onLoaded, undefined, onError);
+      } else {
+        new GLTFLoader().load(productModel, (gltf) => onLoaded(gltf.scene), undefined, onError);
+      }
+    } catch (error) {
+      onError(error);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [productModel, productModelFormat]);
 
  const setSelectedPartId = useConfigStore(
   (state) => state.setSelectedPart
@@ -115,7 +209,9 @@ const highlightedRef = useRef<{
   material: THREE.Material | THREE.Material[];
 } | null>(null);
   const scene = useMemo(() => {
-    const clonedScene = gltf.scene.clone(true);
+    if (!loadedRoot) return null;
+
+    const clonedScene = loadedRoot.clone(true);
 
     clonedScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -617,7 +713,7 @@ if (wirelessActive) {
 
 return clonedScene;
 }, [
-  gltf.scene,
+  loadedRoot,
   productParts,
   productMaterials,
   materials,
@@ -700,6 +796,8 @@ if (position === "top") {
 
   return insert;
 }
+  if (!scene) return null;
+
   return (
     <Center>
 <group
@@ -981,6 +1079,7 @@ export default function Viewer3D({
   insertSizes = {},
   visibility,
   productModel,
+  productModelFormat,
   productParts,
   views = [],
   activeViewId,
@@ -1069,6 +1168,7 @@ productMaterials?.length
   ledIntensity={ledIntensity ?? ledIntensityStore}
   visibility={visibility}
   productModel={productModel}
+  productModelFormat={productModelFormat}
   productParts={productParts}
   woodDirection={woodDirection}
 />
@@ -1094,4 +1194,3 @@ productMaterials?.length
   );
 }
 
-useGLTF.preload("/models/demo-reception.glb");

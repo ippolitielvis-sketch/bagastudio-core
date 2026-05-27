@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, useGLTF, Bounds } from "@react-three/drei";
+import { OrbitControls, Bounds } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
@@ -111,6 +111,14 @@ if (width < depth * 0.4 && height > depth * 1.2) return "Fianco";
   return mesh.name || `Componente ${index + 1}`;
 }
 
+
+function getStableMeshName(rawName: string | undefined, index: number) {
+  const cleanName = String(rawName || "").trim();
+  return cleanName === "" || /^\d+$/.test(cleanName)
+    ? `Mesh_${index + 1}`
+    : cleanName;
+}
+
 function extractMeshesFromObject(object: THREE.Object3D) {
   const meshes: MeshConfig[] = [];
 
@@ -119,12 +127,9 @@ function extractMeshesFromObject(object: THREE.Object3D) {
       const mesh = child as THREE.Mesh;
 
       const rawName = mesh.name?.trim() || "";
-      const isBadName = rawName === "" || /^\d+$/.test(rawName);
-      const meshName = isBadName ? `Mesh_${meshes.length + 1}` : rawName;
+      const meshName = getStableMeshName(rawName, meshes.length);
 
-      const guessedName = isBadName
-        ? guessPartName(mesh, meshes.length)
-        : guessPartName(mesh, meshes.length);
+      const guessedName = guessPartName(mesh, meshes.length);
 
       meshes.push({
         meshName,
@@ -176,40 +181,120 @@ function AdminGLBModel({
   onSelectMesh: (meshName: string) => void;
   modelRotationY: number;
 }) {
-  const { scene } = useGLTF(url);
+  const [object, setObject] = useState<THREE.Group | null>(null);
 
-  const clonedScene = useMemo(() => {
-    const cloned = scene.clone(true);
+  useEffect(() => {
+    let cancelled = false;
+    const loader = new GLTFLoader();
 
-    cloned.rotation.y = modelRotationY;
+    loader.load(
+      url,
+      (gltf) => {
+        if (cancelled) return;
 
-    const box = new THREE.Box3().setFromObject(cloned);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
+        gltf.scene.updateMatrixWorld(true);
 
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const scale = 2 / maxDim;
+        const previewGroup = new THREE.Group();
+        let meshIndex = 0;
 
-    cloned.position.set(
-      -center.x * scale,
-      -center.y * scale,
-      -center.z * scale
+        gltf.scene.traverse((child) => {
+          if (!(child as THREE.Mesh).isMesh) return;
+
+          const sourceMesh = child as THREE.Mesh;
+          const geometry = sourceMesh.geometry?.clone();
+          if (!geometry) return;
+
+          const meshName = getStableMeshName(sourceMesh.name, meshIndex);
+          const isSelected = selectedMeshName === meshName;
+
+          // Bake world transform into the geometry.
+          // This avoids invisible GLB previews caused by nested groups, odd scales,
+          // negative transforms, original material transparency, or camera fit issues.
+          geometry.applyMatrix4(sourceMesh.matrixWorld);
+          geometry.computeVertexNormals();
+          geometry.computeBoundingBox();
+          geometry.computeBoundingSphere();
+
+          const previewMesh = new THREE.Mesh(
+            geometry,
+            new THREE.MeshStandardMaterial({
+              color: isSelected ? "#ffffff" : "#d9d9d9",
+              roughness: 0.45,
+              metalness: 0.05,
+              side: THREE.DoubleSide,
+              emissive: isSelected ? new THREE.Color("#2563eb") : new THREE.Color("#000000"),
+              emissiveIntensity: isSelected ? 0.7 : 0,
+            })
+          );
+
+          previewMesh.name = meshName;
+          previewMesh.userData.bagastudioMeshName = meshName;
+          previewMesh.castShadow = true;
+          previewMesh.receiveShadow = true;
+          previewMesh.frustumCulled = false;
+
+          previewGroup.add(previewMesh);
+          meshIndex += 1;
+        });
+
+        previewGroup.updateMatrixWorld(true);
+
+        const box = new THREE.Box3().setFromObject(previewGroup);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+
+        box.getSize(size);
+        box.getCenter(center);
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = Number.isFinite(maxDim) && maxDim > 0 ? 3 / maxDim : 1;
+
+        previewGroup.position.set(
+          -center.x * scale,
+          -center.y * scale,
+          -center.z * scale
+        );
+        previewGroup.scale.setScalar(scale);
+        previewGroup.rotation.y = modelRotationY;
+        previewGroup.updateMatrixWorld(true);
+
+        console.log("BagaStudio Admin GLB preview loaded", {
+          meshes: meshIndex,
+          size: size.toArray(),
+          center: center.toArray(),
+          scale,
+        });
+
+        setObject(previewGroup);
+      },
+      undefined,
+      (error) => {
+        console.error("BagaStudio Admin GLB preview load error:", error);
+        if (!cancelled) setObject(null);
+      }
     );
 
-    cloned.scale.setScalar(scale);
-    cloned.updateMatrixWorld(true);
+    return () => {
+      cancelled = true;
+    };
+  }, [url, selectedMeshName, modelRotationY]);
 
-    return cloned;
-  }, [scene, selectedMeshName, modelRotationY]);
+  if (!object) return null;
 
   return (
     <primitive
-      object={clonedScene}
+      object={object}
       onClick={(e: any) => {
         e.stopPropagation();
-        const clicked = e.object as THREE.Mesh;
-        if (!clicked?.name) return;
-        onSelectMesh(clicked.name);
+        const clicked = e.object as THREE.Object3D;
+        const meshName =
+          clicked?.userData?.bagastudioMeshName ||
+          clicked?.name ||
+          clicked?.parent?.userData?.bagastudioMeshName ||
+          clicked?.parent?.name ||
+          "";
+        if (!meshName) return;
+        onSelectMesh(meshName);
       }}
     />
   );
@@ -219,10 +304,12 @@ function AdminSTLModel({
   url,
   selectedMeshName,
   onSelectMesh,
+  modelRotationY,
 }: {
   url: string;
   selectedMeshName: string;
   onSelectMesh: (meshName: string) => void;
+  modelRotationY: number;
 }) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
 
@@ -258,6 +345,7 @@ function AdminSTLModel({
   return (
     <mesh
       geometry={geometry}
+      rotation={[0, modelRotationY, 0]}
       onClick={(e) => {
         e.stopPropagation();
         onSelectMesh(meshName);
@@ -279,10 +367,12 @@ function AdminOBJModel({
   url,
   selectedMeshName,
   onSelectMesh,
+  modelRotationY,
 }: {
   url: string;
   selectedMeshName: string;
   onSelectMesh: (meshName: string) => void;
+  modelRotationY: number;
 }) {
   const [object, setObject] = useState<THREE.Group | null>(null);
 
@@ -290,18 +380,25 @@ function AdminOBJModel({
     const loader = new OBJLoader();
 
     loader.load(url, (loadedObject) => {
+      let meshIndex = 0;
       loadedObject.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
+          const stableMeshName = getStableMeshName(mesh.name, meshIndex);
+          mesh.name = stableMeshName;
+          mesh.userData.bagastudioMeshName = stableMeshName;
+          mesh.frustumCulled = false;
 
           mesh.material = new THREE.MeshStandardMaterial({
-            color: mesh.name === selectedMeshName ? "#ffffff" : "#d9d9d9",
+            color: stableMeshName === selectedMeshName ? "#ffffff" : "#d9d9d9",
             roughness: 0.45,
             metalness: 0.05,
             side: THREE.DoubleSide,
-            emissive: mesh.name === selectedMeshName ? "#2563eb" : "#000000",
-            emissiveIntensity: mesh.name === selectedMeshName ? 0.7 : 0,
+            emissive: stableMeshName === selectedMeshName ? "#2563eb" : "#000000",
+            emissiveIntensity: stableMeshName === selectedMeshName ? 0.7 : 0,
           });
+
+          meshIndex += 1;
         }
       });
 
@@ -321,12 +418,13 @@ function AdminOBJModel({
         -center.z * scale
       );
 
+      loadedObject.rotation.y = modelRotationY;
       loadedObject.scale.setScalar(scale);
       loadedObject.updateMatrixWorld(true);
 
       setObject(loadedObject);
     });
-  }, [url, selectedMeshName]);
+  }, [url, selectedMeshName, modelRotationY]);
 
   if (!object) return null;
 
@@ -335,9 +433,15 @@ function AdminOBJModel({
       object={object}
       onClick={(e: any) => {
         e.stopPropagation();
-        const clicked = e.object as THREE.Mesh;
-        if (!clicked?.name) return;
-        onSelectMesh(clicked.name);
+        const clicked = e.object as THREE.Object3D;
+        const meshName =
+          clicked?.userData?.bagastudioMeshName ||
+          clicked?.name ||
+          clicked?.parent?.userData?.bagastudioMeshName ||
+          clicked?.parent?.name ||
+          "";
+        if (!meshName) return;
+        onSelectMesh(meshName);
       }}
     />
   );
@@ -346,10 +450,12 @@ function AdminFBXModel({
   url,
   selectedMeshName,
   onSelectMesh,
+  modelRotationY,
 }: {
   url: string;
   selectedMeshName: string;
   onSelectMesh: (meshName: string) => void;
+  modelRotationY: number;
 }) {
   const [object, setObject] = useState<THREE.Group | null>(null);
 
@@ -357,18 +463,25 @@ function AdminFBXModel({
     const loader = new FBXLoader();
 
     loader.load(url, (loadedObject) => {
+      let meshIndex = 0;
       loadedObject.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
+          const stableMeshName = getStableMeshName(mesh.name, meshIndex);
+          mesh.name = stableMeshName;
+          mesh.userData.bagastudioMeshName = stableMeshName;
+          mesh.frustumCulled = false;
 
           mesh.material = new THREE.MeshStandardMaterial({
-            color: mesh.name === selectedMeshName ? "#ffffff" : "#d9d9d9",
+            color: stableMeshName === selectedMeshName ? "#ffffff" : "#d9d9d9",
             roughness: 0.45,
             metalness: 0.05,
             side: THREE.DoubleSide,
-            emissive: mesh.name === selectedMeshName ? "#2563eb" : "#000000",
-            emissiveIntensity: mesh.name === selectedMeshName ? 0.7 : 0,
+            emissive: stableMeshName === selectedMeshName ? "#2563eb" : "#000000",
+            emissiveIntensity: stableMeshName === selectedMeshName ? 0.7 : 0,
           });
+
+          meshIndex += 1;
         }
       });
 
@@ -388,12 +501,13 @@ function AdminFBXModel({
         -center.z * scale
       );
 
+      loadedObject.rotation.y = modelRotationY;
       loadedObject.scale.setScalar(scale);
       loadedObject.updateMatrixWorld(true);
 
       setObject(loadedObject);
     });
-  }, [url, selectedMeshName]);
+  }, [url, selectedMeshName, modelRotationY]);
 
   if (!object) return null;
 
@@ -402,9 +516,15 @@ function AdminFBXModel({
       object={object}
       onClick={(e: any) => {
         e.stopPropagation();
-        const clicked = e.object as THREE.Mesh;
-        if (!clicked?.name) return;
-        onSelectMesh(clicked.name);
+        const clicked = e.object as THREE.Object3D;
+        const meshName =
+          clicked?.userData?.bagastudioMeshName ||
+          clicked?.name ||
+          clicked?.parent?.userData?.bagastudioMeshName ||
+          clicked?.parent?.name ||
+          "";
+        if (!meshName) return;
+        onSelectMesh(meshName);
       }}
     />
   );
@@ -442,6 +562,7 @@ function AdminModelRouter({
         url={url}
         selectedMeshName={selectedMeshName}
         onSelectMesh={onSelectMesh}
+        modelRotationY={modelRotationY}
       />
     );
   }
@@ -452,6 +573,7 @@ function AdminModelRouter({
         url={url}
         selectedMeshName={selectedMeshName}
         onSelectMesh={onSelectMesh}
+        modelRotationY={modelRotationY}
       />
     );
   }
@@ -461,6 +583,7 @@ if (ext === "fbx") {
       url={url}
       selectedMeshName={selectedMeshName}
       onSelectMesh={onSelectMesh}
+      modelRotationY={modelRotationY}
     />
   );
 }
@@ -623,6 +746,7 @@ const [depthMax, setDepthMax] = useState(100);
 const [modelFileName, setModelFileName] = useState("");
 const [modelExtension, setModelExtension] = useState("glb");
 const [modelPreviewUrl, setModelPreviewUrl] = useState("");
+const [modelDataUrl, setModelDataUrl] = useState("");
 const [selectedMeshName, setSelectedMeshName] = useState("");
 const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
@@ -644,7 +768,7 @@ useEffect(() => {
   }, 250);
 }, [selectedMeshName]);
 
-const buildAdminBackup = () => ({
+const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
   savedAt: new Date().toISOString(),
@@ -663,10 +787,11 @@ const buildAdminBackup = () => ({
     depthMax,
     modelFileName,
     modelExtension,
+    modelDataUrl: includeHeavyModelData ? modelDataUrl : "",
     selectedMeshName,
     modelRotationY,
     meshList,
-    generatedJson,
+    generatedJson: includeHeavyModelData ? generatedJson : "",
   },
 });
 
@@ -692,6 +817,7 @@ const restoreAdminBackup = (backup: any) => {
 
   setModelFileName(state.modelFileName ?? "");
   setModelExtension(state.modelExtension ?? "glb");
+  setModelDataUrl(state.modelDataUrl ?? "");
   setSelectedMeshName(state.selectedMeshName ?? "");
   setModelRotationY(Number(state.modelRotationY ?? 0));
   setMeshList(Array.isArray(state.meshList) ? state.meshList : []);
@@ -726,9 +852,14 @@ useEffect(() => {
   if (!autosaveHydratedRef.current) return;
 
   const timer = window.setTimeout(() => {
-    const backup = buildAdminBackup();
-    window.localStorage.setItem(BAGASTUDIO_ADMIN_AUTOSAVE_KEY, JSON.stringify(backup));
-    setBackupStatus(`${adminT.autosave}: ${new Date().toLocaleTimeString()}`);
+    try {
+      const backup = buildAdminBackup(false);
+      window.localStorage.setItem(BAGASTUDIO_ADMIN_AUTOSAVE_KEY, JSON.stringify(backup));
+      setBackupStatus(`${adminT.autosave}: ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      console.warn("BagaStudio Admin autosave skipped", error);
+      setBackupStatus("Autosave saltato: package troppo pesante");
+    }
   }, 700);
 
   return () => window.clearTimeout(timer);
@@ -747,6 +878,7 @@ useEffect(() => {
   depthMax,
   modelFileName,
   modelExtension,
+  modelDataUrl,
   selectedMeshName,
   modelRotationY,
   meshList,
@@ -946,8 +1078,18 @@ const importBackupFile = async (file: File | undefined) => {
     if (!file) return;
 setModelFileName(file.name);
 const url = URL.createObjectURL(file);
-    setModelPreviewUrl(url);
+setModelPreviewUrl(url);
+const dataUrl = await new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ""));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+setModelDataUrl(dataUrl);
 const ext = file.name.split(".").pop()?.toLowerCase() || "glb";
+setModelExtension(ext);
+setSelectedMeshName("");
+setMeshList([]);
 if (ext === "stl") {
   setMeshList([
     {
@@ -1434,10 +1576,16 @@ name: productName,
 category: productCategory,
       version: "1.0.0",
       assets: {
-  modelUrl: `/models/${modelFileName || "imported-model.glb"}`,
+  modelUrl: modelDataUrl || `/models/${modelFileName || "imported-model.glb"}`,
+  embeddedModelDataUrl: modelDataUrl || null,
   originalFileUrl: `/models/${modelFileName || "imported-model.glb"}`,
-  originalFormat: "glb",
-  convertedModelUrl: `/models/${modelFileName || "imported-model.glb"}`,
+  originalFormat: modelExtension,
+  sourceFileName: modelFileName || "imported-model.glb",
+  convertedModelUrl: ["glb", "gltf"].includes(modelExtension)
+    ? (modelDataUrl || `/models/${modelFileName || "imported-model.glb"}`)
+    : "/models/demo-product-2.glb",
+  requiresConversion: !["glb", "gltf"].includes(modelExtension),
+  conversionTargetFormat: "glb",
       },
     dimensions: {
   width: {

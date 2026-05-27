@@ -8,7 +8,6 @@ import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 import { calculatePricing } from "@/core/engines/pricing.engine";
 import { accessoriesCatalog } from "@/core/catalogs/accessories.catalog";
-import { DICTIONARY } from "./i18n";
 
 type AnyProduct = any;
 
@@ -48,6 +47,250 @@ const DEFAULT_VIEWS = [
 ];
 
 
+const DICTIONARY = {
+  it: {
+    language: "Lingua",
+    italian: "Italiano",
+    english: "Inglese",
+    totalPrice: "Prezzo totale",
+    vatIncluded: "IVA inclusa",
+    configurator: "CONFIGURATORE 3D",
+    realisticRender: "RENDER REALISTICI",
+    ar: "REALTÀ AUMENTATA",
+    quotes: "PREVENTIVI ISTANTANEI",
+    project: "PROGETTO",
+    materials: "MATERIALI",
+    accessories: "ACCESSORI",
+    views: "VISTE",
+    studioTools: "STUDIO TOOLS",
+    save: "Salva",
+    export: "Esporta",
+    quote: "Preventivo",
+    addToQuote: "Aggiungi al preventivo",
+    adminPanel: "Admin Panel",
+    adminPanelDescription: "Importer modelli, mapping componenti, catalogo prodotti, materiali, accessori e strumenti avanzati.",
+    importProductJson: "Importa prodotto JSON",
+    restoreAutosave: "Ripristina autosave",
+    importBackup: "Importa backup",
+    selectedPart: "Pezzo selezionato",
+    noSelectedPart: "Nessun pezzo selezionato",
+    noPart: "Nessun pezzo",
+    dimensions: "Dimensioni",
+    width: "Larghezza",
+    height: "Altezza",
+    depth: "Profondità",
+    max: "Max",
+    visibility: "Visibilità",
+    showComponent: "Mostra componente",
+    loadedFile: "File caricato",
+    backupAutosave: "Backup / Autosave",
+    saveAutosave: "Salva autosave",
+    downloadFullBackup: "Scarica backup completo",
+    lastAutosave: "Ultimo autosave",
+    autosaveReady: "Autosave pronto.",
+    noAutosaveAvailable: "Nessun autosave disponibile.",
+    customerConfiguration: "Configurazione cliente",
+    exportConfiguration: "Esporta configurazione",
+    importConfiguration: "Importa configurazione",
+    applyAccessoriesTo: "Applichi accessori a",
+    selectPartFromModel: "Seleziona un pezzo dal modello.",
+    insertDimensions: "Dimensioni inserto",
+    insertMaterial: "Materiale inserto",
+    ledTemperature: "Temperatura LED",
+    ledIntensity: "Intensità LED",
+    selectMaterial: "Seleziona materiale",
+    woodDirection: "Senso venatura",
+    horizontal: "Orizzontale",
+    vertical: "Verticale",
+    runtimeJson: "Runtime JSON",
+    importProductFromSidebar: "Importa un JSON prodotto dalla sidebar.",
+    projectSummary: "Riepilogo progetto",
+    product: "Prodotto",
+    included: "Inclusi",
+    configured: "Configurati",
+    ready: "Pronto",
+    projectTotal: "Totale progetto",
+    objectProperties: "Proprietà oggetto",
+    name: "Nome",
+    view: "Vista",
+    closeLogo: "Chiudi logo",
+    openLogo: "Apri logo BagaStudio Core",
+    enlargedLogoAlt: "BagaStudio Core logo ingrandito",
+    viewFront: "Frontale",
+    viewBack: "Retro",
+    viewLeft: "Sinistra",
+    viewRight: "Destra",
+    viewTop: "Alto",
+    viewIso: "3D",
+    toolSelect: "Modalità selezione",
+    toolPan: "Modalità pan",
+    toolReset: "Reset camera",
+    toolOrbit: "Modalità orbit",
+    toolFocus: "Focus oggetto",
+    toolTop: "Vista dall'alto",
+    toolScreenshot: "Screenshot",
+    toolFullscreen: "Fullscreen",
+    accessoryInsert: "Inserto",
+    accessoryLed: "LED",
+    on: "ON",
+    off: "OFF",
+    insertWidthPercent: "Larghezza %",
+    insertDepthPercent: "Profondità %",
+    insertOffsetX: "Sposta X",
+    insertOffsetZ: "Sposta Z",
+    materialMarble: "Marmo",
+    materialCalacatta: "Calacatta",
+    materialMarquinia: "Marquinia",
+    materialStatuario: "Statuario",
+    materialTravertino: "Travertino",
+    materialOnice: "Onice",
+    materialEmperador: "Emperador",
+    backup: "Backup",
+    autosave: "Autosave",
+    led: "LED",
+    partTop: "Piano",
+    partSideRight: "Fianco destro",
+    partSideLeft: "Fianco sinistro",
+    partBack: "Schiena",
+    partFront: "Frontale",
+    partDoor: "Anta",
+    partDrawer: "Cassetto",
+    partHandle: "Maniglia",
+    partShelf: "Ripiano",
+    partMirror: "Specchio",
+    partBase: "Base",
+    partPanel: "Pannello",
+    invalidProductJson: "JSON prodotto non valido.",
+    invalidBackupJson: "Backup non valido.",
+    invalidConfigurationJson: "Configurazione non valida.",
+    productImported: "Prodotto importato correttamente.",
+    backupImported: "Backup importato correttamente.",
+    configurationImported: "Configurazione importata correttamente.",
+    autosaveRestored: "Autosave ripristinato.",
+    autosaveSavedManual: "Autosave salvato.",
+  },
+  en: {
+    language: "Language",
+    italian: "Italian",
+    english: "English",
+    totalPrice: "Total price",
+    vatIncluded: "VAT included",
+    configurator: "3D CONFIGURATOR",
+    realisticRender: "REALISTIC RENDERS",
+    ar: "AUGMENTED REALITY",
+    quotes: "INSTANT QUOTES",
+    project: "PROJECT",
+    materials: "MATERIALS",
+    accessories: "ACCESSORIES",
+    views: "VIEWS",
+    studioTools: "STUDIO TOOLS",
+    save: "Save",
+    export: "Export",
+    quote: "Quote",
+    addToQuote: "Add to quote",
+    adminPanel: "Admin Panel",
+    adminPanelDescription: "Model importer, component mapping, product catalog, materials, accessories and advanced tools.",
+    importProductJson: "Import product JSON",
+    restoreAutosave: "Restore autosave",
+    importBackup: "Import backup",
+    selectedPart: "Selected part",
+    noSelectedPart: "No part selected",
+    noPart: "No part",
+    dimensions: "Dimensions",
+    width: "Width",
+    height: "Height",
+    depth: "Depth",
+    max: "Max",
+    visibility: "Visibility",
+    showComponent: "Show component",
+    loadedFile: "Loaded file",
+    backupAutosave: "Backup / Autosave",
+    saveAutosave: "Save autosave",
+    downloadFullBackup: "Download full backup",
+    lastAutosave: "Last autosave",
+    autosaveReady: "Autosave ready.",
+    noAutosaveAvailable: "No autosave available.",
+    customerConfiguration: "Customer configuration",
+    exportConfiguration: "Export configuration",
+    importConfiguration: "Import configuration",
+    applyAccessoriesTo: "Apply accessories to",
+    selectPartFromModel: "Select a part from the model.",
+    insertDimensions: "Insert dimensions",
+    insertMaterial: "Insert material",
+    ledTemperature: "LED temperature",
+    ledIntensity: "LED intensity",
+    selectMaterial: "Select material",
+    woodDirection: "Wood grain direction",
+    horizontal: "Horizontal",
+    vertical: "Vertical",
+    runtimeJson: "Runtime JSON",
+    importProductFromSidebar: "Import a product JSON from the sidebar.",
+    projectSummary: "Project summary",
+    product: "Product",
+    included: "Included",
+    configured: "Configured",
+    ready: "Ready",
+    projectTotal: "Project total",
+    objectProperties: "Object properties",
+    name: "Name",
+    view: "View",
+    closeLogo: "Close logo",
+    openLogo: "Open BagaStudio Core logo",
+    enlargedLogoAlt: "Enlarged BagaStudio Core logo",
+    viewFront: "Front",
+    viewBack: "Back",
+    viewLeft: "Left",
+    viewRight: "Right",
+    viewTop: "Top",
+    viewIso: "3D",
+    toolSelect: "Selection mode",
+    toolPan: "Pan mode",
+    toolReset: "Reset camera",
+    toolOrbit: "Orbit mode",
+    toolFocus: "Focus object",
+    toolTop: "Top view",
+    toolScreenshot: "Screenshot",
+    toolFullscreen: "Fullscreen",
+    accessoryInsert: "Insert",
+    accessoryLed: "LED",
+    on: "ON",
+    off: "OFF",
+    insertWidthPercent: "Width %",
+    insertDepthPercent: "Depth %",
+    insertOffsetX: "Move X",
+    insertOffsetZ: "Move Z",
+    materialMarble: "Marble",
+    materialCalacatta: "Calacatta",
+    materialMarquinia: "Marquinia",
+    materialStatuario: "Statuario",
+    materialTravertino: "Travertino",
+    materialOnice: "Onyx",
+    materialEmperador: "Emperador",
+    backup: "Backup",
+    autosave: "Autosave",
+    led: "LED",
+    partTop: "Top",
+    partSideRight: "Right side",
+    partSideLeft: "Left side",
+    partBack: "Back panel",
+    partFront: "Front",
+    partDoor: "Door",
+    partDrawer: "Drawer",
+    partHandle: "Handle",
+    partShelf: "Shelf",
+    partMirror: "Mirror",
+    partBase: "Base",
+    partPanel: "Panel",
+    invalidProductJson: "Invalid product JSON.",
+    invalidBackupJson: "Invalid backup.",
+    invalidConfigurationJson: "Invalid configuration.",
+    productImported: "Product imported successfully.",
+    backupImported: "Backup imported successfully.",
+    configurationImported: "Configuration imported successfully.",
+    autosaveRestored: "Autosave restored.",
+    autosaveSavedManual: "Autosave saved.",
+  },
+};
 
 const VIEW_LABEL_KEYS: Record<string, keyof typeof DICTIONARY.it> = {
   front: "viewFront",
@@ -182,11 +425,39 @@ function normalizeProduct(product: AnyProduct) {
 function getModelUrl(product: AnyProduct | null) {
   if (!product) return "";
   return (
+    product.assets?.embeddedModelDataUrl ||
+    product.assets?.convertedModelDataUrl ||
+    product.assets?.modelDataUrl ||
     product.assets?.convertedModelUrl ||
     product.assets?.modelUrl ||
     product.assets?.originalFileUrl ||
     "/models/demo-product-2.glb"
   );
+}
+
+function getModelFormat(product: AnyProduct | null) {
+  const format = String(
+    product?.assets?.originalFormat ||
+      product?.assets?.format ||
+      product?.assets?.modelFormat ||
+      ""
+  )
+    .toLowerCase()
+    .replace(".", "");
+
+  if (format) return format;
+
+  const modelUrl = getModelUrl(product);
+  if (modelUrl.startsWith("data:")) {
+    if (modelUrl.includes("model/fbx")) return "fbx";
+    if (modelUrl.includes("model/obj")) return "obj";
+    if (modelUrl.includes("model/stl")) return "stl";
+    if (modelUrl.includes("model/gltf") || modelUrl.includes("model/glb")) return "glb";
+    return "glb";
+  }
+
+  const cleanUrl = modelUrl.split("?")[0].split("#")[0].toLowerCase();
+  return cleanUrl.split(".").pop() || "glb";
 }
 
 function isAccessoryActive(accessories: any, partId: string, accessoryId: string) {
@@ -396,7 +667,7 @@ const availableAccessories = useMemo(() => {
       setActiveView(nextProduct.views?.[0]?.id || "iso");
       setSelectedPart(null);
       setImportName(file.name);
-      alert(t.productImported);
+      console.info("BagaStudio product imported successfully");
     } catch (error) {
       console.error("BagaStudio product import error", error);
       alert(t.invalidProductJson);
@@ -1155,6 +1426,7 @@ const availableAccessories = useMemo(() => {
       ledIntensity={ledIntensity}
       activeViewId={activeViewId}
       productModel={getModelUrl(runtimeProduct)}
+      productModelFormat={getModelFormat(runtimeProduct)}
       productMaterials={MATERIAL_LIBRARY}
       productParts={runtimeProduct.parts}
       views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
