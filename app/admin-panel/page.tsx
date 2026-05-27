@@ -466,7 +466,143 @@ if (ext === "fbx") {
 }
   return null;
 }
+type AdminLanguage = "it" | "en";
+
+const ADMIN_I18N = {
+  it: {
+    adminPanel: "Admin Panel",
+    subtitle: "Importa modelli, configura componenti, materiali, accessori e genera il package JSON prodotto.",
+    backViewer: "Torna al Viewer",
+    downloadBackup: "Scarica backup",
+    importer: "Importer",
+    productCatalog: "Catalogo prodotti",
+    materials: "Materiali",
+    accessoriesPricing: "Accessori / Pricing",
+    controlCenter: "Control Center",
+    adminTools: "Admin Tools",
+    toolsDesc: "Strumenti tecnici separati dal viewer cliente. Qui prepari package prodotto, mapping componenti e backup.",
+    stepImport: "01 · Import modello",
+    stepMapping: "02 · Mapping componenti",
+    stepPackage: "03 · Product package",
+    autosave: "Autosave",
+    backupProject: "Backup progetto",
+    backupDesc: "Autosave locale attivo. Usa backup manuale prima di modifiche importanti o prima di sostituire file.",
+    restoreAutosave: "Ripristina autosave",
+    importBackup: "Importa backup",
+    import3d: "1. Importa modello 3D",
+    formats: "Formati previsti: GLB, GLTF, OBJ, FBX, STL. Per ora useremo GLB come formato principale.",
+    rotation: "Rotazione",
+    preview3d: "Preview 3D",
+    mapping: "2. Mapping componenti",
+    emptyMesh: "Qui comparirà la lista mesh del modello importato.",
+    selectable: "Selezionabile",
+    visible: "Visibile",
+    ledCompatible: "Compatibile LED",
+    insertCompatible: "Compatibile Inserto",
+    ledPosition: "LED posizione",
+    ledFrontOffset: "LED front offset",
+    ledSideMargin: "LED side margin",
+    ledYOffset: "LED Y offset",
+    materialSlots: "Slot materiali",
+    compatibleAccessories: "Accessori compatibili",
+    generatePackage: "3. Genera product package",
+    productInfo: "Informazioni prodotto",
+    productId: "ID prodotto",
+    productName: "Nome prodotto",
+    category: "Categoria",
+    widthMin: "Larghezza min",
+    widthDefault: "Larghezza default",
+    widthMax: "Larghezza max",
+    heightMin: "Altezza min",
+    heightDefault: "Altezza default",
+    heightMax: "Altezza max",
+    depthMin: "Profondità min",
+    depthDefault: "Profondità default",
+    depthMax: "Profondità max",
+    generateJson: "Genera JSON prodotto",
+    noAutosaveLoaded: "Nessun autosave caricato",
+    restoreCompleted: "Ripristino completato",
+    dateUnavailable: "data non disponibile",
+    autosaveAvailable: "Autosave disponibile",
+    autosaveUnreadable: "Autosave presente ma non leggibile",
+    noAutosaveAvailable: "Nessun autosave disponibile",
+    noAutosaveToRestore: "Nessun autosave da ripristinare",
+    autosaveError: "Errore: autosave non leggibile",
+    backupFileError: "Errore: file backup non valido",
+    chooseFile: "Scegli file",
+    noFileSelected: "Nessun file selezionato",
+    language: "Lingua",
+  },
+  en: {
+    adminPanel: "Admin Panel",
+    subtitle: "Import models, configure components, materials, accessories and generate the product JSON package.",
+    backViewer: "Back to Viewer",
+    downloadBackup: "Download backup",
+    importer: "Importer",
+    productCatalog: "Product catalog",
+    materials: "Materials",
+    accessoriesPricing: "Accessories / Pricing",
+    controlCenter: "Control Center",
+    adminTools: "Admin Tools",
+    toolsDesc: "Technical tools separated from the client viewer. Here you prepare product packages, component mapping and backups.",
+    stepImport: "01 · Import model",
+    stepMapping: "02 · Component mapping",
+    stepPackage: "03 · Product package",
+    autosave: "Autosave",
+    backupProject: "Project backup",
+    backupDesc: "Local autosave is active. Use manual backup before important changes or before replacing files.",
+    restoreAutosave: "Restore autosave",
+    importBackup: "Import backup",
+    import3d: "1. Import 3D model",
+    formats: "Supported formats: GLB, GLTF, OBJ, FBX, STL. For now GLB is the main format.",
+    rotation: "Rotation",
+    preview3d: "3D Preview",
+    mapping: "2. Component mapping",
+    emptyMesh: "The imported model mesh list will appear here.",
+    selectable: "Selectable",
+    visible: "Visible",
+    ledCompatible: "LED compatible",
+    insertCompatible: "Insert compatible",
+    ledPosition: "LED position",
+    ledFrontOffset: "LED front offset",
+    ledSideMargin: "LED side margin",
+    ledYOffset: "LED Y offset",
+    materialSlots: "Material slots",
+    compatibleAccessories: "Compatible accessories",
+    generatePackage: "3. Generate product package",
+    productInfo: "Product information",
+    productId: "Product ID",
+    productName: "Product name",
+    category: "Category",
+    widthMin: "Min width",
+    widthDefault: "Default width",
+    widthMax: "Max width",
+    heightMin: "Min height",
+    heightDefault: "Default height",
+    heightMax: "Max height",
+    depthMin: "Min depth",
+    depthDefault: "Default depth",
+    depthMax: "Max depth",
+    generateJson: "Generate product JSON",
+    noAutosaveLoaded: "No autosave loaded",
+    restoreCompleted: "Restore completed",
+    dateUnavailable: "date unavailable",
+    autosaveAvailable: "Autosave available",
+    autosaveUnreadable: "Autosave found but unreadable",
+    noAutosaveAvailable: "No autosave available",
+    noAutosaveToRestore: "No autosave to restore",
+    autosaveError: "Error: autosave unreadable",
+    backupFileError: "Error: invalid backup file",
+    chooseFile: "Choose file",
+    noFileSelected: "No file selected",
+    language: "Language",
+  },
+} as const;
+
 export default function AdminPage() {
+
+const [adminLanguage, setAdminLanguage] = useState<AdminLanguage>("it");
+const adminT = ADMIN_I18N[adminLanguage];
 
 const [meshList, setMeshList] = useState<MeshConfig[]>([]);
 const [generatedJson, setGeneratedJson] = useState("");
@@ -490,7 +626,7 @@ const [modelPreviewUrl, setModelPreviewUrl] = useState("");
 const [selectedMeshName, setSelectedMeshName] = useState("");
 const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
-const [backupStatus, setBackupStatus] = useState("Nessun autosave caricato");
+const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
 const autosaveHydratedRef = useRef(false);
 const meshCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 const meshInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -561,7 +697,7 @@ const restoreAdminBackup = (backup: any) => {
   setMeshList(Array.isArray(state.meshList) ? state.meshList : []);
   setGeneratedJson(state.generatedJson ?? "");
 
-  setBackupStatus(`Ripristino completato: ${new Date().toLocaleString()}`);
+  setBackupStatus(`${adminT.restoreCompleted}: ${new Date().toLocaleString()}`);
 };
 
 useEffect(() => {
@@ -573,17 +709,17 @@ useEffect(() => {
       const parsed = JSON.parse(saved);
       const savedAt = parsed?.savedAt
         ? new Date(parsed.savedAt).toLocaleString()
-        : "data non disponibile";
-      setBackupStatus(`Autosave disponibile: ${savedAt}`);
+        : adminT.dateUnavailable;
+      setBackupStatus(`${adminT.autosaveAvailable}: ${savedAt}`);
     } catch {
-      setBackupStatus("Autosave presente ma non leggibile");
+      setBackupStatus(adminT.autosaveUnreadable);
     }
   } else {
-    setBackupStatus("Nessun autosave disponibile");
+    setBackupStatus(adminT.noAutosaveAvailable);
   }
 
   autosaveHydratedRef.current = true;
-}, []);
+}, [adminLanguage]);
 
 useEffect(() => {
   if (typeof window === "undefined") return;
@@ -592,7 +728,7 @@ useEffect(() => {
   const timer = window.setTimeout(() => {
     const backup = buildAdminBackup();
     window.localStorage.setItem(BAGASTUDIO_ADMIN_AUTOSAVE_KEY, JSON.stringify(backup));
-    setBackupStatus(`Autosave: ${new Date().toLocaleTimeString()}`);
+    setBackupStatus(`${adminT.autosave}: ${new Date().toLocaleTimeString()}`);
   }, 700);
 
   return () => window.clearTimeout(timer);
@@ -615,6 +751,7 @@ useEffect(() => {
   modelRotationY,
   meshList,
   generatedJson,
+  adminLanguage,
 ]);
 
 const downloadAdminBackup = () => {
@@ -627,14 +764,14 @@ const restoreLastAutosave = () => {
 
   const saved = window.localStorage.getItem(BAGASTUDIO_ADMIN_AUTOSAVE_KEY);
   if (!saved) {
-    setBackupStatus("Nessun autosave da ripristinare");
+    setBackupStatus(adminT.noAutosaveToRestore);
     return;
   }
 
   try {
     restoreAdminBackup(JSON.parse(saved));
   } catch {
-    setBackupStatus("Errore: autosave non leggibile");
+    setBackupStatus(adminT.autosaveError);
   }
 };
 
@@ -645,7 +782,7 @@ const importBackupFile = async (file: File | undefined) => {
     const text = await file.text();
     restoreAdminBackup(JSON.parse(text));
   } catch {
-    setBackupStatus("Errore: file backup non valido");
+    setBackupStatus(adminT.backupFileError);
   }
 };
 
@@ -665,43 +802,54 @@ const importBackupFile = async (file: File | undefined) => {
                   BAGASTUDIO CORE
                 </p>
                 <h1 className="mt-1 text-4xl font-black tracking-tight text-white sm:text-5xl">
-                  Admin Panel
+                  {adminT.adminPanel}
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-                  Importa modelli, configura componenti, materiali, accessori e genera il package JSON prodotto.
+                  {adminT.subtitle}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-300">
+                {adminT.language}
+                <select
+                  value={adminLanguage}
+                  onChange={(e) => setAdminLanguage(e.target.value as AdminLanguage)}
+                  className="rounded-2xl border border-cyan-400/30 bg-slate-950 px-4 py-3 text-sm font-black normal-case text-white outline-none"
+                >
+                  <option className="bg-slate-950 text-white" value="it">Italiano</option>
+                  <option className="bg-slate-950 text-white" value="en">English</option>
+                </select>
+              </label>
               <a
                 href="/"
                 className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 shadow-[0_0_22px_rgba(14,165,233,0.10)] transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
               >
-                Torna al Viewer
+                {adminT.backViewer}
               </a>
               <button
                 type="button"
                 onClick={downloadAdminBackup}
                 className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)] transition hover:bg-cyan-400"
               >
-                Scarica backup
+                {adminT.downloadBackup}
               </button>
             </div>
           </div>
 
           <nav className="grid grid-cols-2 gap-2 px-6 py-4 md:grid-cols-4">
             <div className="rounded-2xl bg-cyan-500 px-4 py-3 text-center text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)]">
-              Importer
+              {adminT.importer}
             </div>
             <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
-              Catalogo prodotti
+              {adminT.productCatalog}
             </div>
             <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
-              Materiali
+              {adminT.materials}
             </div>
             <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
-              Accessori / Pricing
+              {adminT.accessoriesPricing}
             </div>
           </nav>
         </header>
@@ -710,28 +858,28 @@ const importBackupFile = async (file: File | undefined) => {
           <aside className="space-y-5 rounded-[30px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.40)] backdrop-blur-xl">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
-                Control Center
+                {adminT.controlCenter}
               </p>
-              <h2 className="mt-2 text-2xl font-black">Admin Tools</h2>
+              <h2 className="mt-2 text-2xl font-black">{adminT.adminTools}</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                Strumenti tecnici separati dal viewer cliente. Qui prepari package prodotto, mapping componenti e backup.
+                {adminT.toolsDesc}
               </p>
             </div>
 
             <div className="grid gap-2">
               <button type="button" className="rounded-2xl bg-cyan-500 px-4 py-3 text-left text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.25)]">
-                01 · Import modello
+                {adminT.stepImport}
               </button>
               <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
-                02 · Mapping componenti
+                {adminT.stepMapping}
               </button>
               <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
-                03 · Product package
+                {adminT.stepPackage}
               </button>
             </div>
 
             <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4 shadow-inner shadow-cyan-950/20">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">Autosave</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">{adminT.autosave}</p>
               <p className="mt-2 text-sm text-slate-300">{backupStatus}</p>
             </div>
           </aside>
@@ -742,10 +890,10 @@ const importBackupFile = async (file: File | undefined) => {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-semibold">
-                Backup progetto
+                {adminT.backupProject}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Autosave locale attivo. Usa backup manuale prima di modifiche importanti o prima di sostituire file.
+                {adminT.backupDesc}
               </p>
               <p className="mt-2 text-xs text-cyan-300">
                 {backupStatus}
@@ -758,7 +906,7 @@ const importBackupFile = async (file: File | undefined) => {
                 onClick={downloadAdminBackup}
                 className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-cyan-500/20"
               >
-                Scarica backup
+                {adminT.downloadBackup}
               </button>
 
               <button
@@ -766,11 +914,11 @@ const importBackupFile = async (file: File | undefined) => {
                 onClick={restoreLastAutosave}
                 className="rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-bold text-cyan-100"
               >
-                Ripristina autosave
+                {adminT.restoreAutosave}
               </button>
 
               <label className="cursor-pointer rounded-xl border border-cyan-400/25 bg-white/5 px-4 py-2 text-sm font-bold text-white">
-                Importa backup
+                {adminT.importBackup}
                 <input
                   type="file"
                   accept=".json"
@@ -784,10 +932,13 @@ const importBackupFile = async (file: File | undefined) => {
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
-            1. Importa modello 3D
+            {adminT.import3d}
           </h2>
 
-          <input
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="cursor-pointer rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-400">
+              {adminT.chooseFile}
+<input
   type="file"
   accept=".glb,.gltf,.obj,.stl,.fbx"
   onChange={async (e) => {
@@ -873,11 +1024,14 @@ insertOffsetZ: "1",
       setMeshList(meshes);
     });
   }}
-  className="block w-full text-sm text-neutral-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-500 file:px-4 file:py-2 file:font-bold file:text-white"
+  className="hidden"
 />
+            </label>
+            <span className="text-sm text-slate-300">{modelFileName || adminT.noFileSelected}</span>
+          </div>
 
           <p className="text-xs text-slate-500 mt-3">
-            Formati previsti: GLB, GLTF, OBJ, FBX, STL. Per ora useremo GLB come formato principale.
+            {adminT.formats}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
   <button
@@ -885,7 +1039,7 @@ insertOffsetZ: "1",
     onClick={() => setModelRotationY(0)}
     className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
-    Rotazione 0°
+    {adminT.rotation} 0°
   </button>
 
   <button
@@ -893,7 +1047,7 @@ insertOffsetZ: "1",
     onClick={() => setModelRotationY(Math.PI / 2)}
     className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
-    Rotazione 90°
+    {adminT.rotation} 90°
   </button>
 
   <button
@@ -901,7 +1055,7 @@ insertOffsetZ: "1",
     onClick={() => setModelRotationY(Math.PI)}
     className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
-    Rotazione 180°
+    {adminT.rotation} 180°
   </button>
 
   <button
@@ -909,13 +1063,13 @@ insertOffsetZ: "1",
     onClick={() => setModelRotationY((Math.PI * 3) / 2)}
     className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
   >
-    Rotazione 270°
+    {adminT.rotation} 270°
   </button>
 </div>
         </section>
 <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
   <h2 className="text-xl font-semibold mb-4">
-    Preview 3D
+    {adminT.preview3d}
   </h2>
 
   <div className="h-[600px] overflow-hidden rounded-[30px] border border-cyan-400/20 bg-[#030a12] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
@@ -948,13 +1102,13 @@ insertOffsetZ: "1",
 </section>
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
-            2. Mapping componenti
+            {adminT.mapping}
           </h2>
 
           <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
   {meshList.length === 0 ? (
     <p className="text-slate-400">
-      Qui comparirà la lista mesh del modello importato.
+      {adminT.emptyMesh}
     </p>
   ) : (
     <div className="space-y-2">
@@ -1008,7 +1162,7 @@ insertOffsetZ: "1",
     setMeshList(updated);
   }}
 />
-    Selezionabile
+    {adminT.selectable}
   </label>
 
   <label className="flex items-center gap-2">
@@ -1021,7 +1175,7 @@ insertOffsetZ: "1",
     setMeshList(updated);
   }}
 />
-    Visibile
+    {adminT.visible}
   </label>
 
   <label className="flex items-center gap-2">
@@ -1034,7 +1188,7 @@ insertOffsetZ: "1",
     setMeshList(updated);
   }}
 />
-    Compatibile LED
+    {adminT.ledCompatible}
   </label>
 
   <label className="flex items-center gap-2">
@@ -1047,13 +1201,13 @@ insertOffsetZ: "1",
     setMeshList(updated);
   }}
 />
-    Compatibile Inserto
+    {adminT.insertCompatible}
   </label>
 </div>
 {mesh.compatibleLed && (
   <div className="grid grid-cols-4 gap-3 mt-3">
     <div>
-      <label className="text-xs text-slate-400">LED posizione</label>
+      <label className="text-xs text-slate-400">{adminT.ledPosition}</label>
       <select
         value={mesh.ledPosition}
         onChange={(e) => {
@@ -1070,7 +1224,7 @@ insertOffsetZ: "1",
     </div>
 
     <div>
-      <label className="text-xs text-slate-400">LED front offset</label>
+      <label className="text-xs text-slate-400">{adminT.ledFrontOffset}</label>
       <input
         type="number"
         value={mesh.ledFrontOffset}
@@ -1084,7 +1238,7 @@ insertOffsetZ: "1",
     </div>
 
     <div>
-      <label className="text-xs text-slate-400">LED side margin</label>
+      <label className="text-xs text-slate-400">{adminT.ledSideMargin}</label>
       <input
         type="number"
         value={mesh.ledSideMargin}
@@ -1098,7 +1252,7 @@ insertOffsetZ: "1",
     </div>
 
     <div>
-      <label className="text-xs text-slate-400">LED Y offset</label>
+      <label className="text-xs text-slate-400">{adminT.ledYOffset}</label>
       <input
         type="number"
         value={mesh.ledYOffset}
@@ -1114,7 +1268,7 @@ insertOffsetZ: "1",
 )}
 <div className="grid grid-cols-2 gap-3 mt-3">
   <div>
-    <label className="text-xs text-slate-400">Slot materiali</label>
+    <label className="text-xs text-slate-400">{adminT.materialSlots}</label>
     <input
       value={mesh.materialSlots}
       onChange={(e) => {
@@ -1128,7 +1282,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Accessori compatibili</label>
+    <label className="text-xs text-slate-400">{adminT.compatibleAccessories}</label>
     <input
       value={mesh.compatibleAccessories}
       onChange={(e) => {
@@ -1150,16 +1304,16 @@ insertOffsetZ: "1",
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <h2 className="text-xl font-semibold mb-4">
-            3. Genera product package
+            {adminT.generatePackage}
           </h2>
 <div className="space-y-3 rounded-xl border border-cyan-400/20 p-4">
-  <h3 className="text-sm font-semibold text-white">Informazioni prodotto</h3>
+  <h3 className="text-sm font-semibold text-white">{adminT.productInfo}</h3>
 
   <input
     type="text"
     value={productId}
     onChange={(e) => setProductId(e.target.value)}
-    placeholder="ID prodotto"
+    placeholder={adminT.productId}
     className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
 
@@ -1167,7 +1321,7 @@ insertOffsetZ: "1",
     type="text"
     value={productName}
     onChange={(e) => setProductName(e.target.value)}
-    placeholder="Nome prodotto"
+    placeholder={adminT.productName}
     className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
 
@@ -1175,12 +1329,12 @@ insertOffsetZ: "1",
     type="text"
     value={productCategory}
     onChange={(e) => setProductCategory(e.target.value)}
-    placeholder="Categoria"
+    placeholder={adminT.category}
     className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
   <div className="grid grid-cols-3 gap-3 pt-3">
   <div>
-    <label className="text-xs text-slate-400">Larghezza min</label>
+    <label className="text-xs text-slate-400">{adminT.widthMin}</label>
     <input
       type="number"
       value={widthMin}
@@ -1190,7 +1344,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Larghezza default</label>
+    <label className="text-xs text-slate-400">{adminT.widthDefault}</label>
     <input
       type="number"
       value={widthDefault}
@@ -1200,7 +1354,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Larghezza max</label>
+    <label className="text-xs text-slate-400">{adminT.widthMax}</label>
     <input
       type="number"
       value={widthMax}
@@ -1211,7 +1365,7 @@ insertOffsetZ: "1",
 </div>
 <div className="grid grid-cols-3 gap-3 pt-3">
   <div>
-    <label className="text-xs text-slate-400">Altezza min</label>
+    <label className="text-xs text-slate-400">{adminT.heightMin}</label>
     <input
       type="number"
       value={heightMin}
@@ -1221,7 +1375,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Altezza default</label>
+    <label className="text-xs text-slate-400">{adminT.heightDefault}</label>
     <input
       type="number"
       value={heightDefault}
@@ -1231,7 +1385,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Altezza max</label>
+    <label className="text-xs text-slate-400">{adminT.heightMax}</label>
     <input
       type="number"
       value={heightMax}
@@ -1242,7 +1396,7 @@ insertOffsetZ: "1",
   </div>
 <div className="grid grid-cols-3 gap-3 pt-3">
   <div>
-    <label className="text-xs text-slate-400">Profondità min</label>
+    <label className="text-xs text-slate-400">{adminT.depthMin}</label>
     <input
       type="number"
       value={depthMin}
@@ -1252,7 +1406,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Profondità default</label>
+    <label className="text-xs text-slate-400">{adminT.depthDefault}</label>
     <input
       type="number"
       value={depthDefault}
@@ -1262,7 +1416,7 @@ insertOffsetZ: "1",
   </div>
 
   <div>
-    <label className="text-xs text-slate-400">Profondità max</label>
+    <label className="text-xs text-slate-400">{adminT.depthMax}</label>
     <input
       type="number"
       value={depthMax}
@@ -1417,7 +1571,7 @@ URL.revokeObjectURL(url);
 }}
   className="rounded-2xl bg-cyan-500 px-5 py-3 font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.28)] transition hover:bg-cyan-400"
 >
-  Genera JSON prodotto
+  {adminT.generateJson}
 </button>
 {generatedJson && (
   <pre className="mt-4 max-h-[400px] overflow-auto rounded-2xl border border-cyan-400/15 bg-black/30 p-4 text-xs text-green-300">
