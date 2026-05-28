@@ -9,6 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 
 type MeshConfig = {
   meshName: string;
@@ -37,6 +38,10 @@ ledPosition: string;
 const BAGASTUDIO_ADMIN_AUTOSAVE_KEY = "bagastudio_core_admin_autosave_v1";
 const BAGASTUDIO_PRODUCT_LIBRARY_KEY = "bagastudio_core_product_library_v1";
 
+const BAGASTUDIO_ADMIN_SUPPORTED_MODEL_FORMATS = [".glb", ".gltf", ".dae", ".fbx", ".obj", ".stl"].join(",");
+const BAGASTUDIO_ADMIN_SUPPORTED_MODEL_FORMAT_LABEL = "GLB, GLTF, DAE, FBX, OBJ, STL";
+
+
 type ProductLibraryItem = {
   id: string;
   name: string;
@@ -46,6 +51,247 @@ type ProductLibraryItem = {
   savedAt: string;
   packageJson: string;
 };
+
+
+type AdminImporterDiagnostic = {
+  status: "idle" | "loading" | "ready" | "warning" | "error";
+  fileName: string;
+  extension: string;
+  meshCount: number;
+  selectableCount: number;
+  visibleCount: number;
+  ledReadyCount: number;
+  insertReadyCount: number;
+  accessoryReadyCount: number;
+  message: string;
+  warnings: string[];
+  errors: string[];
+  updatedAt: string;
+};
+
+const createAdminImporterDiagnostic = (patch: Partial<AdminImporterDiagnostic> = {}): AdminImporterDiagnostic => ({
+  status: patch.status || "idle",
+  fileName: patch.fileName || "",
+  extension: patch.extension || "",
+  meshCount: patch.meshCount || 0,
+  selectableCount: patch.selectableCount || 0,
+  visibleCount: patch.visibleCount || 0,
+  ledReadyCount: patch.ledReadyCount || 0,
+  insertReadyCount: patch.insertReadyCount || 0,
+  accessoryReadyCount: patch.accessoryReadyCount || 0,
+  message: patch.message || "Importer in attesa",
+  warnings: patch.warnings || [],
+  errors: patch.errors || [],
+  updatedAt: patch.updatedAt || new Date().toISOString(),
+});
+
+
+type Space3DAnalyzerComponent = {
+  id: string;
+  name: string;
+  category: string;
+  source: "keyword" | "candidate";
+};
+
+type Space3DAnalyzerMaterial = {
+  id: string;
+  name: string;
+  category: string;
+};
+
+type Space3DAnalyzerReport = {
+  schema: "bagastudio-space3d-analyzer-report";
+  version: number;
+  fileName: string;
+  fileSize: number;
+  analyzedAt: string;
+  format: {
+    detected: boolean;
+    header: string;
+    software: string;
+  };
+  stats: {
+    readableStrings: number;
+    components: number;
+    materials: number;
+  };
+  components: Space3DAnalyzerComponent[];
+  materials: Space3DAnalyzerMaterial[];
+  previewStrings: string[];
+  warnings: string[];
+};
+
+const SPACE3D_SUPPORTED_FORMATS = ".s3d,.s3dbak";
+
+const SPACE3D_COMPONENT_KEYWORDS = [
+  "fianco",
+  "fondo",
+  "cielo",
+  "schiena",
+  "zoccolo",
+  "ripiano",
+  "mensola",
+  "anta",
+  "cassetto",
+  "frontale",
+  "maniglia",
+  "cerniera",
+  "basetta",
+  "piede",
+  "pannello",
+  "top",
+  "base",
+  "specchio",
+  "led",
+];
+
+const SPACE3D_MATERIAL_KEYWORDS = [
+  "nero",
+  "bianco",
+  "venato",
+  "china",
+  "mdf",
+  "bilaminato",
+  "laminato",
+  "ferramenta",
+  "legno",
+  "wood",
+  "marmo",
+  "oro",
+  "acciaio",
+  "cemento",
+  "truciolato",
+];
+
+function normalizeSpace3DToken(value: string) {
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueByLowercase(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  values.forEach((value) => {
+    const clean = normalizeSpace3DToken(value);
+    if (clean.length < 3) return;
+
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    result.push(clean);
+  });
+
+  return result;
+}
+
+function guessSpace3DCategory(name: string) {
+  const lower = name.toLowerCase();
+
+  if (lower.includes("maniglia") || lower.includes("cerniera") || lower.includes("basetta") || lower.includes("ferramenta")) return "hardware";
+  if (lower.includes("cassetto")) return "drawer";
+  if (lower.includes("zoccolo")) return "plinth";
+  if (lower.includes("ripiano") || lower.includes("mensola")) return "shelf";
+  if (lower.includes("fianco") || lower.includes("schiena") || lower.includes("fondo") || lower.includes("cielo") || lower.includes("pannello")) return "panel";
+  if (lower.includes("led")) return "lighting";
+  if (lower.includes("specchio")) return "mirror";
+
+  return "component";
+}
+
+function guessSpace3DMaterialCategory(name: string) {
+  const lower = name.toLowerCase();
+
+  if (lower.includes("ferramenta") || lower.includes("acciaio") || lower.includes("oro")) return "metal";
+  if (lower.includes("marmo") || lower.includes("cemento")) return "stone";
+  if (lower.includes("mdf") || lower.includes("bilaminato") || lower.includes("laminato") || lower.includes("legno") || lower.includes("wood") || lower.includes("truciolato")) return "wood";
+
+  return "material";
+}
+
+function buildSpace3DAnalyzerReport(fileName: string, fileSize: number, rawText: string): Space3DAnalyzerReport {
+  const readableStrings = uniqueByLowercase(rawText.match(/[A-Za-zÀ-ÿ0-9_\-.\/\\: ]{3,}/g) || []);
+  const lowerText = rawText.toLowerCase();
+  const detected = lowerText.includes("advanceds3d") || lowerText.includes("brainsoftware") || lowerText.includes("spazio");
+
+  const componentNames = readableStrings.filter((item) => {
+    const lower = item.toLowerCase();
+    return SPACE3D_COMPONENT_KEYWORDS.some((keyword) => lower.includes(keyword));
+  });
+
+  const materialNames = readableStrings.filter((item) => {
+    const lower = item.toLowerCase();
+    const looksLikeMaterial = SPACE3D_MATERIAL_KEYWORDS.some((keyword) => lower.includes(keyword));
+    const tooMuchPathNoise = lower.includes("c:\\") || lower.includes("program files") || lower.includes("appdata");
+    return looksLikeMaterial && !tooMuchPathNoise && item.length <= 90;
+  });
+
+  const components = componentNames.slice(0, 250).map((name, index) => ({
+    id: `s3d_component_${String(index + 1).padStart(3, "0")}`,
+    name,
+    category: guessSpace3DCategory(name),
+    source: "keyword" as const,
+  }));
+
+  const materials = materialNames.slice(0, 200).map((name, index) => ({
+    id: `s3d_material_${String(index + 1).padStart(3, "0")}`,
+    name,
+    category: guessSpace3DMaterialCategory(name),
+  }));
+
+  return {
+    schema: "bagastudio-space3d-analyzer-report",
+    version: 1,
+    fileName,
+    fileSize,
+    analyzedAt: new Date().toISOString(),
+    format: {
+      detected,
+      header: detected ? "AdvancedS3D / Space3D candidate" : "Unknown",
+      software: lowerText.includes("brainsoftware") ? "BrainSoftware / Spazio3D" : "Unknown",
+    },
+    stats: {
+      readableStrings: readableStrings.length,
+      components: components.length,
+      materials: materials.length,
+    },
+    components,
+    materials,
+    previewStrings: readableStrings.slice(0, 120),
+    warnings: [
+      ...(detected ? [] : ["Formato Space3D non confermato: analyzer eseguito in modalità euristica."]),
+      ...(components.length === 0 ? ["Nessun componente riconosciuto dai nomi leggibili."] : []),
+      "Analyzer V1: estrae componenti/materiali leggibili, ma non converte ancora geometrie 3D.",
+    ],
+  };
+}
+
+function space3DReportToMeshConfigs(report: Space3DAnalyzerReport): MeshConfig[] {
+  return report.components.map((component, index) => ({
+    meshName: component.id,
+    displayName: component.name || `Componente Space3D ${index + 1}`,
+    category: component.category || "component",
+    selectable: true,
+    visible: true,
+    compatibleLed: component.category === "panel" || component.name.toLowerCase().includes("led"),
+    compatibleInsert: component.category === "panel",
+    supportsAccessories: !["lighting"].includes(component.category),
+    materialSlots: "main",
+    compatibleAccessories: component.category === "hardware" ? "hardware" : "",
+    ledFrontOffset: "4",
+    ledSideMargin: "5",
+    ledYOffset: "0",
+    insertPosition: "front",
+    insertOffsetX: "0",
+    insertOffsetY: "0",
+    insertOffsetZ: "1",
+    ledPosition: "front",
+  }));
+}
+
 
 const DEFAULT_PRODUCT_MATERIALS = [
   { id: "acciaio_ossidato", name: "Acciaio Ossidato", category: "metal", textureUrl: "/textures/Acciaio_Ossidato.webp", roughness: 0.55, metalness: 0.8 },
@@ -209,6 +455,83 @@ insertOffsetZ: "1",
   });
 
   return meshes;
+}
+
+
+function buildAdminImporterDiagnostic(
+  fileName: string,
+  extension: string,
+  meshes: MeshConfig[],
+  extraWarnings: string[] = [],
+  extraErrors: string[] = []
+): AdminImporterDiagnostic {
+  const duplicateNames = Array.from(
+    meshes.reduce((map, mesh) => {
+      map.set(mesh.meshName, (map.get(mesh.meshName) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name);
+
+  const warnings = [
+    ...extraWarnings,
+    ...(meshes.length === 0 ? ["Nessuna mesh rilevata nel file importato."] : []),
+    ...(extension === "stl"
+      ? ["STL rilevato come singolo blocco: lo split geometrico avanzato resta una fase futura."]
+      : []),
+    ...(duplicateNames.length > 0
+      ? [`Nomi mesh duplicati rilevati: ${duplicateNames.join(", ")}`]
+      : []),
+  ];
+
+  const errors = [...extraErrors];
+  const status: AdminImporterDiagnostic["status"] =
+    errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "ready";
+
+  return createAdminImporterDiagnostic({
+    status,
+    fileName,
+    extension,
+    meshCount: meshes.length,
+    selectableCount: meshes.filter((mesh) => mesh.selectable).length,
+    visibleCount: meshes.filter((mesh) => mesh.visible).length,
+    ledReadyCount: meshes.filter((mesh) => mesh.compatibleLed).length,
+    insertReadyCount: meshes.filter((mesh) => mesh.compatibleInsert).length,
+    accessoryReadyCount: meshes.filter((mesh) => mesh.supportsAccessories !== false).length,
+    message:
+      status === "ready"
+        ? "Import completato: componenti rilevati e mapping pronto."
+        : status === "warning"
+        ? "Import completato con avvisi: controlla mapping e componenti."
+        : "Import non completato: controlla errori e formato file.",
+    warnings,
+    errors,
+  });
+}
+
+function normalizeAdminMeshList(meshes: MeshConfig[]) {
+  return meshes.map((mesh, index) => ({
+    ...mesh,
+    meshName: mesh.meshName || `Mesh_${index + 1}`,
+    displayName: mesh.displayName || mesh.meshName || `Componente ${index + 1}`,
+    category: mesh.category || guessComponentCategory(mesh.displayName || mesh.meshName || ""),
+    selectable: mesh.selectable !== false,
+    visible: mesh.visible !== false,
+    supportsAccessories: mesh.supportsAccessories !== false,
+    compatibleLed: Boolean(mesh.compatibleLed),
+    compatibleInsert: Boolean(mesh.compatibleInsert),
+    materialSlots: mesh.materialSlots || "main",
+    compatibleAccessories: mesh.compatibleAccessories || "",
+    ledPosition: mesh.ledPosition || "front",
+    ledFrontOffset: mesh.ledFrontOffset || "4",
+    ledSideMargin: mesh.ledSideMargin || "5",
+    ledYOffset: mesh.ledYOffset || "0",
+    insertPosition: mesh.insertPosition || "front",
+    insertOffsetX: mesh.insertOffsetX || "0",
+    insertOffsetY: mesh.insertOffsetY || "0",
+    insertOffsetZ: mesh.insertOffsetZ || "1",
+  }));
 }
 
 function AdminGLBModel({
@@ -576,6 +899,131 @@ function AdminFBXModel({
   );
 }
 
+
+function AdminDAEModel({
+  url,
+  selectedMeshName,
+  onSelectMesh,
+  modelRotationY,
+}: {
+  url: string;
+  selectedMeshName: string;
+  onSelectMesh: (meshName: string) => void;
+  modelRotationY: number;
+}) {
+  const [object, setObject] = useState<THREE.Group | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loader = new ColladaLoader();
+
+    loader.load(
+      url,
+      (collada) => {
+        if (cancelled) return;
+
+        const daeScene = collada?.scene;
+        if (!daeScene) {
+          console.error("BagaStudio Admin DAE preview load error: scene not found");
+          setObject(null);
+          return;
+        }
+
+        let meshIndex = 0;
+
+        daeScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const stableMeshName = getStableMeshName(mesh.name, meshIndex);
+            mesh.name = stableMeshName;
+            mesh.userData.bagastudioMeshName = stableMeshName;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.frustumCulled = false;
+
+            mesh.material = new THREE.MeshStandardMaterial({
+              color: stableMeshName === selectedMeshName ? "#ffffff" : "#d9d9d9",
+              roughness: 0.45,
+              metalness: 0.05,
+              side: THREE.DoubleSide,
+              emissive: stableMeshName === selectedMeshName ? "#2563eb" : "#000000",
+              emissiveIntensity: stableMeshName === selectedMeshName ? 0.7 : 0,
+            });
+
+            meshIndex += 1;
+          }
+        });
+
+        const box = new THREE.Box3().setFromObject(daeScene);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+
+        box.getSize(size);
+        box.getCenter(center);
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = Number.isFinite(maxDim) && maxDim > 0 ? 3 / maxDim : 1;
+
+        daeScene.position.set(
+          -center.x * scale,
+          -box.min.y * scale,
+          -center.z * scale
+        );
+
+        daeScene.rotation.y = modelRotationY;
+        daeScene.scale.setScalar(scale);
+        daeScene.updateMatrixWorld(true);
+
+        console.log("BagaStudio Admin DAE preview loaded", {
+          meshes: meshIndex,
+          size: size.toArray(),
+          center: center.toArray(),
+          scale,
+        });
+
+        const daeGroup = new THREE.Group();
+daeGroup.name = daeScene.name || "DAE Preview";
+daeGroup.position.copy(daeScene.position);
+daeGroup.rotation.copy(daeScene.rotation);
+daeGroup.scale.copy(daeScene.scale);
+daeGroup.add(...daeScene.children);
+
+setObject(daeGroup);
+      },
+      undefined,
+      (error) => {
+        console.error("BagaStudio Admin DAE preview load error:", error);
+        if (!cancelled) setObject(null);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url, selectedMeshName, modelRotationY]);
+
+  if (!object) return null;
+
+  return (
+    <primitive
+      object={object}
+      onClick={(e: any) => {
+        e.stopPropagation();
+        const clicked = e.object as THREE.Object3D;
+        const meshName =
+          clicked?.userData?.bagastudioMeshName ||
+          clicked?.name ||
+          clicked?.parent?.userData?.bagastudioMeshName ||
+          clicked?.parent?.name ||
+          "";
+        if (!meshName) return;
+        onSelectMesh(meshName);
+      }}
+    />
+  );
+}
+
+
 function AdminModelRouter({
   url,
   fileName,
@@ -633,6 +1081,17 @@ if (ext === "fbx") {
     />
   );
 }
+
+if (ext === "dae") {
+  return (
+    <AdminDAEModel
+      url={url}
+      selectedMeshName={selectedMeshName}
+      onSelectMesh={onSelectMesh}
+      modelRotationY={modelRotationY}
+    />
+  );
+}
   return null;
 }
 type AdminLanguage = "it" | "en";
@@ -659,7 +1118,7 @@ const ADMIN_I18N = {
     restoreAutosave: "Ripristina autosave",
     importBackup: "Importa backup",
     import3d: "1. Importa modello 3D",
-    formats: "Formati previsti: GLB, GLTF, OBJ, FBX, STL. Per ora useremo GLB come formato principale.",
+    formats: "Formati supportati: GLB, GLTF, DAE, FBX, OBJ, STL. GLB resta il formato finale consigliato per catalogo e configuratore.",
     rotation: "Rotazione",
     preview3d: "Preview 3D",
     mapping: "2. Mapping componenti",
@@ -732,7 +1191,7 @@ const ADMIN_I18N = {
     restoreAutosave: "Restore autosave",
     importBackup: "Import backup",
     import3d: "1. Import 3D model",
-    formats: "Supported formats: GLB, GLTF, OBJ, FBX, STL. For now GLB is the main format.",
+    formats: "Supported formats: GLB, GLTF, DAE, FBX, OBJ, STL. GLB remains the recommended final format for catalog and configurator.",
     rotation: "Rotation",
     preview3d: "3D Preview",
     mapping: "2. Component mapping",
@@ -792,6 +1251,7 @@ const [adminLanguage, setAdminLanguage] = useState<AdminLanguage>("it");
 const adminT = ADMIN_I18N[adminLanguage];
 
 const [meshList, setMeshList] = useState<MeshConfig[]>([]);
+const [importerDiagnostic, setImporterDiagnostic] = useState<AdminImporterDiagnostic>(() => createAdminImporterDiagnostic());
 const [generatedJson, setGeneratedJson] = useState("");
 const [productId, setProductId] = useState("new-product");
 const [productName, setProductName] = useState("Nuovo prodotto");
@@ -821,6 +1281,11 @@ const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
 const [productLibrary, setProductLibrary] = useState<ProductLibraryItem[]>([]);
+const [librarySearch, setLibrarySearch] = useState("");
+const [selectedLibraryProductId, setSelectedLibraryProductId] = useState("");
+const [space3DFileName, setSpace3DFileName] = useState("");
+const [space3DAnalyzerReport, setSpace3DAnalyzerReport] = useState<Space3DAnalyzerReport | null>(null);
+const [space3DStatus, setSpace3DStatus] = useState("S3D analyzer in attesa");
 const autosaveHydratedRef = useRef(false);
 const meshCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 const meshInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -904,6 +1369,68 @@ const groupedMapperMeshes = useMemo(() => {
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 }, [filteredMapperMeshes]);
 
+const filteredProductLibrary = useMemo(() => {
+  const query = librarySearch.trim().toLowerCase();
+
+  if (!query) return productLibrary;
+
+  return productLibrary.filter((item) => {
+    const haystack = [
+      item.id,
+      item.name,
+      item.category,
+      item.brand,
+      item.sourceFileName,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+}, [productLibrary, librarySearch]);
+
+const selectedLibraryProduct = useMemo(() => {
+  return productLibrary.find((item) => item.id === selectedLibraryProductId) || productLibrary[0] || null;
+}, [productLibrary, selectedLibraryProductId]);
+
+const adminDashboardStats = useMemo(() => {
+  const ledReady = meshList.filter((mesh) => mesh.compatibleLed).length;
+  const insertReady = meshList.filter((mesh) => mesh.compatibleInsert).length;
+  const accessoryReady = meshList.filter((mesh) => mesh.supportsAccessories).length;
+  const hiddenParts = meshList.filter((mesh) => !mesh.visible).length;
+  const selectableParts = meshList.filter((mesh) => mesh.selectable).length;
+
+  return {
+    products: productLibrary.length,
+    components: meshList.length,
+    selectableParts,
+    hiddenParts,
+    ledReady,
+    insertReady,
+    accessoryReady,
+    hasModel: Boolean(modelPreviewUrl || modelDataUrl),
+    hasJson: Boolean(generatedJson),
+  };
+}, [productLibrary, meshList, modelPreviewUrl, modelDataUrl, generatedJson]);
+
+
+const selectedMapperMesh = useMemo(() => {
+  return meshList.find((mesh) => mesh.meshName === selectedMeshName) || null;
+}, [meshList, selectedMeshName]);
+
+const importerReadiness = useMemo(() => {
+  const hasSupportedFormat = ["glb", "gltf", "dae", "fbx", "obj", "stl"].includes(modelExtension);
+  const hasComponents = meshList.length > 0;
+  const hasMappedNames = meshList.every((mesh) => Boolean(mesh.displayName?.trim()));
+
+  return {
+    hasSupportedFormat,
+    hasComponents,
+    hasMappedNames,
+    packageReady: Boolean(hasSupportedFormat && hasComponents && hasMappedNames),
+  };
+}, [modelExtension, meshList]);
+
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
@@ -930,6 +1457,10 @@ const buildAdminBackup = (includeHeavyModelData = true) => ({
     modelRotationY,
     meshList,
     generatedJson: includeHeavyModelData ? generatedJson : "",
+    importerDiagnostic,
+    space3DFileName,
+    space3DAnalyzerReport,
+    space3DStatus,
   },
 });
 
@@ -973,6 +1504,10 @@ const restoreAdminBackup = (backup: any) => {
       : []
   );
   setGeneratedJson(state.generatedJson ?? "");
+  setImporterDiagnostic(state.importerDiagnostic || createAdminImporterDiagnostic());
+  setSpace3DFileName(state.space3DFileName || "");
+  setSpace3DAnalyzerReport(state.space3DAnalyzerReport || null);
+  setSpace3DStatus(state.space3DStatus || "S3D analyzer in attesa");
 
   setBackupStatus(`${adminT.restoreCompleted}: ${new Date().toLocaleString()}`);
 };
@@ -1036,6 +1571,10 @@ useEffect(() => {
   modelRotationY,
   meshList,
   generatedJson,
+  importerDiagnostic,
+  space3DFileName,
+  space3DAnalyzerReport,
+  space3DStatus,
   adminLanguage,
 ]);
 
@@ -1096,6 +1635,78 @@ function persistProductLibrary(nextLibrary: ProductLibraryItem[]) {
   } catch (error) {
     console.warn("BagaStudio product library save skipped", error);
   }
+}
+
+function downloadProductLibraryJson() {
+  const payload = {
+    schema: "bagastudio-product-library",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    total: productLibrary.length,
+    products: productLibrary,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `bagastudio-product-library-${Date.now()}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadSelectedLibraryProductPackage(item: ProductLibraryItem) {
+  const blob = new Blob([item.packageJson], {
+    type: "application/json",
+  });
+
+  const safeName = (item.name || item.id || "product")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-|-$/g, "");
+
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${safeName || "bagastudio-product"}-package.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function importProductPackageToLibrary(file?: File | null) {
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const packageJson = String(reader.result || "");
+      const parsed = JSON.parse(packageJson);
+
+      const item: ProductLibraryItem = {
+        id: parsed.id || parsed.metadata?.id || `product-${Date.now()}`,
+        name: parsed.name || parsed.metadata?.name || file.name.replace(/\.json$/i, ""),
+        category: parsed.category || parsed.metadata?.productCategory || "custom",
+        brand: parsed.brand || parsed.metadata?.brand || "BagaStudio Core",
+        sourceFileName: parsed.model?.fileName || parsed.modelFileName || file.name,
+        savedAt: new Date().toISOString(),
+        packageJson,
+      };
+
+      persistProductLibrary([
+        item,
+        ...productLibrary.filter((product) => product.id !== item.id),
+      ]);
+      setSelectedLibraryProductId(item.id);
+      setBackupStatus(adminT.librarySaved);
+    } catch (error) {
+      console.error("BagaStudio product package import error", error);
+      setBackupStatus(adminT.backupFileError);
+    }
+  };
+
+  reader.readAsText(file);
 }
 
 function buildCurrentProductPackageJson() {
@@ -1296,6 +1907,7 @@ function saveCurrentProductToLibrary() {
 
   persistProductLibrary(nextLibrary);
   setGeneratedJson(packageJson);
+  setSelectedLibraryProductId(item.id);
   setBackupStatus(adminT.librarySaved);
 }
 
@@ -1367,6 +1979,256 @@ function deleteProductFromLibrary(productIdToDelete: string) {
   );
 }
 
+async function handleSpace3DImport(file?: File | null) {
+  if (!file) return;
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  if (!["s3d", "s3dbak"].includes(ext)) {
+    setSpace3DStatus("Formato non supportato: usa .s3d o .s3dbak");
+    return;
+  }
+
+  setSpace3DFileName(file.name);
+  setSpace3DStatus(`Analisi Space3D in corso: ${file.name}`);
+
+  try {
+    const buffer = await file.arrayBuffer();
+    let text = "";
+
+    try {
+      text = new TextDecoder("windows-1252").decode(buffer);
+    } catch {
+      text = new TextDecoder("utf-8").decode(buffer);
+    }
+
+    const report = buildSpace3DAnalyzerReport(file.name, file.size, text);
+    const mappedMeshes = normalizeAdminMeshList(space3DReportToMeshConfigs(report));
+
+    setSpace3DAnalyzerReport(report);
+    setSpace3DStatus(
+      `Analisi completata: ${report.stats.components} componenti / ${report.stats.materials} materiali rilevati`
+    );
+
+    if (mappedMeshes.length > 0) {
+      setMeshList(mappedMeshes);
+      setSelectedMeshName(mappedMeshes[0]?.meshName || "");
+    }
+
+    setImporterDiagnostic(
+      buildAdminImporterDiagnostic(file.name, ext, mappedMeshes, [
+        "Import Space3D Analyzer V1: geometria 3D non ancora convertita, mapping componenti/materiali pronto.",
+        ...report.warnings,
+      ])
+    );
+  } catch (error) {
+    console.error("BagaStudio Space3D analyzer error", error);
+    setSpace3DStatus("Errore durante analisi Space3D");
+    setSpace3DAnalyzerReport(null);
+    setImporterDiagnostic(
+      buildAdminImporterDiagnostic(file.name, ext, [], [], [
+        error instanceof Error ? error.message : "Errore analisi file Space3D.",
+      ])
+    );
+  }
+}
+
+function downloadSpace3DAnalyzerReport() {
+  if (!space3DAnalyzerReport) return;
+
+  downloadJsonFile(
+    `bagastudio-space3d-analyzer-${Date.now()}.json`,
+    space3DAnalyzerReport
+  );
+}
+
+function buildSpace3DProductPackageDraft() {
+  if (!space3DAnalyzerReport) return;
+
+  const packageDraft = {
+    schema: "bagastudio-product-package-from-space3d",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    source: {
+      type: "space3d",
+      fileName: space3DAnalyzerReport.fileName,
+      analyzerVersion: space3DAnalyzerReport.version,
+    },
+    product: {
+      id: productId,
+      name: productName,
+      category: productCategory,
+      brand: productBrand,
+    },
+    dimensions: {
+      width: { default: widthDefault, min: widthMin, max: widthMax },
+      height: { default: heightDefault, min: heightMin, max: heightMax },
+      depth: { default: depthDefault, min: depthMin, max: depthMax },
+    },
+    components: meshList,
+    materials: space3DAnalyzerReport.materials,
+    analyzerReport: space3DAnalyzerReport,
+    geometryStatus: "pending-geometry-bridge",
+  };
+
+  const jsonString = JSON.stringify(packageDraft, null, 2);
+  setGeneratedJson(jsonString);
+  downloadJsonFile("space3d-product-package-draft.json", jsonString);
+}
+
+async function handleAdminModelImport(file?: File | null) {
+  if (!file) return;
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "glb";
+  const supported = ["glb", "gltf", "dae", "fbx", "obj", "stl"];
+
+  setImporterDiagnostic(
+    createAdminImporterDiagnostic({
+      status: "loading",
+      fileName: file.name,
+      extension: ext,
+      message: `Import ${file.name} in corso...`,
+    })
+  );
+
+  setModelFileName(file.name);
+  const url = URL.createObjectURL(file);
+  setModelPreviewUrl(url);
+
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+    setModelDataUrl(dataUrl);
+    setModelExtension(ext);
+    setSelectedMeshName("");
+    setMeshList([]);
+
+    if (!supported.includes(ext)) {
+      const diagnostic = createAdminImporterDiagnostic({
+        status: "error",
+        fileName: file.name,
+        extension: ext,
+        message: "Formato non supportato dall'importer Admin.",
+        errors: [`Formato .${ext} non supportato. Usa GLB, GLTF, DAE, FBX, OBJ o STL.`],
+      });
+      setImporterDiagnostic(diagnostic);
+      return;
+    }
+
+    const applyMeshes = (meshes: MeshConfig[], warnings: string[] = []) => {
+      const normalizedMeshes = normalizeAdminMeshList(meshes);
+      setMeshList(normalizedMeshes);
+      setImporterDiagnostic(buildAdminImporterDiagnostic(file.name, ext, normalizedMeshes, warnings));
+
+      if (normalizedMeshes[0]?.meshName) {
+        setSelectedMeshName(normalizedMeshes[0].meshName);
+      }
+    };
+
+    const applyError = (error: unknown) => {
+      console.error("BagaStudio Admin model import error:", error);
+      setMeshList([]);
+      setImporterDiagnostic(
+        buildAdminImporterDiagnostic(file.name, ext, [], [], [
+          error instanceof Error ? error.message : "Errore sconosciuto durante import modello.",
+        ])
+      );
+    };
+
+    if (ext === "stl") {
+      applyMeshes([
+        {
+          meshName: "STL_Mesh",
+          displayName: "Componente STL",
+          category: "component",
+          supportsAccessories: true,
+          selectable: true,
+          visible: true,
+          compatibleLed: false,
+          compatibleInsert: false,
+          materialSlots: "main",
+          compatibleAccessories: "",
+          ledPosition: "front",
+          ledFrontOffset: "4",
+          ledSideMargin: "5",
+          ledYOffset: "0",
+          insertPosition: "front",
+          insertOffsetX: "0",
+          insertOffsetY: "0",
+          insertOffsetZ: "1",
+        },
+      ]);
+      return;
+    }
+
+    if (ext === "obj") {
+      new OBJLoader().load(
+        url,
+        (loadedObject) => applyMeshes(extractMeshesFromObject(loadedObject)),
+        undefined,
+        applyError
+      );
+      return;
+    }
+
+    if (ext === "fbx") {
+      new FBXLoader().load(
+        url,
+        (loadedObject) => applyMeshes(extractMeshesFromObject(loadedObject)),
+        undefined,
+        applyError
+      );
+      return;
+    }
+
+    if (ext === "dae") {
+      new ColladaLoader().load(
+        url,
+        (collada) => {
+          const daeScene = collada?.scene;
+          if (!daeScene) {
+            applyError(new Error("DAE scene not found"));
+            return;
+          }
+          applyMeshes(extractMeshesFromObject(daeScene));
+        },
+        undefined,
+        applyError
+      );
+      return;
+    }
+
+    new GLTFLoader().load(
+      url,
+      (gltf) => applyMeshes(extractMeshesFromObject(gltf.scene)),
+      undefined,
+      applyError
+    );
+  } catch (error) {
+    console.error("BagaStudio Admin file read error:", error);
+    setImporterDiagnostic(
+      buildAdminImporterDiagnostic(file.name, ext, [], [], [
+        error instanceof Error ? error.message : "Errore lettura file modello.",
+      ])
+    );
+  }
+}
+
+function downloadImporterDiagnosticJson() {
+  downloadJsonFile(`bagastudio-importer-diagnostic-${Date.now()}.json`, {
+    schema: "bagastudio-admin-importer-diagnostic",
+    version: 1,
+    diagnostic: importerDiagnostic,
+    readiness: importerReadiness,
+    selectedComponent: selectedMapperMesh,
+    components: meshList,
+  });
+}
+
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.10),transparent_28%),#02070d] text-white">
@@ -1435,6 +2297,29 @@ function deleteProductFromLibrary(productIdToDelete: string) {
             </div>
           </nav>
         </header>
+
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Prodotti</p>
+            <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.products}</p>
+            <p className="mt-1 text-xs text-slate-400">salvati nella libreria locale</p>
+          </div>
+          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Componenti</p>
+            <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.components}</p>
+            <p className="mt-1 text-xs text-slate-400">{adminDashboardStats.selectableParts} selezionabili · {adminDashboardStats.hiddenParts} nascosti</p>
+          </div>
+          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Configurabilità</p>
+            <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.ledReady + adminDashboardStats.insertReady}</p>
+            <p className="mt-1 text-xs text-slate-400">LED {adminDashboardStats.ledReady} · Inserti {adminDashboardStats.insertReady} · Accessori {adminDashboardStats.accessoryReady}</p>
+          </div>
+          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Stato package</p>
+            <p className="mt-2 text-lg font-black text-white">{adminDashboardStats.hasJson ? "JSON pronto" : "Da generare"}</p>
+            <p className="mt-1 text-xs text-slate-400">{adminDashboardStats.hasModel ? "Modello caricato" : "Nessun modello caricato"}</p>
+          </div>
+        </section>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="space-y-5 rounded-[30px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.40)] backdrop-blur-xl">
@@ -1519,13 +2404,46 @@ function deleteProductFromLibrary(productIdToDelete: string) {
               <p className="mt-1 text-sm text-slate-400">{adminT.libraryDesc}</p>
             </div>
 
-            <button
-              type="button"
-              onClick={saveCurrentProductToLibrary}
-              className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.24)] transition hover:bg-cyan-400"
-            >
-              {adminT.saveToLibrary}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={saveCurrentProductToLibrary}
+                className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.24)] transition hover:bg-cyan-400"
+              >
+                {adminT.saveToLibrary}
+              </button>
+
+              <button
+                type="button"
+                onClick={downloadProductLibraryJson}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta libreria
+              </button>
+
+              <label className="cursor-pointer rounded-2xl border border-cyan-400/25 bg-white/5 px-5 py-3 text-sm font-black text-white transition hover:bg-white/10">
+                Importa package
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={(event) => importProductPackageToLibrary(event.target.files?.[0])}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <input
+              value={librarySearch}
+              onChange={(event) => setLibrarySearch(event.target.value)}
+              placeholder="Cerca prodotto, categoria, brand, file..."
+              className="rounded-2xl border border-cyan-400/20 bg-black/30 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60"
+            />
+
+            <div className="rounded-2xl border border-cyan-400/10 bg-black/30 px-4 py-3 text-sm text-slate-300">
+              {filteredProductLibrary.length} / {productLibrary.length} prodotti visibili
+            </div>
           </div>
 
           {productLibrary.length === 0 ? (
@@ -1533,43 +2451,118 @@ function deleteProductFromLibrary(productIdToDelete: string) {
               {adminT.emptyLibrary}
             </p>
           ) : (
-            <div className="grid gap-3">
-              {productLibrary.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4"
-                >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-base font-black text-white">{item.name}</p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {item.brand} · {item.category} · {item.sourceFileName || "package JSON"}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        {new Date(item.savedAt).toLocaleString()}
-                      </p>
-                    </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="grid gap-3">
+                {filteredProductLibrary.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedLibraryProductId(item.id)}
+                    className={`cursor-pointer rounded-2xl border p-4 transition ${
+                      selectedLibraryProduct?.id === item.id
+                        ? "border-cyan-300/60 bg-cyan-400/10 shadow-[0_0_28px_rgba(14,165,233,0.16)]"
+                        : "border-cyan-400/15 bg-black/30 hover:border-cyan-300/35 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-base font-black text-white">{item.name}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {item.brand} · {item.category} · {item.sourceFileName || "package JSON"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {new Date(item.savedAt).toLocaleString()}
+                        </p>
+                      </div>
 
-                    <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            loadProductFromLibrary(item);
+                          }}
+                          className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                        >
+                          {adminT.loadProduct}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            downloadSelectedLibraryProductPackage(item);
+                          }}
+                          className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/20"
+                        >
+                          Scarica JSON
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteProductFromLibrary(item.id);
+                          }}
+                          className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                        >
+                          {adminT.deleteProduct}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <aside className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">
+                  Product Inspector
+                </p>
+
+                {selectedLibraryProduct ? (
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <p className="text-xs text-slate-500">Nome</p>
+                      <p className="font-black text-white">{selectedLibraryProduct.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">ID</p>
+                      <p className="break-all font-mono text-xs text-cyan-100">{selectedLibraryProduct.id}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                        <p className="text-xs text-slate-500">Categoria</p>
+                        <p className="font-bold text-white">{selectedLibraryProduct.category}</p>
+                      </div>
+                      <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                        <p className="text-xs text-slate-500">Brand</p>
+                        <p className="font-bold text-white">{selectedLibraryProduct.brand}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Sorgente</p>
+                      <p className="break-all text-slate-300">{selectedLibraryProduct.sourceFileName || "package JSON"}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-2">
                       <button
                         type="button"
-                        onClick={() => loadProductFromLibrary(item)}
+                        onClick={() => loadProductFromLibrary(selectedLibraryProduct)}
+                        className="rounded-xl bg-cyan-500 px-4 py-2 text-xs font-black text-white transition hover:bg-cyan-400"
+                      >
+                        Apri prodotto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadSelectedLibraryProductPackage(selectedLibraryProduct)}
                         className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
                       >
-                        {adminT.loadProduct}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteProductFromLibrary(item.id)}
-                        className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
-                      >
-                        {adminT.deleteProduct}
+                        Esporta package
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <p className="mt-4 text-sm text-slate-400">Seleziona un prodotto dalla libreria.</p>
+                )}
+              </aside>
             </div>
           )}
         </section>
@@ -1584,103 +2577,9 @@ function deleteProductFromLibrary(productIdToDelete: string) {
               {adminT.chooseFile}
 <input
   type="file"
-  accept=".glb,.gltf,.obj,.stl,.fbx"
-  onChange={async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-setModelFileName(file.name);
-const url = URL.createObjectURL(file);
-setModelPreviewUrl(url);
-const dataUrl = await new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result || ""));
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(file);
-});
-setModelDataUrl(dataUrl);
-const ext = file.name.split(".").pop()?.toLowerCase() || "glb";
-setModelExtension(ext);
-setSelectedMeshName("");
-setMeshList([]);
-if (ext === "stl") {
-  setMeshList([
-    {
-      meshName: "STL_Mesh",
-      displayName: "Componente STL",
-      category: "component",
-      supportsAccessories: true,
-      selectable: true,
-      visible: true,
-      compatibleLed: false,
-      compatibleInsert: false,
-      materialSlots: "main",
-      compatibleAccessories: "",
-      ledPosition: "front",
-      ledFrontOffset: "4",
-ledSideMargin: "5",
-ledYOffset: "0",
-insertPosition: "front",
-insertOffsetX: "0",
-insertOffsetY: "0",
-insertOffsetZ: "1",
-    },
-  ]);
-  return;
-}
-if (ext === "obj") {
-  const loader = new OBJLoader();
-
-  loader.load(url, (loadedObject) => {
-    const meshes = extractMeshesFromObject(loadedObject);
-    setMeshList(meshes);
-  });
-
-  return;
-}
-if (ext === "fbx") {
-  const loader = new FBXLoader();
-
-  loader.load(url, (loadedObject) => {
-    const meshes = extractMeshesFromObject(loadedObject);
-    setMeshList(meshes);
-  });
-
-  return;
-}
-setModelExtension(ext);
-
-    const loader = new GLTFLoader();
-
-    loader.load(url, (gltf) => {
-const meshes: MeshConfig[] = [];
-
-      gltf.scene.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          meshes.push({
-  meshName: child.name || "unnamed_mesh",
-  displayName: guessPartName(child as THREE.Mesh, meshes.length),
-  category: guessComponentCategory(guessPartName(child as THREE.Mesh, meshes.length)),
-  supportsAccessories: true,
-  selectable: true,
-  visible: true,
-  compatibleLed: false,
-  compatibleInsert: false,
-  materialSlots: "main",
-  compatibleAccessories: "",
-  ledPosition: "front",
-  ledFrontOffset: "4",
-ledSideMargin: "5",
-ledYOffset: "0",
-insertPosition: "front",
-insertOffsetX: "0",
-insertOffsetY: "0",
-insertOffsetZ: "1",
-});
-        }
-      });
-
-      setMeshList(meshes);
-    });
+  accept={BAGASTUDIO_ADMIN_SUPPORTED_MODEL_FORMATS}
+  onChange={(e) => {
+    void handleAdminModelImport(e.target.files?.[0]);
   }}
   className="hidden"
 />
@@ -1691,6 +2590,193 @@ insertOffsetZ: "1",
           <p className="text-xs text-slate-500 mt-3">
             {adminT.formats}
           </p>
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+            Importer UI V2 attivo · {BAGASTUDIO_ADMIN_SUPPORTED_MODEL_FORMAT_LABEL}
+          </p>
+
+          <div className="mt-5 grid gap-3 rounded-2xl border border-cyan-400/15 bg-black/25 p-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wide ${
+                    importerDiagnostic.status === "ready"
+                      ? "border border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+                      : importerDiagnostic.status === "warning"
+                      ? "border border-amber-400/40 bg-amber-400/10 text-amber-200"
+                      : importerDiagnostic.status === "error"
+                      ? "border border-red-400/40 bg-red-400/10 text-red-200"
+                      : importerDiagnostic.status === "loading"
+                      ? "border border-cyan-400/40 bg-cyan-400/10 text-cyan-200"
+                      : "border border-slate-400/20 bg-white/[0.03] text-slate-300"
+                  }`}
+                >
+                  {importerDiagnostic.status}
+                </span>
+                <span className="text-sm font-bold text-white">{importerDiagnostic.message}</span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                  <p className="text-slate-500">Mesh</p>
+                  <p className="text-lg font-black text-white">{importerDiagnostic.meshCount}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                  <p className="text-slate-500">Selezionabili</p>
+                  <p className="text-lg font-black text-white">{importerDiagnostic.selectableCount}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                  <p className="text-slate-500">LED ready</p>
+                  <p className="text-lg font-black text-white">{importerDiagnostic.ledReadyCount}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/10 bg-white/[0.03] p-3">
+                  <p className="text-slate-500">Inserti</p>
+                  <p className="text-lg font-black text-white">{importerDiagnostic.insertReadyCount}</p>
+                </div>
+              </div>
+
+              {(importerDiagnostic.warnings.length > 0 || importerDiagnostic.errors.length > 0) && (
+                <div className="mt-3 space-y-2 text-xs">
+                  {importerDiagnostic.errors.map((error) => (
+                    <p key={error} className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-200">
+                      Errore: {error}
+                    </p>
+                  ))}
+                  {importerDiagnostic.warnings.map((warning) => (
+                    <p key={warning} className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-amber-100">
+                      Avviso: {warning}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-cyan-400/10 bg-white/[0.03] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">Package readiness</p>
+              <div className="mt-3 space-y-2 text-sm">
+                <p className={importerReadiness.hasSupportedFormat ? "text-emerald-200" : "text-red-200"}>
+                  Formato supportato: {importerReadiness.hasSupportedFormat ? "Sì" : "No"}
+                </p>
+                <p className={importerReadiness.hasComponents ? "text-emerald-200" : "text-amber-200"}>
+                  Componenti rilevati: {importerReadiness.hasComponents ? "Sì" : "No"}
+                </p>
+                <p className={importerReadiness.hasMappedNames ? "text-emerald-200" : "text-amber-200"}>
+                  Nomi mapping: {importerReadiness.hasMappedNames ? "Completi" : "Da completare"}
+                </p>
+                <p className={importerReadiness.packageReady ? "text-emerald-300" : "text-slate-400"}>
+                  Product Package: {importerReadiness.packageReady ? "Pronto" : "Non pronto"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={downloadImporterDiagnosticJson}
+                className="mt-4 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Scarica diagnostica importer
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-violet-400/20 bg-violet-500/[0.06] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-300">Space3D Import Runtime V1</p>
+                <h3 className="mt-1 text-lg font-black text-white">S3D Analyzer / Bridge</h3>
+                <p className="mt-1 text-xs text-slate-400">Carica file .s3d o .s3dbak per estrarre componenti, materiali e metadata da Space3D.</p>
+              </div>
+
+              <label className="cursor-pointer rounded-xl bg-violet-500 px-4 py-2 text-xs font-black text-white shadow-lg shadow-violet-500/20 transition hover:bg-violet-400">
+                Importa .s3d
+                <input
+                  type="file"
+                  accept={SPACE3D_SUPPORTED_FORMATS}
+                  onChange={(event) => {
+                    void handleSpace3DImport(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+              <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
+                <p className="text-xs text-slate-500">File Space3D</p>
+                <p className="mt-1 break-all text-sm font-bold text-white">{space3DFileName || "Nessun file caricato"}</p>
+                <p className="mt-2 text-xs text-violet-200">{space3DStatus}</p>
+              </div>
+
+              <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
+                <p className="text-xs text-slate-500">Componenti rilevati</p>
+                <p className="mt-1 text-2xl font-black text-white">{space3DAnalyzerReport?.stats.components ?? 0}</p>
+                <p className="text-xs text-slate-400">Mapping automatico verso componenti BagaStudio</p>
+              </div>
+
+              <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
+                <p className="text-xs text-slate-500">Materiali rilevati</p>
+                <p className="mt-1 text-2xl font-black text-white">{space3DAnalyzerReport?.stats.materials ?? 0}</p>
+                <p className="text-xs text-slate-400">Material Extractor V1</p>
+              </div>
+            </div>
+
+            {space3DAnalyzerReport && (
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-white">Componenti Space3D</p>
+                    <p className="text-xs text-slate-500">Prime 40 voci</p>
+                  </div>
+                  <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
+                    {space3DAnalyzerReport.components.slice(0, 40).map((component) => (
+                      <button
+                        key={component.id}
+                        type="button"
+                        onClick={() => selectMeshCard(component.id)}
+                        className="w-full rounded-lg border border-violet-400/10 bg-white/[0.03] px-3 py-2 text-left transition hover:border-violet-300/40 hover:bg-violet-400/10"
+                      >
+                        <p className="text-xs font-bold text-white">{component.name}</p>
+                        <p className="text-[11px] text-slate-500">{component.category} · {component.id}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-white">Materiali Space3D</p>
+                    <p className="text-xs text-slate-500">Prime 40 voci</p>
+                  </div>
+                  <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
+                    {space3DAnalyzerReport.materials.slice(0, 40).map((material) => (
+                      <div key={material.id} className="rounded-lg border border-violet-400/10 bg-white/[0.03] px-3 py-2">
+                        <p className="text-xs font-bold text-white">{material.name}</p>
+                        <p className="text-[11px] text-slate-500">{material.category} · {material.id}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!space3DAnalyzerReport}
+                onClick={downloadSpace3DAnalyzerReport}
+                className="rounded-xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Scarica report S3D
+              </button>
+              <button
+                type="button"
+                disabled={!space3DAnalyzerReport}
+                onClick={buildSpace3DProductPackageDraft}
+                className="rounded-xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Genera Product Package draft
+              </button>
+            </div>
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
   <button
     type="button"
@@ -1802,6 +2888,24 @@ insertOffsetZ: "1",
               </button>
             </div>
           </div>
+
+          {selectedMapperMesh && (
+            <div className="mb-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Componente selezionato</p>
+                  <h3 className="mt-1 text-lg font-black text-white">{selectedMapperMesh.displayName}</h3>
+                  <p className="mt-1 break-all font-mono text-xs text-cyan-100">{selectedMapperMesh.meshName}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                  <span className="rounded-full border border-cyan-400/20 bg-black/20 px-3 py-2 text-center text-cyan-100">{selectedMapperMesh.category}</span>
+                  <span className="rounded-full border border-cyan-400/20 bg-black/20 px-3 py-2 text-center text-cyan-100">{selectedMapperMesh.materialSlots || "main"}</span>
+                  <span className="rounded-full border border-cyan-400/20 bg-black/20 px-3 py-2 text-center text-cyan-100">LED {selectedMapperMesh.compatibleLed ? "ON" : "OFF"}</span>
+                  <span className="rounded-full border border-cyan-400/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Inserto {selectedMapperMesh.compatibleInsert ? "ON" : "OFF"}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
   {meshList.length === 0 ? (

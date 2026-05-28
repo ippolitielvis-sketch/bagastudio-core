@@ -105,22 +105,111 @@ function inferModelFormat(url: string, explicitFormat?: string) {
   return clean.split(".").pop() || "glb";
 }
 
-function forcePreviewMaterials(root: THREE.Object3D) {
+function createBagastudioNeutralImportMaterial() {
+  return new THREE.MeshStandardMaterial({
+    name: "BagaStudio_Neutral_Import_Material",
+    color: "#c8c8c8",
+    roughness: 0.75,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+  });
+}
+
+function hasUsableMaterial(material: THREE.Material | THREE.Material[] | undefined | null) {
+  if (!material) return false;
+  if (Array.isArray(material)) return material.length > 0 && material.every(Boolean);
+  return Boolean(material);
+}
+
+function shouldUseNeutralImportMaterial(format?: string | null) {
+  const normalizedFormat = String(format || "").toLowerCase();
+  return ["dae", "obj", "fbx", "stl"].includes(normalizedFormat);
+}
+
+function materialLooksInvisible(material: THREE.Material | THREE.Material[] | undefined | null) {
+  if (!material) return true;
+
+  const materials = Array.isArray(material) ? material : [material];
+
+  if (materials.length === 0) return true;
+
+  return materials.some((mat: any) => {
+    if (!mat) return true;
+    if (typeof mat.opacity === "number" && mat.opacity <= 0.02) return true;
+    if (mat.visible === false) return true;
+    return false;
+  });
+}
+
+function prepareBagastudioImportedObject(root: THREE.Object3D, format?: string | null) {
+  const forceNeutral = shouldUseNeutralImportMaterial(format);
+
+  root.visible = true;
+  root.updateMatrixWorld(true);
+
   root.traverse((child) => {
+    child.visible = true;
+    child.frustumCulled = false;
+    child.updateMatrixWorld(true);
+
     const mesh = child as THREE.Mesh;
+
     if (!mesh.isMesh) return;
-    mesh.frustumCulled = false;
+
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.visible = true;
+
+    if (mesh.geometry) {
+      mesh.geometry.computeBoundingBox();
+      mesh.geometry.computeBoundingSphere();
+
+      if (!mesh.geometry.attributes.normal) {
+        mesh.geometry.computeVertexNormals();
+      }
+    }
+
+    if (forceNeutral || !hasUsableMaterial(mesh.material) || materialLooksInvisible(mesh.material)) {
+      mesh.material = createBagastudioNeutralImportMaterial();
+    }
 
     const apply = (mat: THREE.Material) => {
       mat.side = THREE.DoubleSide;
+      mat.visible = true;
       mat.needsUpdate = true;
     };
 
     if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
     else if (mesh.material) apply(mesh.material as THREE.Material);
   });
+
+  root.updateMatrixWorld(true);
+}
+
+function forcePreviewMaterials(root: THREE.Object3D, format?: string | null) {
+  prepareBagastudioImportedObject(root, format);
+}
+
+
+function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?: string | null) {
+  if (!root) return 0.01;
+
+  const normalizedFormat = String(format || "").toLowerCase();
+  const shouldAutoScale = ["dae", "obj", "fbx", "stl"].includes(normalizedFormat);
+
+  if (!shouldAutoScale) return 0.01;
+
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDimension = Math.max(size.x, size.y, size.z);
+
+  if (!Number.isFinite(maxDimension) || maxDimension <= 0) return 1;
+
+  const targetDimension = 8;
+  const scale = targetDimension / maxDimension;
+
+  return THREE.MathUtils.clamp(scale, 0.001, 100);
 }
 
 
@@ -2327,8 +2416,22 @@ function ProductModel({
 
     const onLoaded = (object: THREE.Object3D) => {
       if (cancelled) return;
-      forcePreviewMaterials(object);
-      analyzeImportedModelComponents(object, format);
+      forcePreviewMaterials(object, format);
+      const analyzedComponents = analyzeImportedModelComponents(object, format);
+
+      if (typeof window !== "undefined") {
+        (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:viewer-components-ready", {
+            detail: {
+              format,
+              count: analyzedComponents.length,
+              components: analyzedComponents,
+            },
+          })
+        );
+      }
+
       prepareImportedProductPackage(object, format);
       prepareImportedModelGlbExporter(object, format);
       setLoadedRoot(object);
@@ -2355,23 +2458,57 @@ function ProductModel({
         new ColladaLoader().load(
           productModel,
           (collada) => {
-           const daeScene = collada?.scene;
+            const daeScene = collada?.scene;
 
-if (!daeScene) {
-  onError(new Error("DAE scene not found"));
-  return;
-}
+            if (!daeScene) {
+              onError(new Error("DAE scene not found"));
+              return;
+            }
 
-            daeScene.traverse((child) => {
+            daeScene.visible = true;
+            daeScene.updateMatrixWorld(true);
+
+            const daeGroup = new THREE.Group();
+            daeGroup.name = daeScene.name || "Imported_DAE";
+            daeGroup.position.copy(daeScene.position);
+            daeGroup.rotation.copy(daeScene.rotation);
+            daeGroup.scale.copy(daeScene.scale);
+            daeGroup.userData = {
+              ...daeScene.userData,
+              bagastudioImportedFormat: "dae",
+              bagastudioSourceType: "collada",
+            };
+
+            const daeChildren = [...daeScene.children];
+            daeChildren.forEach((child) => {
+              child.visible = true;
+              daeGroup.add(child);
+            });
+
+            prepareBagastudioImportedObject(daeGroup, "dae");
+
+            daeGroup.traverse((child) => {
               const mesh = child as THREE.Mesh;
               if (!mesh.isMesh) return;
 
               mesh.castShadow = true;
               mesh.receiveShadow = true;
               mesh.frustumCulled = false;
+              mesh.visible = true;
 
               if (!mesh.name || mesh.name.trim() === "") {
                 mesh.name = `part_${mesh.id}`;
+              }
+
+              mesh.userData = {
+                ...mesh.userData,
+                bagastudioImportedFormat: "dae",
+                bagastudioSelectable: true,
+                bagastudioRuntimeComponent: true,
+              };
+
+              if (!hasUsableMaterial(mesh.material)) {
+                mesh.material = createBagastudioNeutralImportMaterial();
               }
 
               const apply = (mat: THREE.Material) => {
@@ -2383,7 +2520,7 @@ if (!daeScene) {
               else if (mesh.material) apply(mesh.material as THREE.Material);
             });
 
-            onLoaded(daeScene);
+            onLoaded(daeGroup);
           },
           undefined,
           onError
@@ -2509,6 +2646,19 @@ console.log("MATERIAL CHECK:", {
   materialData,
   productMaterials,
 });
+
+const isUnmappedImportedMesh =
+  isImportedModelFormat(runtimeModelFormat) &&
+  !productPart &&
+  !materials[partKey] &&
+  !materials[materialStoreKey];
+
+if (isUnmappedImportedMesh) {
+  mesh.material = createBagastudioNeutralImportMaterial();
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return;
+}
 
 function applyPlanarUV(mesh: THREE.Mesh, rotate = false) {
   const geometry = mesh.geometry as THREE.BufferGeometry;
@@ -2933,6 +3083,11 @@ return clonedScene;
   woodDirection,
 ]);
 
+const importedModelDisplayScale = useMemo(
+  () => getBagastudioImportedDisplayScale(scene, runtimeModelFormat),
+  [scene, runtimeModelFormat]
+);
+
 function createInsertPanel(
   mesh: THREE.Mesh,
   material: THREE.Material,
@@ -3002,6 +3157,58 @@ if (position === "top") {
 
   return insert;
 }
+  useEffect(() => {
+    if (!scene) return;
+
+    if (highlightedRef.current) {
+      highlightedRef.current.mesh.material = highlightedRef.current.material;
+      highlightedRef.current = null;
+    }
+
+    if (!selectedPartId) return;
+
+    let targetMesh: THREE.Mesh | null = null;
+
+    scene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || targetMesh) return;
+
+      const partId = String(mesh.userData?.bagastudioPartId || "");
+      const meshName = String(mesh.userData?.bagastudioMeshName || mesh.name || "");
+      const displayName = String(mesh.userData?.bagastudioDisplayName || "");
+
+      if (
+        mesh.name === selectedPartId ||
+        partId === selectedPartId ||
+        meshName === selectedPartId ||
+        displayName === selectedPartId
+      ) {
+        targetMesh = mesh;
+      }
+    });
+
+    if (!targetMesh) return;
+const mesh = targetMesh as THREE.Mesh;
+
+   highlightedRef.current = {
+  mesh,
+  material: mesh.material,
+};
+
+mesh.material = new THREE.MeshStandardMaterial({
+  color: "#38bdf8",
+  emissive: "#0ea5e9",
+  emissiveIntensity: 0.22,
+  roughness: 0.35,
+  metalness: 0.05,
+  transparent: true,
+  opacity: 0.92,
+  side: THREE.DoubleSide,
+});
+
+mesh.renderOrder = 30;
+  }, [scene, selectedPartId]);
+
   if (!scene) return null;
 
   return (
@@ -3019,7 +3226,7 @@ if (position === "top") {
 >
   <primitive
     object={scene}
-    scale={0.01}
+    scale={importedModelDisplayScale}
     castShadow
     receiveShadow
     onClick={(e: any) => {
@@ -3351,7 +3558,11 @@ productMaterials?.length
     : MATERIAL_LIBRARY;
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensityStore = useConfigStore((state) => state.ledIntensity);
+  const selectedRuntimePartId = useConfigStore((state) => state.selectedPartId);
+  const setRuntimeSelectedPartId = useConfigStore((state) => state.setSelectedPart);
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
+  const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<BagaStudioRuntimeComponent[]>([]);
+  const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
     url: string;
     format: string;
@@ -3502,6 +3713,86 @@ productMaterials?.length
     };
   }, []);
 
+
+  useEffect(() => {
+    const applyComponents = (payload: any) => {
+      const incomingComponents = Array.isArray(payload?.components)
+        ? payload.components
+        : Array.isArray(payload?.detail?.components)
+        ? payload.detail.components
+        : [];
+
+      setViewerRuntimeComponents(incomingComponents as BagaStudioRuntimeComponent[]);
+    };
+
+    const handleComponentsReady = (event: Event) => {
+      applyComponents((event as CustomEvent).detail);
+    };
+
+    const handleSelectComponent = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const partId = String(detail?.partId || detail?.id || detail?.meshName || "");
+      if (!partId) return;
+      setRuntimeSelectedPartId(partId);
+    };
+
+    (window as any).bagastudioGetViewerRuntimeComponents = () => viewerRuntimeComponents;
+    (window as any).bagastudioSelectViewerRuntimeComponent = (partId: string) => {
+      const safePartId = String(partId || "");
+      if (!safePartId) return null;
+
+      setRuntimeSelectedPartId(safePartId);
+      window.dispatchEvent(
+        new CustomEvent("bagastudio:viewer-component-selected", {
+          detail: { partId: safePartId },
+        })
+      );
+
+      return safePartId;
+    };
+
+    window.addEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
+    window.addEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
+    window.addEventListener("bagastudio:viewer-select-component", handleSelectComponent);
+
+    const existingComponents = (window as any).__bagastudioViewerRuntimeComponents;
+    if (Array.isArray(existingComponents)) {
+      setViewerRuntimeComponents(existingComponents as BagaStudioRuntimeComponent[]);
+    }
+
+    return () => {
+      window.removeEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
+      window.removeEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
+      window.removeEventListener("bagastudio:viewer-select-component", handleSelectComponent);
+
+      delete (window as any).bagastudioGetViewerRuntimeComponents;
+      delete (window as any).bagastudioSelectViewerRuntimeComponent;
+    };
+  }, [setRuntimeSelectedPartId, viewerRuntimeComponents]);
+
+  useEffect(() => {
+    if (!selectedRuntimePartId) return;
+
+    const targetRow = componentRowRefs.current[selectedRuntimePartId];
+
+    if (!targetRow) return;
+
+    targetRow.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [selectedRuntimePartId, viewerRuntimeComponents]);
+
+  const selectedViewerRuntimeComponent = useMemo(() => {
+    if (!selectedRuntimePartId) return null;
+
+    return (
+      viewerRuntimeComponents.find((component) => component.id === selectedRuntimePartId) ||
+      viewerRuntimeComponents.find((component) => component.meshName === selectedRuntimePartId) ||
+      null
+    );
+  }, [selectedRuntimePartId, viewerRuntimeComponents]);
+
   const effectiveProductModel = runtimeImportedModel?.url || productModel;
   const effectiveProductModelFormat = runtimeImportedModel?.format || productModelFormat;
 
@@ -3512,6 +3803,98 @@ productMaterials?.length
           Import attivo: {runtimeImportedModel.name} · {runtimeImportedModel.format.toUpperCase()}
         </div>
       )}
+
+      {viewerRuntimeComponents.length > 0 && (
+        <div className="absolute right-3 top-3 z-20 flex max-h-[72%] w-[320px] flex-col overflow-hidden rounded-2xl border border-sky-500/25 bg-black/75 text-xs text-neutral-100 shadow-2xl backdrop-blur">
+          <div className="border-b border-white/10 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-sky-300">
+                  Componenti modello
+                </div>
+                <div className="text-sm font-semibold text-white">
+                  {viewerRuntimeComponents.length} pezzi rilevati
+                </div>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
+                onClick={() => {
+                  setRuntimeSelectedPartId(null);
+                  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+                }}
+              >
+                Pulisci
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-[330px] overflow-auto p-2">
+            {viewerRuntimeComponents.map((component) => {
+              const isSelected =
+                selectedRuntimePartId === component.id ||
+                selectedRuntimePartId === component.meshName;
+
+              return (
+                <button
+                  key={`${component.id}-${component.index}`}
+                  ref={(node) => {
+                    componentRowRefs.current[component.id] = node;
+                    componentRowRefs.current[component.meshName] = node;
+                  }}
+                  type="button"
+                  className={`mb-1 w-full rounded-xl border px-3 py-2 text-left transition ${
+                    isSelected
+                      ? "border-sky-400 bg-sky-500/20 text-white"
+                      : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
+                  }`}
+                  onClick={() => {
+                    setRuntimeSelectedPartId(component.id);
+                    window.dispatchEvent(
+                      new CustomEvent("bagastudio:viewer-component-selected", {
+                        detail: component,
+                      })
+                    );
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-medium">
+                      {component.displayName || component.id}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-neutral-300">
+                      #{component.index}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-[11px] text-neutral-400">
+                    {component.meshName}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedViewerRuntimeComponent && (
+            <div className="border-t border-white/10 bg-white/5 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-sky-300">
+                Inspector pezzo
+              </div>
+              <div className="mt-1 font-semibold text-white">
+                {selectedViewerRuntimeComponent.displayName}
+              </div>
+              <div className="mt-1 space-y-0.5 text-[11px] text-neutral-300">
+                <div>Part ID: {selectedViewerRuntimeComponent.id}</div>
+                <div>Mesh: {selectedViewerRuntimeComponent.meshName}</div>
+                <div>
+                  Dimensioni: {selectedViewerRuntimeComponent.bounds.width} ×{" "}
+                  {selectedViewerRuntimeComponent.bounds.height} ×{" "}
+                  {selectedViewerRuntimeComponent.bounds.depth}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <Canvas
         shadows
         camera={{ position: [20, 10, 22], fov: 70 }}

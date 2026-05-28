@@ -583,6 +583,7 @@ const viewerShellRef = useRef<HTMLElement | null>(null);
 const importedModelUrlRef = useRef<string | null>(null);
 const [importedModelName, setImportedModelName] = useState("");
 const [importedModelFormat, setImportedModelFormat] = useState("");
+const [importedModelVersion, setImportedModelVersion] = useState(0);
 const [importerStatus, setImporterStatus] = useState("");
 const [isImporterDragging, setIsImporterDragging] = useState(false);
 const [importerUiState, setImporterUiState] = useState<any>(null);
@@ -795,6 +796,7 @@ const availableAccessories = useMemo(() => {
     setImportName(file.name);
     setImportedModelName(file.name);
     setImportedModelFormat(format.toUpperCase());
+    setImportedModelVersion(Date.now());
     setImporterStatus(`Modello importato: ${file.name} (.${format})`);
 
     window.dispatchEvent(
@@ -804,6 +806,36 @@ const availableAccessories = useMemo(() => {
           format,
           objectUrl,
           sizeBytes: file.size,
+          importedAt: new Date().toISOString(),
+        },
+      })
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:viewer-load-model", {
+        detail: {
+          file,
+          fileName: file.name,
+          format,
+          objectUrl,
+          modelUrl: objectUrl,
+          source: "viewer-import-ui",
+          forceReload: true,
+          importedAt: new Date().toISOString(),
+        },
+      })
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:viewer-load-model", {
+        detail: {
+          file,
+          fileName: file.name,
+          format,
+          objectUrl,
+          modelUrl: objectUrl,
+          source: "viewer-import-ui",
+          forceReload: true,
           importedAt: new Date().toISOString(),
         },
       })
