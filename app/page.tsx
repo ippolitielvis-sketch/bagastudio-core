@@ -98,6 +98,88 @@ function createImportedModelProduct(file: File, objectUrl: string, format: strin
 }
 
 
+function normalizeBagaStudioPackageRuntimeComponent(component: any, index: number, source: "geometry" | "reconstructed" = "geometry") {
+  const id = String(component?.id || component?.partId || component?.meshName || `${source}_${index + 1}`);
+  const meshName = String(component?.meshName || component?.name || id);
+  const displayName = String(component?.displayName || component?.name || component?.originalName || meshName);
+
+  return {
+    ...component,
+    id,
+    partId: String(component?.partId || id),
+    meshName,
+    name: displayName,
+    displayName,
+    originalName: String(component?.originalName || component?.name || displayName),
+    index: Number.isFinite(Number(component?.index)) ? Number(component.index) : index,
+    source,
+    isRuntimeOnly: source === "reconstructed" || component?.componentType === "reconstructed-placeholder",
+    runtimeMetadata: component?.runtimeMetadata || {
+      source,
+      stablePartId: String(component?.partId || id),
+      category: String(component?.category || component?.componentCategory || "component"),
+    },
+  };
+}
+
+function extractBagaStudioRuntimeComponentsFromPackage(packageJson: any) {
+  const baseComponents = Array.isArray(packageJson?.components)
+    ? packageJson.components
+    : Array.isArray(packageJson?.parts)
+    ? packageJson.parts
+    : [];
+
+  const reconstructedParts = [
+    ...(Array.isArray(packageJson?.reconstructedParts) ? packageJson.reconstructedParts : []),
+    ...(Array.isArray(packageJson?.geometryCompletion?.reconstructedParts) ? packageJson.geometryCompletion.reconstructedParts : []),
+    ...(Array.isArray(packageJson?.geometryCompletion?.missingParts) ? packageJson.geometryCompletion.missingParts : []),
+  ];
+
+  const merged = [
+    ...baseComponents.map((component: any, index: number) =>
+      normalizeBagaStudioPackageRuntimeComponent(component, index, "geometry")
+    ),
+    ...reconstructedParts.map((component: any, index: number) =>
+      normalizeBagaStudioPackageRuntimeComponent(component, baseComponents.length + index, "reconstructed")
+    ),
+  ];
+
+  const seen = new Set<string>();
+  return merged.filter((component: any) => {
+    const key = String(component?.id || component?.partId || component?.meshName || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function publishBagaStudioRuntimeComponentsFromPackage(packageJson: any) {
+  if (typeof window === "undefined") return [];
+
+  const runtimeComponents = extractBagaStudioRuntimeComponentsFromPackage(packageJson);
+  if (!runtimeComponents.length) return runtimeComponents;
+
+  const current = Array.isArray((window as any).__bagastudioViewerRuntimeComponents)
+    ? (window as any).__bagastudioViewerRuntimeComponents
+    : [];
+
+  if (runtimeComponents.length >= current.length) {
+    (window as any).__bagastudioViewerRuntimeComponents = runtimeComponents;
+  }
+
+  const detail = {
+    productPackage: packageJson,
+    components: runtimeComponents,
+    count: runtimeComponents.length,
+    source: "product-package-json-import",
+  };
+
+  window.dispatchEvent(new CustomEvent("bagastudio:runtime-components-merged", { detail }));
+  window.dispatchEvent(new CustomEvent("bagastudio:viewer-components-ready", { detail }));
+
+  return runtimeComponents;
+}
+
 const DICTIONARY = {
   it: {
     language: "Lingua",
@@ -588,6 +670,9 @@ const [importerStatus, setImporterStatus] = useState("");
 const [isImporterDragging, setIsImporterDragging] = useState(false);
 const [importerUiState, setImporterUiState] = useState<any>(null);
 const [lastImporterEvent, setLastImporterEvent] = useState("");
+const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
+const [viewerRuntimeMetadata, setViewerRuntimeMetadata] = useState<any>(null);
+const [viewerRuntimeProduct, setViewerRuntimeProduct] = useState<any>(null);
 
 useEffect(() => {
   window.localStorage.setItem("bagastudio-language", language);
@@ -614,7 +699,35 @@ useEffect(() => {
   };
 
   const handleImporterRuntimeEvent = (event: Event) => {
-    setLastImporterEvent((event as CustomEvent).type.replace("bagastudio:", ""));
+    const customEvent = event as CustomEvent;
+    const eventType = customEvent.type;
+    const detail = customEvent.detail || {};
+
+    if (Array.isArray(detail.components)) {
+      setViewerRuntimeComponents((current: any[]) => {
+        if (!Array.isArray(current) || current.length === 0) return detail.components;
+        return detail.components.length >= current.length ? detail.components : current;
+      });
+    }
+
+    if (detail.runtimeMetadata) {
+      setViewerRuntimeMetadata(detail.runtimeMetadata);
+    }
+
+    if (detail?.schema === "bagastudio.runtimeMetadata.v1") {
+      setViewerRuntimeMetadata(detail);
+    }
+
+    if (detail.runtimeProduct) {
+      setViewerRuntimeProduct(detail.runtimeProduct);
+    }
+
+    if (eventType === "bagastudio:runtime-product-ready" && detail?.parts) {
+      setViewerRuntimeProduct(detail);
+      setViewerRuntimeComponents(detail.parts);
+    }
+
+    setLastImporterEvent(eventType.replace("bagastudio:", ""));
     refreshImporterUiState();
   };
 
@@ -627,12 +740,30 @@ useEffect(() => {
     "bagastudio:product-thumbnail-ready",
     "bagastudio:importer-compatibility-guard",
     "bagastudio:complete-product-package-saved",
+    "bagastudio:viewer-components-ready",
+    "bagastudio:runtime-components-merged",
+    "bagastudio:viewer-runtime-metadata-ready",
+    "bagastudio:runtime-metadata-updated",
+    "bagastudio:runtime-product-ready",
   ];
 
   window.addEventListener("bagastudio:importer-ui-state", handleImporterUiState as EventListener);
   watchedEvents
     .filter((eventName) => eventName !== "bagastudio:importer-ui-state")
     .forEach((eventName) => window.addEventListener(eventName, handleImporterRuntimeEvent as EventListener));
+
+  const runtimeComponents = (window as any).__bagastudioViewerRuntimeComponents;
+  const runtimeMetadata = (window as any).__bagastudioRuntimeMetadata || (window as any).__bagastudioViewerRuntimeMetadata;
+  const runtimeProduct = (window as any).__bagastudioRuntimeProduct;
+
+  if (Array.isArray(runtimeComponents)) {
+    setViewerRuntimeComponents((current: any[]) => {
+      if (!Array.isArray(current) || current.length === 0) return runtimeComponents;
+      return runtimeComponents.length >= current.length ? runtimeComponents : current;
+    });
+  }
+  if (runtimeMetadata) setViewerRuntimeMetadata(runtimeMetadata);
+  if (runtimeProduct) setViewerRuntimeProduct(runtimeProduct);
 
   const timer = window.setTimeout(refreshImporterUiState, 300);
 
@@ -680,14 +811,24 @@ const displayPricing = useMemo(() => {
 ]);
 
   const selectedPart = useMemo(() => {
-    if (!runtimeProduct || !selectedPartId) return null;
+    if (!selectedPartId) return null;
+
+    const productPart =
+      runtimeProduct?.parts?.find((part: any) => part.id === selectedPartId) ||
+      runtimeProduct?.parts?.find((part: any) => part.meshName === selectedPartId) ||
+      runtimeProduct?.parts?.find((part: any) => part.name === selectedPartId) ||
+      null;
+
+    if (productPart) return productPart;
+
     return (
-      runtimeProduct.parts.find((part: any) => part.id === selectedPartId) ||
-      runtimeProduct.parts.find((part: any) => part.meshName === selectedPartId) ||
-      runtimeProduct.parts.find((part: any) => part.name === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.id === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.partId === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.meshName === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.name === selectedPartId) ||
       null
     );
-  }, [runtimeProduct, selectedPartId]);
+  }, [runtimeProduct, selectedPartId, viewerRuntimeComponents]);
 
   const selectedStoreKey = selectedPart?.id || selectedPartId || "";
 
@@ -855,9 +996,20 @@ const availableAccessories = useMemo(() => {
     try {
       const text = await file.text();
       const rawProduct = JSON.parse(text);
+      const importedRuntimeComponents = publishBagaStudioRuntimeComponentsFromPackage(rawProduct);
       const nextProduct = normalizeProduct(rawProduct);
 
       setRuntimeProduct(nextProduct);
+      if (importedRuntimeComponents.length > 0) {
+        setViewerRuntimeComponents((current: any[]) => {
+          if (!Array.isArray(current) || current.length === 0) return importedRuntimeComponents;
+          return importedRuntimeComponents.length >= current.length ? importedRuntimeComponents : current;
+        });
+
+        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 250);
+        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 900);
+        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 1800);
+      }
 
       setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
       setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
@@ -1078,6 +1230,30 @@ const availableAccessories = useMemo(() => {
           </div>
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Componenti runtime</span>
+            <span className="font-bold text-white">{viewerRuntimeComponents.length || importerUiState?.componentCount || 0}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Schema V2</span>
+            <span className="font-bold text-white">{importerUiState?.productPackage?.schema || viewerRuntimeMetadata?.schema || "In attesa"}</span>
+          </div>
+        </div>
+
+        {viewerRuntimeMetadata?.categories && (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">Categorie componenti</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(viewerRuntimeMetadata.categories).map(([category, count]) => (
+                <span key={category} className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-100">
+                  {category}: {String(count)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {lastImporterEvent && (
           <p className="mt-3 text-[11px] text-sky-200">Ultimo evento: {lastImporterEvent}</p>
         )}
@@ -1115,6 +1291,18 @@ const availableAccessories = useMemo(() => {
       <p className="text-sm text-neutral-300">
         {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
       </p>
+      {selectedPart && (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">partId</span>
+            <span className="break-all font-bold text-white">{selectedPart.partId || selectedPart.id || "-"}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Categoria</span>
+            <span className="font-bold text-white">{selectedPart.category || selectedPart.runtimeMetadata?.detectedCategory || "-"}</span>
+          </div>
+        </div>
+      )}
     </section>
 
     {runtimeProduct && (
@@ -1867,7 +2055,9 @@ const availableAccessories = useMemo(() => {
 
             <div className="space-y-3 text-sm">
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.name}</span><span className="text-right text-white">{selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noPart}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.product}</span><span className="text-right text-white">{runtimeProduct?.name || "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">partId</span><span className="break-all text-right text-white">{selectedPart?.partId || selectedPart?.id || selectedPartId || "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">Categoria</span><span className="text-right text-white">{selectedPart?.category || selectedPart?.runtimeMetadata?.detectedCategory || "-"}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.product}</span><span className="text-right text-white">{viewerRuntimeProduct?.schema ? "Runtime importato" : runtimeProduct?.name || "-"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.dimensions}</span><span className="text-right text-white">{Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × {Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × {Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.view}</span><span className="text-right text-white">{translateViewName({ id: activeViewId }, t)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.led}</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] || 4000}K` : t.off}</span></div>

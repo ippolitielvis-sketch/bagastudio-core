@@ -215,14 +215,21 @@ function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?:
 
 type BagaStudioRuntimeComponent = {
   id: string;
+  partId?: string;
   index: number;
   meshName: string;
   originalName: string;
   displayName: string;
   materialGroup: string;
+  category?: string;
+  componentType?: string;
+  tags?: string[];
+  runtimeMetadata?: Record<string, any>;
+  configuratorBridge?: Record<string, any>;
   supportsMaterial: boolean;
   supportsLED: boolean;
   supportsInsert: boolean;
+  supportsAccessories?: boolean;
   bounds: {
     width: number;
     height: number;
@@ -276,6 +283,16 @@ type BagaStudioProductPackage = {
     depth: number;
   };
   components: BagaStudioRuntimeComponent[];
+  reconstructedParts?: BagaStudioRuntimeComponent[];
+  geometryCompletion?: {
+    status?: string;
+    daeMeshCount?: number;
+    s3dComponentCount?: number;
+    matchedCount?: number;
+    missingCount?: number;
+    missingParts?: BagaStudioRuntimeComponent[];
+    reconstructedParts?: BagaStudioRuntimeComponent[];
+  };
   materials: Record<string, string>;
   accessories: Record<string, unknown[]>;
   led: Record<string, { enabled: boolean; kelvin?: number; intensity?: number }>;
@@ -974,9 +991,128 @@ function parseProductPackageInput(input: BagaStudioProductPackage | string) {
   return parsed as BagaStudioProductPackage;
 }
 
+
+
+function bagastudioCreateRuntimeConfiguratorBridge(partId: string) {
+  const stablePartId = String(partId || "").trim();
+
+  return {
+    schema: "bagastudio.configuratorBridge.v1",
+    partId: stablePartId,
+    materialKey: stablePartId,
+    ledKey: stablePartId,
+    insertKey: stablePartId,
+    accessoryKey: stablePartId,
+    visibilityKey: stablePartId,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function bagastudioBuildRuntimeMetadataSummary(components: BagaStudioRuntimeComponent[], sourceFormat?: string) {
+  const categories = components.reduce<Record<string, number>>((acc, component) => {
+    const category = component.category || component.runtimeMetadata?.detectedCategory || component.materialGroup || "component";
+    acc[category] = (acc[category] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    schema: "bagastudio.runtimeMetadataSummary.v1",
+    sourceFormat: sourceFormat || "product-package",
+    componentCount: components.length,
+    categories,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function bagastudioNormalizeRuntimeComponentFromPackage(rawComponent: any, index: number, source: "geometry" | "reconstructed"): BagaStudioRuntimeComponent {
+  const fallbackId = `${source}_${String(index + 1).padStart(3, "0")}`;
+  const id = String(rawComponent?.id || rawComponent?.partId || rawComponent?.meshName || fallbackId);
+  const meshName = String(rawComponent?.meshName || id);
+  const displayName = String(rawComponent?.displayName || rawComponent?.customerName || rawComponent?.name || rawComponent?.originalName || meshName);
+  const originalName = String(rawComponent?.originalName || rawComponent?.name || displayName);
+  const materialGroup = String(rawComponent?.materialGroup || rawComponent?.category || "main");
+  const category = String(rawComponent?.category || rawComponent?.runtimeMetadata?.detectedCategory || materialGroup || "component");
+  const componentType = String(rawComponent?.componentType || rawComponent?.runtimeMetadata?.componentType || (source === "reconstructed" ? "reconstructed-placeholder" : category));
+  const bounds = rawComponent?.bounds || { width: 0, height: 0, depth: 0 };
+
+  return {
+    id,
+    partId: String(rawComponent?.partId || id),
+    index: Number.isFinite(Number(rawComponent?.index)) ? Number(rawComponent.index) : index,
+    meshName,
+    originalName,
+    displayName,
+    materialGroup,
+    category,
+    componentType,
+    tags: Array.isArray(rawComponent?.tags)
+      ? rawComponent.tags
+      : String(rawComponent?.tags || source)
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+    runtimeMetadata:
+      rawComponent?.runtimeMetadata || {
+        schema: "bagastudio.runtimeComponentMetadata.v1",
+        detectedCategory: category,
+        componentType,
+        sourceFormat: source === "reconstructed" ? "space3d-reconstructed-placeholder" : "product-package",
+        generatedAt: new Date().toISOString(),
+        stablePartId: String(rawComponent?.partId || id),
+        canReceiveMaterial: rawComponent?.supportsMaterial !== false,
+        canReceiveAccessories: rawComponent?.supportsAccessories !== false,
+        canReceiveLed: Boolean(rawComponent?.supportsLED ?? rawComponent?.compatibleLed ?? false),
+        canReceiveInsert: Boolean(rawComponent?.supportsInsert ?? rawComponent?.compatibleInsert ?? false),
+        bounds: {
+          width: Number(bounds?.width || 0),
+          height: Number(bounds?.height || 0),
+          depth: Number(bounds?.depth || 0),
+        },
+        rawMeshName: meshName,
+        originalName,
+      },
+    configuratorBridge: rawComponent?.configuratorBridge || bagastudioCreateRuntimeConfiguratorBridge(String(rawComponent?.partId || id)),
+    supportsMaterial: rawComponent?.supportsMaterial !== false,
+    supportsLED: Boolean(rawComponent?.supportsLED ?? rawComponent?.compatibleLed ?? false),
+    supportsInsert: Boolean(rawComponent?.supportsInsert ?? rawComponent?.compatibleInsert ?? false),
+    supportsAccessories: rawComponent?.supportsAccessories !== false,
+    bounds: {
+      width: Number(bounds?.width || 0),
+      height: Number(bounds?.height || 0),
+      depth: Number(bounds?.depth || 0),
+    },
+  };
+}
+
+function bagastudioGetMergedRuntimeComponents(productPackage: BagaStudioProductPackage): BagaStudioRuntimeComponent[] {
+  const baseComponents = Array.isArray(productPackage.components) ? productPackage.components : [];
+  const reconstructedCandidates = [
+    ...(Array.isArray(productPackage.reconstructedParts) ? productPackage.reconstructedParts : []),
+    ...(Array.isArray(productPackage.geometryCompletion?.reconstructedParts) ? productPackage.geometryCompletion?.reconstructedParts || [] : []),
+    ...(Array.isArray(productPackage.geometryCompletion?.missingParts) ? productPackage.geometryCompletion?.missingParts || [] : []),
+  ];
+
+  const merged = [
+    ...baseComponents.map((component, index) => bagastudioNormalizeRuntimeComponentFromPackage(component, index, "geometry")),
+    ...reconstructedCandidates.map((component, index) =>
+      bagastudioNormalizeRuntimeComponentFromPackage(component, baseComponents.length + index, "reconstructed")
+    ),
+  ];
+
+  const seen = new Set<string>();
+  return merged.filter((component) => {
+    const key = String(component.id || component.partId || component.meshName || "").trim();
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function applyProductPackageToImportedRoot(root: THREE.Object3D, productPackage: BagaStudioProductPackage) {
-  const componentsById = new Map(productPackage.components.map((component) => [component.id, component]));
-  const componentsByMeshName = new Map(productPackage.components.map((component) => [component.meshName, component]));
+  const mergedRuntimeComponents = bagastudioGetMergedRuntimeComponents(productPackage);
+  const componentsById = new Map(mergedRuntimeComponents.map((component) => [component.id, component]));
+  const componentsByMeshName = new Map(mergedRuntimeComponents.map((component) => [component.meshName, component]));
 
   root.userData.bagastudioProductPackage = productPackage;
   root.userData.bagastudioProductPackageAppliedAt = new Date().toISOString();
@@ -1000,7 +1136,30 @@ function applyProductPackageToImportedRoot(root: THREE.Object3D, productPackage:
     mesh.userData.bagastudioRuntimeComponent = component;
   });
 
-  root.userData.bagastudioRuntimeComponents = productPackage.components;
+  root.userData.bagastudioRuntimeComponents = mergedRuntimeComponents;
+  root.userData.bagastudioRuntimeMetadata = bagastudioBuildRuntimeMetadataSummary(mergedRuntimeComponents, productPackage.sourceFormat);
+  root.userData.bagastudioRuntimeMergeReport = {
+    schema: "bagastudio.runtimeMergeReport.v1",
+    geometryComponents: Array.isArray(productPackage.components) ? productPackage.components.length : 0,
+    reconstructedParts: Math.max(mergedRuntimeComponents.length - (Array.isArray(productPackage.components) ? productPackage.components.length : 0), 0),
+    runtimeComponentCount: mergedRuntimeComponents.length,
+    mergedAt: new Date().toISOString(),
+  };
+
+  if (typeof window !== "undefined") {
+    (window as any).__bagastudioViewerRuntimeComponents = mergedRuntimeComponents;
+    (window as any).__bagastudioViewerRuntimeMetadata = root.userData.bagastudioRuntimeMetadata;
+    (window as any).__bagastudioViewerRuntimeMergeReport = root.userData.bagastudioRuntimeMergeReport;
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:runtime-components-merged", {
+        detail: {
+          productPackage,
+          components: mergedRuntimeComponents,
+          mergeReport: root.userData.bagastudioRuntimeMergeReport,
+        },
+      })
+    );
+  }
 
   
 
@@ -2420,7 +2579,12 @@ function ProductModel({
       const analyzedComponents = analyzeImportedModelComponents(object, format);
 
       if (typeof window !== "undefined") {
-        (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
+        const currentRuntimeComponents = Array.isArray((window as any).__bagastudioViewerRuntimeComponents)
+          ? (window as any).__bagastudioViewerRuntimeComponents
+          : [];
+        if (analyzedComponents.length >= currentRuntimeComponents.length) {
+          (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
+        }
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
@@ -3722,7 +3886,12 @@ productMaterials?.length
         ? payload.detail.components
         : [];
 
-      setViewerRuntimeComponents(incomingComponents as BagaStudioRuntimeComponent[]);
+      setViewerRuntimeComponents((current) => {
+        const incoming = incomingComponents as BagaStudioRuntimeComponent[];
+        if (!Array.isArray(current) || current.length === 0) return incoming;
+        if (!Array.isArray(incoming) || incoming.length === 0) return current;
+        return incoming.length >= current.length ? incoming : current;
+      });
     };
 
     const handleComponentsReady = (event: Event) => {
@@ -3753,16 +3922,22 @@ productMaterials?.length
 
     window.addEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
     window.addEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
+    window.addEventListener("bagastudio:runtime-components-merged", handleComponentsReady);
     window.addEventListener("bagastudio:viewer-select-component", handleSelectComponent);
 
     const existingComponents = (window as any).__bagastudioViewerRuntimeComponents;
     if (Array.isArray(existingComponents)) {
-      setViewerRuntimeComponents(existingComponents as BagaStudioRuntimeComponent[]);
+      setViewerRuntimeComponents((current) => {
+        const incoming = existingComponents as BagaStudioRuntimeComponent[];
+        if (!Array.isArray(current) || current.length === 0) return incoming;
+        return incoming.length >= current.length ? incoming : current;
+      });
     }
 
     return () => {
       window.removeEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
       window.removeEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
+      window.removeEventListener("bagastudio:runtime-components-merged", handleComponentsReady);
       window.removeEventListener("bagastudio:viewer-select-component", handleSelectComponent);
 
       delete (window as any).bagastudioGetViewerRuntimeComponents;

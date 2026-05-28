@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Bounds } from "@react-three/drei";
+import { Html, OrbitControls, Bounds } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
@@ -15,6 +15,10 @@ type MeshConfig = {
   meshName: string;
   displayName: string;
   category: string;
+  partId?: string;
+  componentType?: string;
+  runtimeRole?: string;
+  tags?: string;
   selectable: boolean;
   visible: boolean;
   compatibleLed: boolean;
@@ -119,6 +123,16 @@ type Space3DAnalyzerReport = {
   materials: Space3DAnalyzerMaterial[];
   previewStrings: string[];
   warnings: string[];
+};
+
+type GeometryCompletionReport = {
+  status: "idle" | "ready";
+  daeMeshCount: number;
+  s3dComponentCount: number;
+  matchedCount: number;
+  missingCount: number;
+  missingParts: MeshConfig[];
+  generatedAt: string;
 };
 
 const SPACE3D_SUPPORTED_FORMATS = ".s3d,.s3dbak";
@@ -397,6 +411,175 @@ function guessComponentCategory(displayName: string) {
 }
 
 
+function slugifyBagaStudioId(value: string, fallback = "item") {
+  const slug = String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+
+  return slug || fallback;
+}
+
+function buildStablePartId(mesh: Partial<MeshConfig>, index: number) {
+  if (mesh.partId?.trim()) return mesh.partId.trim();
+
+  const base = slugifyBagaStudioId(
+    mesh.displayName || mesh.meshName || `component_${index + 1}`,
+    `component_${index + 1}`
+  );
+
+  return `part_${String(index + 1).padStart(3, "0")}_${base}`;
+}
+
+function guessRuntimeRole(displayName: string, category: string) {
+  const name = `${displayName} ${category}`.toLowerCase();
+
+  if (name.includes("top") || name.includes("piano")) return "top";
+  if (name.includes("frontale") || name.includes("front")) return "front";
+  if (name.includes("schiena") || name.includes("retro") || name.includes("back")) return "back";
+  if (name.includes("fianco") || name.includes("side") || name.includes("sx") || name.includes("dx")) return "side";
+  if (name.includes("zoccolo") || name.includes("plinth")) return "plinth";
+  if (name.includes("mensola") || name.includes("ripiano") || name.includes("shelf")) return "shelf";
+  if (name.includes("cassetto") || name.includes("drawer")) return "drawer";
+  if (name.includes("anta") || name.includes("door")) return "door";
+  if (category === "mirror") return "mirror";
+  if (category === "hardware") return "hardware";
+  if (category === "lighting") return "lighting";
+  if (category === "insert") return "insert";
+
+  return "component";
+}
+
+function buildRuntimeTags(mesh: Partial<MeshConfig>, category: string, role: string) {
+  const rawTags = typeof mesh.tags === "string" ? mesh.tags.split(",") : [];
+  return Array.from(
+    new Set(
+      [category, role, ...rawTags]
+        .map((tag) => String(tag || "").trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeComponentCategory(category: string, displayName = "") {
+  const value = String(category || "").trim().toLowerCase();
+  if (value && value !== "component") return value;
+  return guessComponentCategory(displayName || "");
+}
+
+function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
+  const category = normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName);
+  const partId = buildStablePartId({ ...mesh, category }, index);
+  const runtimeRole = mesh.runtimeRole || guessRuntimeRole(mesh.displayName || mesh.meshName || partId, category);
+  const componentType = mesh.componentType || (category === "panel" ? "configurable-panel" : `${category}-component`);
+  const tags = buildRuntimeTags(mesh, category, runtimeRole);
+
+  const normalizeCsv = (value: string, fallback: string[] = []) => {
+    const items = value
+      ? value.split(",").map((item) => item.trim()).filter(Boolean)
+      : fallback;
+    return Array.from(new Set(items));
+  };
+
+  const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
+  const compatibleAccessories =
+    mesh.supportsAccessories === false
+      ? []
+      : normalizeCsv(mesh.compatibleAccessories, [
+          ...(mesh.compatibleInsert ? ["insert"] : []),
+          ...(mesh.compatibleLed ? ["led"] : []),
+        ]);
+
+  const isTop = runtimeRole === "top";
+  const isSide = runtimeRole === "side";
+
+  return {
+    id: partId,
+    partId,
+    name: mesh.displayName,
+    label: mesh.displayName,
+    customerName: mesh.displayName,
+    originalName: mesh.meshName,
+    meshName: mesh.meshName,
+    category,
+    componentType,
+    runtimeRole,
+    tags,
+    selectable: mesh.selectable !== false,
+    visible: mesh.visible !== false,
+    supportsMaterials: true,
+    supportsVisibility: true,
+    supportsAccessories: mesh.supportsAccessories !== false,
+    compatibleLed: Boolean(mesh.compatibleLed),
+    compatibleInsert: Boolean(mesh.compatibleInsert),
+    materialSlots,
+    allowedMaterialCategories:
+      category === "mirror"
+        ? ["mirror"]
+        : category === "hardware"
+        ? ["metal"]
+        : ["wood", "marble", "metal", "mirror"],
+    compatibleAccessories: Array.from(
+      new Set([
+        ...compatibleAccessories,
+        ...(mesh.compatibleInsert ? ["insert"] : []),
+        ...(mesh.compatibleLed ? ["led"] : []),
+      ])
+    ),
+    runtimeMetadata: {
+      schema: "bagastudio-runtime-component-metadata",
+      version: 2,
+      partId,
+      meshName: mesh.meshName,
+      displayName: mesh.displayName,
+      category,
+      componentType,
+      runtimeRole,
+      tags,
+      bridgeTargets: {
+        materials: true,
+        visibility: true,
+        led: Boolean(mesh.compatibleLed),
+        insert: Boolean(mesh.compatibleInsert),
+        accessories: mesh.supportsAccessories !== false,
+        pricing: true,
+        bom: true,
+        technicalPoints: false,
+      },
+    },
+    mountPoints: {
+      ...(mesh.compatibleLed && {
+        led: {
+          frontOffset: Number(mesh.ledFrontOffset || 0),
+          sideMargin: Number(mesh.ledSideMargin || 0),
+          yOffset: Number(mesh.ledYOffset || 0),
+          position: mesh.ledPosition || "front",
+        },
+      }),
+      ...(mesh.compatibleInsert && {
+        insert: {
+          position: isTop
+            ? ["top"]
+            : isSide
+            ? ["side"]
+            : mesh.insertPosition
+            ? mesh.insertPosition.split(",").map((item) => item.trim()).filter(Boolean)
+            : ["front"],
+          offset: {
+            x: Number(mesh.insertOffsetX || 0),
+            y: isTop ? 0.08 : Number(mesh.insertOffsetY || 0),
+            z: isTop ? 0 : Number(mesh.insertOffsetZ || 1),
+          },
+        },
+      }),
+    },
+  };
+}
+
+
 function getStableMeshName(rawName: string | undefined, index: number) {
   const cleanName = String(rawName || "").trim();
   return cleanName === "" || /^\d+$/.test(cleanName)
@@ -515,7 +698,11 @@ function normalizeAdminMeshList(meshes: MeshConfig[]) {
     ...mesh,
     meshName: mesh.meshName || `Mesh_${index + 1}`,
     displayName: mesh.displayName || mesh.meshName || `Componente ${index + 1}`,
-    category: mesh.category || guessComponentCategory(mesh.displayName || mesh.meshName || ""),
+    category: normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName || ""),
+    partId: buildStablePartId(mesh, index),
+    componentType: mesh.componentType || "",
+    runtimeRole: mesh.runtimeRole || guessRuntimeRole(mesh.displayName || mesh.meshName || "", normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName || "")),
+    tags: mesh.tags || "",
     selectable: mesh.selectable !== false,
     visible: mesh.visible !== false,
     supportsAccessories: mesh.supportsAccessories !== false,
@@ -1286,6 +1473,15 @@ const [selectedLibraryProductId, setSelectedLibraryProductId] = useState("");
 const [space3DFileName, setSpace3DFileName] = useState("");
 const [space3DAnalyzerReport, setSpace3DAnalyzerReport] = useState<Space3DAnalyzerReport | null>(null);
 const [space3DStatus, setSpace3DStatus] = useState("S3D analyzer in attesa");
+const [geometryCompletionReport, setGeometryCompletionReport] = useState<GeometryCompletionReport>({
+  status: "idle",
+  daeMeshCount: 0,
+  s3dComponentCount: 0,
+  matchedCount: 0,
+  missingCount: 0,
+  missingParts: [],
+  generatedAt: "",
+});
 const autosaveHydratedRef = useRef(false);
 const meshCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 const meshInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -1332,7 +1528,7 @@ function updateMeshConfig(meshName: string, patch: Partial<MeshConfig>) {
 
 const mapperCategories = useMemo(() => {
   const categories = Array.from(
-    new Set(meshList.map((mesh) => mesh.category || "component"))
+    new Set<string>(meshList.map((mesh) => mesh.category || "component"))
   );
   return categories.sort((a, b) => a.localeCompare(b));
 }, [meshList]);
@@ -1461,6 +1657,7 @@ const buildAdminBackup = (includeHeavyModelData = true) => ({
     space3DFileName,
     space3DAnalyzerReport,
     space3DStatus,
+    geometryCompletionReport,
   },
 });
 
@@ -1493,9 +1690,13 @@ const restoreAdminBackup = (backup: any) => {
   setModelRotationY(Number(state.modelRotationY ?? 0));
   setMeshList(
     Array.isArray(state.meshList)
-      ? state.meshList.map((mesh: any) => ({
+      ? state.meshList.map((mesh: any, index: number) => ({
           ...mesh,
-          category: mesh.category || guessComponentCategory(mesh.displayName || mesh.meshName || ""),
+          category: normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName || ""),
+          partId: mesh.partId || buildStablePartId(mesh, index),
+          componentType: mesh.componentType || "",
+          runtimeRole: mesh.runtimeRole || guessRuntimeRole(mesh.displayName || mesh.meshName || "", mesh.category || "component"),
+          tags: mesh.tags || "",
           supportsAccessories:
             typeof mesh.supportsAccessories === "boolean"
               ? mesh.supportsAccessories
@@ -1508,6 +1709,15 @@ const restoreAdminBackup = (backup: any) => {
   setSpace3DFileName(state.space3DFileName || "");
   setSpace3DAnalyzerReport(state.space3DAnalyzerReport || null);
   setSpace3DStatus(state.space3DStatus || "S3D analyzer in attesa");
+  setGeometryCompletionReport(state.geometryCompletionReport || {
+    status: "idle",
+    daeMeshCount: 0,
+    s3dComponentCount: 0,
+    matchedCount: 0,
+    missingCount: 0,
+    missingParts: [],
+    generatedAt: "",
+  });
 
   setBackupStatus(`${adminT.restoreCompleted}: ${new Date().toLocaleString()}`);
 };
@@ -1718,8 +1928,13 @@ function buildCurrentProductPackageJson() {
   };
 
   const isCanonicalGlb = ["glb", "gltf"].includes(modelExtension);
-  const safeModelName = modelFileName || "imported-model.glb";
-  const primaryModelUrl = modelDataUrl || `/models/${safeModelName}`;
+  const isSpace3DSource = ["s3d", "s3dbak"].includes(modelExtension) || Boolean(space3DAnalyzerReport);
+  const safeModelName = modelFileName || (isSpace3DSource ? (space3DFileName || "space3d-source.s3d") : "imported-model.glb");
+  // S3D è metadata: se è stato caricato anche un modello reale DAE/GLB/OBJ/STL,
+  // il package deve usare quella geometria embedded invece di restare metadata-only.
+  const hasEmbeddedRuntimeGeometry = Boolean(modelDataUrl);
+  const primaryModelUrl = hasEmbeddedRuntimeGeometry ? modelDataUrl : isSpace3DSource ? null : `/models/${safeModelName}`;
+  const convertedModelUrl = isCanonicalGlb && primaryModelUrl ? primaryModelUrl : null;
 
   const packageId =
     productId ||
@@ -1730,95 +1945,36 @@ function buildCurrentProductPackageJson() {
     "new-product";
   const now = new Date().toISOString();
 
-  const components = meshList.map((mesh, index) => {
-    const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
-    const compatibleAccessories =
-      mesh.supportsAccessories === false
-        ? []
-        : normalizeCsv(mesh.compatibleAccessories, [
-            ...(mesh.compatibleInsert ? ["insert"] : []),
-            ...(mesh.compatibleLed ? ["led"] : []),
-          ]);
+  const components = meshList.map((mesh, index) => buildRuntimeComponentV2(mesh, index));
 
-    return {
-      id: `part_${index + 1}`,
-      name: mesh.displayName,
-      label: mesh.displayName,
-      customerName: mesh.displayName,
-      originalName: mesh.meshName,
-      meshName: mesh.meshName,
-      category: mesh.category || "component",
-      selectable: mesh.selectable,
-      visible: mesh.visible,
-      supportsMaterials: true,
-      supportsVisibility: true,
-      supportsAccessories: mesh.supportsAccessories !== false,
-      compatibleLed: mesh.compatibleLed,
-      compatibleInsert: mesh.compatibleInsert,
-      materialSlots,
-      allowedMaterialCategories:
-        mesh.category === "mirror"
-          ? ["mirror"]
-          : mesh.category === "hardware"
-          ? ["metal"]
-          : ["wood", "marble", "metal", "mirror"],
-      compatibleAccessories: Array.from(
-        new Set([
-          ...compatibleAccessories,
-          ...(mesh.compatibleInsert ? ["insert"] : []),
-          ...(mesh.compatibleLed ? ["led"] : []),
-        ])
-      ),
-      mountPoints: {
-        ...(mesh.compatibleLed && {
-          led: {
-            frontOffset: Number(mesh.ledFrontOffset || 0),
-            sideMargin: Number(mesh.ledSideMargin || 0),
-            yOffset: Number(mesh.ledYOffset || 0),
-            position: mesh.ledPosition || "front",
-          },
-        }),
-        ...(mesh.compatibleInsert && {
-          insert: {
-            position:
-              mesh.displayName?.toLowerCase().includes("piano") ||
-              mesh.meshName?.toLowerCase().includes("piano") ||
-              mesh.meshName?.toLowerCase().includes("orizzontale")
-                ? ["top"]
-                : mesh.displayName?.toLowerCase().includes("fianco") ||
-                  mesh.meshName?.toLowerCase().includes("fianco") ||
-                  mesh.meshName?.toLowerCase().includes("side")
-                ? ["side"]
-                : mesh.insertPosition
-                ? mesh.insertPosition.split(",").map((item) => item.trim()).filter(Boolean)
-                : ["front"],
-            offset: {
-              x: Number(mesh.insertOffsetX || 0),
-              y:
-                mesh.insertPosition === "top" ||
-                mesh.displayName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("orizzontale")
-                  ? 0.08
-                  : Number(mesh.insertOffsetY || 0),
-              z:
-                mesh.insertPosition === "top" ||
-                mesh.displayName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("orizzontale")
-                  ? 0
-                  : Number(mesh.insertOffsetZ || 1),
-            },
-          },
-        }),
-      },
-    };
-  });
+  const componentCategories = Array.from(new Set(components.map((component) => component.category))).sort();
+  const runtimeMetadata = {
+    schema: "bagastudio-runtime-metadata",
+    version: 2,
+    generatedAt: now,
+    componentCount: components.length,
+    categories: componentCategories,
+    partIdStrategy: "stable-index-plus-display-name-slug",
+    bridge: {
+      viewer: true,
+      configurator: true,
+      materials: true,
+      led: true,
+      inserts: true,
+      accessories: true,
+      visibility: true,
+      pricing: true,
+      bom: true,
+      cadExport: "prepared",
+      technicalPoints: "prepared",
+    },
+  };
 
   return JSON.stringify(
     {
       schema: "bagastudio-product-package",
       packageVersion: packageVersion || "2.0.0",
+      productPackageVersion: 2,
       generatedAt: now,
       viewerCompatible: true,
       engine: {
@@ -1829,6 +1985,9 @@ function buildCurrentProductPackageJson() {
         supportsRuntimeMaterials: true,
         supportsComponentVisibility: true,
         supportsAccessories: true,
+        supportsRuntimeMetadataV2: true,
+        supportsStablePartIds: true,
+        supportsComponentCategories: true,
       },
       metadata: {
         id: packageId,
@@ -1838,6 +1997,9 @@ function buildCurrentProductPackageJson() {
         sourceFileName: safeModelName,
         originalFormat: modelExtension,
         componentCount: components.length,
+        componentCategories,
+        runtimeMetadataVersion: 2,
+        packageSource: space3DAnalyzerReport ? "space3d-analyzer" : "admin-model-importer",
       },
       id: packageId,
       name: productName,
@@ -1846,13 +2008,19 @@ function buildCurrentProductPackageJson() {
       version: packageVersion || "2.0.0",
       assets: {
         modelUrl: primaryModelUrl,
-        embeddedModelDataUrl: modelDataUrl || null,
-        originalFileUrl: `/models/${safeModelName}`,
+        embeddedModelDataUrl: hasEmbeddedRuntimeGeometry ? modelDataUrl : null,
+        originalFileUrl: isSpace3DSource ? null : `/models/${safeModelName}`,
         originalFormat: modelExtension,
         sourceFileName: safeModelName,
-        convertedModelUrl: isCanonicalGlb ? primaryModelUrl : "/models/demo-product-2.glb",
-        requiresConversion: !isCanonicalGlb,
+        convertedModelUrl,
+        requiresConversion: !isCanonicalGlb || isSpace3DSource,
         conversionTargetFormat: "glb",
+        hasRuntimeGeometry: Boolean(primaryModelUrl || convertedModelUrl || hasEmbeddedRuntimeGeometry),
+        geometrySource: isSpace3DSource
+          ? hasEmbeddedRuntimeGeometry
+            ? "space3d-metadata-plus-admin-model-importer"
+            : "space3d-analyzer-only"
+          : "admin-model-importer",
       },
       dimensions: {
         width: { min: widthMin, max: widthMax, step: 10, default: widthDefault },
@@ -1867,6 +2035,8 @@ function buildCurrentProductPackageJson() {
         },
         activeViewId: "iso",
       },
+      runtimeMetadata,
+      componentCategories,
       components,
       parts: components,
       materials: DEFAULT_PRODUCT_MATERIALS,
@@ -1881,6 +2051,25 @@ function buildCurrentProductPackageJson() {
         vat: 22,
       },
       views: DEFAULT_PRODUCT_VIEWS,
+      bridge: {
+        schema: "bagastudio-viewer-configurator-bridge",
+        version: 2,
+        partIdField: "partId",
+        meshNameField: "meshName",
+        categoryField: "category",
+        metadataField: "runtimeMetadata",
+        runtimeTargets: ["materials", "visibility", "led", "insert", "accessories", "pricing", "bom"],
+      },
+      geometryRuntime: {
+        status: isSpace3DSource ? "metadata-only-requires-geometry-conversion" : ["glb", "gltf"].includes(modelExtension) ? "ready" : "requires-conversion-to-glb",
+        originalFormat: modelExtension,
+        preparedForViewer: Boolean(primaryModelUrl || convertedModelUrl),
+        hasRuntimeGeometry: Boolean(primaryModelUrl || convertedModelUrl || hasEmbeddedRuntimeGeometry),
+        preventViewerFallback: true,
+        notes: space3DAnalyzerReport
+          ? ["S3D analyzer package: solo metadata/componenti. Nessun modello 3D viene forzato nel Viewer finché non esiste una conversione geometria/GLB reale."]
+          : [],
+      },
     },
     null,
     2
@@ -1938,8 +2127,12 @@ function loadProductFromLibrary(item: ProductLibraryItem) {
 
     const parts = Array.isArray(parsed.parts) ? parsed.parts : parsed.components || [];
     setMeshList(
-      parts.map((part: any) => ({
+      parts.map((part: any, index: number) => ({
         meshName: part.meshName || part.originalName || part.id,
+        partId: part.partId || part.id || buildStablePartId(part, index),
+        componentType: part.componentType || part.runtimeMetadata?.componentType || "",
+        runtimeRole: part.runtimeRole || part.runtimeMetadata?.runtimeRole || guessRuntimeRole(part.name || part.meshName || part.id || "", part.category || "component"),
+        tags: Array.isArray(part.tags) ? part.tags.join(", ") : part.tags || "",
         displayName: part.customerName || part.label || part.name || part.meshName || part.id,
         category: part.category || "component",
         selectable: part.selectable !== false,
@@ -1991,6 +2184,16 @@ async function handleSpace3DImport(file?: File | null) {
   setSpace3DFileName(file.name);
   setSpace3DStatus(`Analisi Space3D in corso: ${file.name}`);
 
+  // S3D Analyzer: il file .s3d NON è una geometria 3D caricabile direttamente nel preview.
+  // Se esiste già una geometria reale importata prima (DAE/GLB/OBJ/STL), la manteniamo
+  // e usiamo il .s3d solo come sorgente metadata/mapping. Se non esiste geometria,
+  // il package resta metadata-only e il Viewer lo bloccherà correttamente.
+  if (!modelDataUrl) {
+    setModelPreviewUrl("");
+    setModelFileName(file.name);
+    setModelExtension(ext);
+  }
+
   try {
     const buffer = await file.arrayBuffer();
     let text = "";
@@ -2041,6 +2244,96 @@ function downloadSpace3DAnalyzerReport() {
   );
 }
 
+function normalizeGeometryMatchKey(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function detectMissingSpace3DParts() {
+  if (!space3DAnalyzerReport) {
+    setSpace3DStatus("Carica prima un file .s3d per confrontare i componenti.");
+    return;
+  }
+
+  const daeMeshes = meshList.filter((mesh) => !mesh.meshName.startsWith("s3d_component_"));
+  const daeKeys = new Set(
+    daeMeshes.flatMap((mesh) => [
+      normalizeGeometryMatchKey(mesh.meshName),
+      normalizeGeometryMatchKey(mesh.displayName),
+      normalizeGeometryMatchKey(mesh.partId || ""),
+    ])
+  );
+
+  const missingParts = space3DAnalyzerReport.components
+    .filter((component) => {
+      const componentKey = normalizeGeometryMatchKey(component.name);
+      if (!componentKey) return false;
+      return !Array.from(daeKeys).some((key) => key && (componentKey.includes(key) || key.includes(componentKey)));
+    })
+    .map((component, index): MeshConfig => ({
+      meshName: `reconstructed_${component.id}`,
+      displayName: component.name || `Parte ricostruita ${index + 1}`,
+      category: component.category || "component",
+      partId: `reconstructed_${String(index + 1).padStart(3, "0")}_${slugifyBagaStudioId(component.name, "space3d_part")}`,
+      componentType: "reconstructed-placeholder",
+      runtimeRole: guessRuntimeRole(component.name, component.category || "component"),
+      tags: "reconstructed, missing-from-dae, space3d, geometry-completion-v1",
+      selectable: true,
+      visible: true,
+      compatibleLed: component.category === "panel" || component.name.toLowerCase().includes("led"),
+      compatibleInsert: component.category === "panel",
+      supportsAccessories: component.category !== "lighting",
+      materialSlots: "main",
+      compatibleAccessories: component.category === "hardware" ? "hardware" : "",
+      ledPosition: "front",
+      ledFrontOffset: "4",
+      ledSideMargin: "5",
+      ledYOffset: "0",
+      insertPosition: "front",
+      insertOffsetX: "0",
+      insertOffsetY: "0",
+      insertOffsetZ: "1",
+    }));
+
+  setGeometryCompletionReport({
+    status: "ready",
+    daeMeshCount: daeMeshes.length,
+    s3dComponentCount: space3DAnalyzerReport.components.length,
+    matchedCount: Math.max(space3DAnalyzerReport.components.length - missingParts.length, 0),
+    missingCount: missingParts.length,
+    missingParts,
+    generatedAt: new Date().toISOString(),
+  });
+
+  setSpace3DStatus(
+    `Geometry Completion V1: ${missingParts.length} parti mancanti rilevate su ${space3DAnalyzerReport.components.length} componenti S3D.`
+  );
+}
+
+function applyMissingPartsAsPlaceholders() {
+  if (geometryCompletionReport.missingParts.length === 0) {
+    setSpace3DStatus("Nessuna parte mancante da aggiungere come placeholder.");
+    return;
+  }
+
+  setMeshList((current) => {
+    const existing = new Set(current.map((mesh) => mesh.meshName));
+    const nextMissing = geometryCompletionReport.missingParts.filter(
+      (mesh) => !existing.has(mesh.meshName)
+    );
+
+    return normalizeAdminMeshList([...current, ...nextMissing]);
+  });
+
+  setSpace3DStatus(
+    `Placeholder metadata aggiunti: ${geometryCompletionReport.missingParts.length} parti ricostruite.`
+  );
+}
+
 function buildSpace3DProductPackageDraft() {
   if (!space3DAnalyzerReport) return;
 
@@ -2067,7 +2360,13 @@ function buildSpace3DProductPackageDraft() {
     components: meshList,
     materials: space3DAnalyzerReport.materials,
     analyzerReport: space3DAnalyzerReport,
-    geometryStatus: "pending-geometry-bridge",
+    geometryCompletion: {
+      schema: "bagastudio-geometry-completion-report",
+      version: 1,
+      ...geometryCompletionReport,
+    },
+    reconstructedParts: geometryCompletionReport.missingParts,
+    geometryStatus: geometryCompletionReport.missingParts.length > 0 ? "metadata-placeholders-ready" : "pending-geometry-bridge",
   };
 
   const jsonString = JSON.stringify(packageDraft, null, 2);
@@ -2774,7 +3073,44 @@ function downloadImporterDiagnosticJson() {
               >
                 Genera Product Package draft
               </button>
+              <button
+                type="button"
+                disabled={!space3DAnalyzerReport}
+                onClick={detectMissingSpace3DParts}
+                className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Rileva parti mancanti
+              </button>
+              <button
+                type="button"
+                disabled={geometryCompletionReport.missingParts.length === 0}
+                onClick={applyMissingPartsAsPlaceholders}
+                className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Aggiungi placeholder metadata
+              </button>
             </div>
+
+            {geometryCompletionReport.status === "ready" && (
+              <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-xs text-amber-50">
+                <p className="font-black uppercase tracking-[0.2em] text-amber-200">Geometry Completion V1</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-2">DAE mesh: {geometryCompletionReport.daeMeshCount}</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-2">S3D componenti: {geometryCompletionReport.s3dComponentCount}</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-2">Match stimati: {geometryCompletionReport.matchedCount}</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-2">Mancanti: {geometryCompletionReport.missingCount}</div>
+                </div>
+                {geometryCompletionReport.missingParts.length > 0 && (
+                  <div className="mt-3 max-h-32 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
+                    {geometryCompletionReport.missingParts.slice(0, 12).map((part) => (
+                      <p key={part.meshName} className="truncate text-[11px] text-amber-100">
+                        {part.displayName} · {part.category} · {part.partId}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -2830,7 +3166,7 @@ function downloadImporterDiagnosticJson() {
 
  <OrbitControls target={[0, 1.2, 0]} />
 
-  {modelPreviewUrl && (
+  {modelPreviewUrl ? (
  <AdminModelRouter
   url={modelPreviewUrl}
   fileName={modelFileName}
@@ -2840,6 +3176,13 @@ function downloadImporterDiagnosticJson() {
   }}
   modelRotationY={modelRotationY}
 />
+) : (
+  <Html center>
+    <div className="rounded-2xl border border-violet-400/30 bg-slate-950/90 px-5 py-4 text-center text-xs text-slate-200 shadow-2xl">
+      <p className="font-black text-violet-200">Preview 3D non disponibile</p>
+      <p className="mt-1 max-w-[260px] text-slate-400">Il file .s3d è stato analizzato come metadata. Serve conversione geometria reale prima del preview Viewer.</p>
+    </div>
+  </Html>
 )}
 </Canvas>
   </div>
