@@ -771,6 +771,8 @@ const [generatedJson, setGeneratedJson] = useState("");
 const [productId, setProductId] = useState("new-product");
 const [productName, setProductName] = useState("Nuovo prodotto");
 const [productCategory, setProductCategory] = useState("custom");
+const [productBrand, setProductBrand] = useState("BagaStudio Core");
+const [packageVersion, setPackageVersion] = useState("2.0.0");
 const [widthDefault, setWidthDefault] = useState(180);
 const [widthMin, setWidthMin] = useState(100);
 const [widthMax, setWidthMax] = useState(350);
@@ -884,6 +886,8 @@ const buildAdminBackup = (includeHeavyModelData = true) => ({
     productId,
     productName,
     productCategory,
+    productBrand,
+    packageVersion,
     widthDefault,
     widthMin,
     widthMax,
@@ -910,6 +914,8 @@ const restoreAdminBackup = (backup: any) => {
   setProductId(state.productId ?? "new-product");
   setProductName(state.productName ?? "Nuovo prodotto");
   setProductCategory(state.productCategory ?? "custom");
+  setProductBrand(state.productBrand ?? "BagaStudio Core");
+  setPackageVersion(state.packageVersion ?? "2.0.0");
 
   setWidthDefault(Number(state.widthDefault ?? 180));
   setWidthMin(Number(state.widthMin ?? 100));
@@ -986,6 +992,8 @@ useEffect(() => {
   productId,
   productName,
   productCategory,
+  productBrand,
+  packageVersion,
   widthDefault,
   widthMin,
   widthMax,
@@ -1695,6 +1703,24 @@ insertOffsetZ: "1",
     placeholder={adminT.category}
     className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
   />
+
+  <div className="grid grid-cols-2 gap-3">
+    <input
+      type="text"
+      value={productBrand}
+      onChange={(e) => setProductBrand(e.target.value)}
+      placeholder="Brand"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
+    />
+
+    <input
+      type="text"
+      value={packageVersion}
+      onChange={(e) => setPackageVersion(e.target.value)}
+      placeholder="Package version"
+      className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
+    />
+  </div>
   <div className="grid grid-cols-3 gap-3 pt-3">
   <div>
     <label className="text-xs text-slate-400">{adminT.widthMin}</label>
@@ -1791,44 +1817,31 @@ insertOffsetZ: "1",
 </div>
           <button
   onClick={() => {
-    const productPackage = {
-      id: productId,
-name: productName,
-category: productCategory,
-      version: "1.0.0",
-      assets: {
-  modelUrl: modelDataUrl || `/models/${modelFileName || "imported-model.glb"}`,
-  embeddedModelDataUrl: modelDataUrl || null,
-  originalFileUrl: `/models/${modelFileName || "imported-model.glb"}`,
-  originalFormat: modelExtension,
-  sourceFileName: modelFileName || "imported-model.glb",
-  convertedModelUrl: ["glb", "gltf"].includes(modelExtension)
-    ? (modelDataUrl || `/models/${modelFileName || "imported-model.glb"}`)
-    : "/models/demo-product-2.glb",
-  requiresConversion: !["glb", "gltf"].includes(modelExtension),
-  conversionTargetFormat: "glb",
-      },
-    dimensions: {
-  width: {
-    min: widthMin,
-    max: widthMax,
-    step: 10,
-    default: widthDefault,
-  },
-  height: {
-    min: heightMin,
-    max: heightMax,
-    step: 10,
-    default: heightDefault,
-  },
-  depth: {
-    min: depthMin,
-    max: depthMax,
-    step: 5,
-    default: depthDefault,
-  },
-},
-      parts: meshList.map((mesh, index) => ({
+    const normalizeCsv = (value: string, fallback: string[] = []) => {
+      const items = value
+        ? value.split(",").map((item) => item.trim()).filter(Boolean)
+        : fallback;
+      return Array.from(new Set(items));
+    };
+
+    const isCanonicalGlb = ["glb", "gltf"].includes(modelExtension);
+    const safeModelName = modelFileName || "imported-model.glb";
+    const primaryModelUrl = modelDataUrl || `/models/${safeModelName}`;
+
+    const packageId = productId || productName.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "new-product";
+    const now = new Date().toISOString();
+
+    const components = meshList.map((mesh, index) => {
+      const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
+      const compatibleAccessories =
+        mesh.supportsAccessories === false
+          ? []
+          : normalizeCsv(mesh.compatibleAccessories, [
+              ...(mesh.compatibleInsert ? ["insert"] : []),
+              ...(mesh.compatibleLed ? ["led"] : []),
+            ]);
+
+      return {
         id: `part_${index + 1}`,
         name: mesh.displayName,
         label: mesh.displayName,
@@ -1843,92 +1856,124 @@ category: productCategory,
         supportsAccessories: mesh.supportsAccessories !== false,
         compatibleLed: mesh.compatibleLed,
         compatibleInsert: mesh.compatibleInsert,
-        materialSlots: mesh.materialSlots
-          ? mesh.materialSlots.split(",").map((s) => s.trim())
-          : ["main"],
+        materialSlots,
         allowedMaterialCategories:
           mesh.category === "mirror"
             ? ["mirror"]
             : mesh.category === "hardware"
             ? ["metal"]
             : ["wood", "marble", "metal", "mirror"],
-        compatibleAccessories:
-          mesh.supportsAccessories === false
-            ? []
-            : [
-                ...(mesh.compatibleAccessories
-                  ? mesh.compatibleAccessories.split(",").map((s) => s.trim()).filter(Boolean)
-                  : []),
-                ...(mesh.compatibleInsert ? ["insert"] : []),
-                ...(mesh.compatibleLed ? ["led"] : []),
-              ],
-          mountPoints: {
-  ...(mesh.compatibleLed && {
-    led: {
-      frontOffset: Number(mesh.ledFrontOffset),
-      sideMargin: Number(mesh.ledSideMargin),
-      yOffset: Number(mesh.ledYOffset),
-      position: mesh.ledPosition || "front",
-    },
-  }),
+        compatibleAccessories: Array.from(new Set([
+          ...compatibleAccessories,
+          ...(mesh.compatibleInsert ? ["insert"] : []),
+          ...(mesh.compatibleLed ? ["led"] : []),
+        ])),
+        mountPoints: {
+          ...(mesh.compatibleLed && {
+            led: {
+              frontOffset: Number(mesh.ledFrontOffset || 0),
+              sideMargin: Number(mesh.ledSideMargin || 0),
+              yOffset: Number(mesh.ledYOffset || 0),
+              position: mesh.ledPosition || "front",
+            },
+          }),
+          ...(mesh.compatibleInsert && {
+            insert: {
+              position:
+                mesh.displayName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("orizzontale")
+                  ? ["top"]
+                  : mesh.displayName?.toLowerCase().includes("fianco") ||
+                    mesh.meshName?.toLowerCase().includes("fianco") ||
+                    mesh.meshName?.toLowerCase().includes("side")
+                  ? ["side"]
+                  : mesh.insertPosition
+                  ? mesh.insertPosition.split(",").map((item) => item.trim()).filter(Boolean)
+                  : ["front"],
+              offset: {
+                x: Number(mesh.insertOffsetX || 0),
+                y:
+                  mesh.insertPosition === "top" ||
+                  mesh.displayName?.toLowerCase().includes("piano") ||
+                  mesh.meshName?.toLowerCase().includes("piano") ||
+                  mesh.meshName?.toLowerCase().includes("orizzontale")
+                    ? 0.08
+                    : Number(mesh.insertOffsetY || 0),
+                z:
+                  mesh.insertPosition === "top" ||
+                  mesh.displayName?.toLowerCase().includes("piano") ||
+                  mesh.meshName?.toLowerCase().includes("piano") ||
+                  mesh.meshName?.toLowerCase().includes("orizzontale")
+                    ? 0
+                    : Number(mesh.insertOffsetZ || 1),
+              },
+            },
+          }),
+        },
+      };
+    });
 
-  ...(mesh.compatibleInsert && {
-    insert: {
-position:
-  (
-    mesh.displayName?.toLowerCase().includes("piano") ||
-    mesh.meshName?.toLowerCase().includes("piano") ||
-    mesh.meshName?.toLowerCase().includes("orizzontale")
-  )
-    ? ["top"]
-    : (
-        mesh.displayName?.toLowerCase().includes("fianco") ||
-        mesh.meshName?.toLowerCase().includes("fianco") ||
-        mesh.meshName?.toLowerCase().includes("side")
-      )
-        ? ["side"]
-        : (
-            mesh.insertPosition
-              ? mesh.insertPosition.split(",").map((s) => s.trim())
-              : ["front"]
-          ),
-  offset: {
-    x: Number(mesh.insertOffsetX || 0),
-    y:
-      mesh.insertPosition === "top" ||
-      mesh.displayName?.toLowerCase().includes("piano") ||
-      mesh.meshName?.toLowerCase().includes("piano") ||
-      mesh.meshName?.toLowerCase().includes("orizzontale")
-        ? 0.08
-        : Number(mesh.insertOffsetY || 0),
-    z:
-      mesh.insertPosition === "top" ||
-      mesh.displayName?.toLowerCase().includes("piano") ||
-      mesh.meshName?.toLowerCase().includes("piano") ||
-      mesh.meshName?.toLowerCase().includes("orizzontale")
-        ? 0
-        : Number(mesh.insertOffsetZ || 1),
-  },
-},
-  }),
-},
-      })),
-
-materials: DEFAULT_PRODUCT_MATERIALS,
-options: [],
-accessories: [
-  {
-    id: "insert",
-    name: "Inserto",
-    stateType: "insert"
-  },
-  {
-    id: "led",
-    name: "LED",
-    stateType: "accessory"
-  }
-],
-pricing: {
+    const productPackage = {
+      schema: "bagastudio-product-package",
+      packageVersion: packageVersion || "2.0.0",
+      generatedAt: now,
+      viewerCompatible: true,
+      engine: {
+        name: "BagaStudio Core",
+        minViewerVersion: "1.0.0",
+        canonicalModelFormat: "glb",
+        supportsEmbeddedModelDataUrl: true,
+        supportsRuntimeMaterials: true,
+        supportsComponentVisibility: true,
+        supportsAccessories: true,
+      },
+      metadata: {
+        id: packageId,
+        name: productName,
+        brand: productBrand || "BagaStudio Core",
+        productCategory,
+        sourceFileName: safeModelName,
+        originalFormat: modelExtension,
+        componentCount: components.length,
+      },
+      id: packageId,
+      name: productName,
+      brand: productBrand || "BagaStudio Core",
+      category: productCategory,
+      version: packageVersion || "2.0.0",
+      assets: {
+        modelUrl: primaryModelUrl,
+        embeddedModelDataUrl: modelDataUrl || null,
+        originalFileUrl: `/models/${safeModelName}`,
+        originalFormat: modelExtension,
+        sourceFileName: safeModelName,
+        convertedModelUrl: isCanonicalGlb ? primaryModelUrl : "/models/demo-product-2.glb",
+        requiresConversion: !isCanonicalGlb,
+        conversionTargetFormat: "glb",
+      },
+      dimensions: {
+        width: { min: widthMin, max: widthMax, step: 10, default: widthDefault },
+        height: { min: heightMin, max: heightMax, step: 10, default: heightDefault },
+        depth: { min: depthMin, max: depthMax, step: 5, default: depthDefault },
+      },
+      defaultConfiguration: {
+        dimensions: {
+          width: widthDefault,
+          height: heightDefault,
+          depth: depthDefault,
+        },
+        activeViewId: "iso",
+      },
+      components,
+      parts: components,
+      materials: DEFAULT_PRODUCT_MATERIALS,
+      options: [],
+      accessories: [
+        { id: "insert", name: "Inserto", stateType: "insert" },
+        { id: "led", name: "LED", stateType: "accessory" },
+      ],
+      pricing: {
         basePrice: 900,
         margin: 0,
         vat: 22,
@@ -1938,21 +1983,9 @@ pricing: {
 
     const jsonString = JSON.stringify(productPackage, null, 2);
 
-setGeneratedJson(jsonString);
-
-const blob = new Blob([jsonString], {
-  type: "application/json",
-});
-
-const url = URL.createObjectURL(blob);
-
-const link = document.createElement("a");
-link.href = url;
-link.download = "product-package.json";
-link.click();
-
-URL.revokeObjectURL(url);
-}}
+    setGeneratedJson(jsonString);
+    downloadJsonFile("product-package.json", jsonString);
+  }}
   className="rounded-2xl bg-cyan-500 px-5 py-3 font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.28)] transition hover:bg-cyan-400"
 >
   {adminT.generateJson}
