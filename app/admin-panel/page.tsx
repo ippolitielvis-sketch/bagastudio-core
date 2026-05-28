@@ -12,10 +12,12 @@ import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 type MeshConfig = {
   meshName: string;
   displayName: string;
+  category: string;
   selectable: boolean;
   visible: boolean;
   compatibleLed: boolean;
   compatibleInsert: boolean;
+  supportsAccessories: boolean;
   materialSlots: string;
   compatibleAccessories: string;
 
@@ -111,6 +113,31 @@ if (width < depth * 0.4 && height > depth * 1.2) return "Fianco";
   return mesh.name || `Componente ${index + 1}`;
 }
 
+function guessComponentCategory(displayName: string) {
+  const name = displayName.toLowerCase();
+
+  if (name.includes("specchio") || name.includes("mirror")) return "mirror";
+  if (name.includes("maniglia") || name.includes("handle")) return "hardware";
+  if (name.includes("led")) return "lighting";
+  if (name.includes("inserto") || name.includes("marmo") || name.includes("insert")) return "insert";
+  if (
+    name.includes("piano") ||
+    name.includes("top") ||
+    name.includes("base") ||
+    name.includes("fianco") ||
+    name.includes("schiena") ||
+    name.includes("frontale") ||
+    name.includes("anta") ||
+    name.includes("cassetto") ||
+    name.includes("mensola") ||
+    name.includes("ripiano")
+  ) {
+    return "panel";
+  }
+
+  return "component";
+}
+
 
 function getStableMeshName(rawName: string | undefined, index: number) {
   const cleanName = String(rawName || "").trim();
@@ -134,10 +161,12 @@ function extractMeshesFromObject(object: THREE.Object3D) {
       meshes.push({
         meshName,
         displayName: guessedName,
+        category: guessComponentCategory(guessedName),
         selectable: true,
         visible: true,
         compatibleLed: guessedName.includes("LED"),
         compatibleInsert: guessedName.includes("Inserto"),
+        supportsAccessories: !["mirror", "lighting"].includes(guessComponentCategory(guessedName)),
         materialSlots:
           guessedName === "Piano"
             ? "top"
@@ -249,9 +278,12 @@ function AdminGLBModel({
         const maxDim = Math.max(size.x, size.y, size.z);
         const scale = Number.isFinite(maxDim) && maxDim > 0 ? 3 / maxDim : 1;
 
+        // Admin preview alignment: center X/Z and place the model bottom on the grid (Y=0).
+        // This avoids imported FBX/OBJ/GLB models floating above or sinking below the grid
+        // when their original pivot/origin comes from external 3D software.
         previewGroup.position.set(
           -center.x * scale,
-          -center.y * scale,
+          -box.min.y * scale,
           -center.z * scale
         );
         previewGroup.scale.setScalar(scale);
@@ -412,9 +444,10 @@ function AdminOBJModel({
       const maxDim = Math.max(size.x, size.y, size.z);
       const scale = maxDim > 0 ? 3 / maxDim : 1;
 
+      // Admin preview alignment: center X/Z and place the model bottom on the grid (Y=0).
       loadedObject.position.set(
         -center.x * scale,
-        -center.y * scale,
+        -box.min.y * scale,
         -center.z * scale
       );
 
@@ -495,9 +528,10 @@ function AdminFBXModel({
       const maxDim = Math.max(size.x, size.y, size.z);
       const scale = maxDim > 0 ? 3 / maxDim : 1;
 
+      // Admin preview alignment: center X/Z and place the model bottom on the grid (Y=0).
       loadedObject.position.set(
         -center.x * scale,
-        -center.y * scale,
+        -box.min.y * scale,
         -center.z * scale
       );
 
@@ -628,6 +662,8 @@ const ADMIN_I18N = {
     ledYOffset: "LED Y offset",
     materialSlots: "Slot materiali",
     compatibleAccessories: "Accessori compatibili",
+    componentCategory: "Categoria componente",
+    supportsAccessories: "Supporta accessori",
     generatePackage: "3. Genera product package",
     productInfo: "Informazioni prodotto",
     productId: "ID prodotto",
@@ -692,6 +728,8 @@ const ADMIN_I18N = {
     ledYOffset: "LED Y offset",
     materialSlots: "Material slots",
     compatibleAccessories: "Compatible accessories",
+    componentCategory: "Component category",
+    supportsAccessories: "Supports accessories",
     generatePackage: "3. Generate product package",
     productInfo: "Product information",
     productId: "Product ID",
@@ -820,7 +858,18 @@ const restoreAdminBackup = (backup: any) => {
   setModelDataUrl(state.modelDataUrl ?? "");
   setSelectedMeshName(state.selectedMeshName ?? "");
   setModelRotationY(Number(state.modelRotationY ?? 0));
-  setMeshList(Array.isArray(state.meshList) ? state.meshList : []);
+  setMeshList(
+    Array.isArray(state.meshList)
+      ? state.meshList.map((mesh: any) => ({
+          ...mesh,
+          category: mesh.category || guessComponentCategory(mesh.displayName || mesh.meshName || ""),
+          supportsAccessories:
+            typeof mesh.supportsAccessories === "boolean"
+              ? mesh.supportsAccessories
+              : Boolean(mesh.compatibleAccessories),
+        }))
+      : []
+  );
   setGeneratedJson(state.generatedJson ?? "");
 
   setBackupStatus(`${adminT.restoreCompleted}: ${new Date().toLocaleString()}`);
@@ -1095,6 +1144,8 @@ if (ext === "stl") {
     {
       meshName: "STL_Mesh",
       displayName: "Componente STL",
+      category: "component",
+      supportsAccessories: true,
       selectable: true,
       visible: true,
       compatibleLed: false,
@@ -1145,6 +1196,8 @@ const meshes: MeshConfig[] = [];
           meshes.push({
   meshName: child.name || "unnamed_mesh",
   displayName: guessPartName(child as THREE.Mesh, meshes.length),
+  category: guessComponentCategory(guessPartName(child as THREE.Mesh, meshes.length)),
+  supportsAccessories: true,
   selectable: true,
   visible: true,
   compatibleLed: false,
@@ -1226,7 +1279,7 @@ insertOffsetZ: "1",
   <gridHelper args={[10, 10]} />
   <axesHelper args={[3]} />
 
- <OrbitControls target={[0, 0, 0]} />
+ <OrbitControls target={[0, 1.2, 0]} />
 
   {modelPreviewUrl && (
  <AdminModelRouter
@@ -1289,10 +1342,54 @@ insertOffsetZ: "1",
       onChange={(e) => {
         const updated = [...meshList];
         updated[index].displayName = e.target.value;
+        updated[index].category = updated[index].category || guessComponentCategory(e.target.value);
         setMeshList(updated);
       }}
       className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
+
+    <div className="grid grid-cols-2 gap-3 mt-3">
+      <div>
+        <label className="text-xs text-slate-400">{adminT.componentCategory}</label>
+        <select
+          value={mesh.category || "component"}
+          onChange={(e) => {
+            const updated = [...meshList];
+            updated[index].category = e.target.value;
+            setMeshList(updated);
+          }}
+          className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+        >
+          <option value="panel">Panel</option>
+          <option value="front">Front</option>
+          <option value="top">Top</option>
+          <option value="side">Side</option>
+          <option value="back">Back</option>
+          <option value="drawer">Drawer</option>
+          <option value="door">Door</option>
+          <option value="shelf">Shelf</option>
+          <option value="mirror">Mirror</option>
+          <option value="hardware">Hardware</option>
+          <option value="lighting">Lighting</option>
+          <option value="insert">Insert</option>
+          <option value="component">Component</option>
+        </select>
+      </div>
+
+      <label className="mt-6 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={mesh.supportsAccessories !== false}
+          onChange={(e) => {
+            const updated = [...meshList];
+            updated[index].supportsAccessories = e.target.checked;
+            setMeshList(updated);
+          }}
+        />
+        {adminT.supportsAccessories}
+      </label>
+    </div>
+
     <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
   <label className="flex items-center gap-2">
     <input
@@ -1610,22 +1707,37 @@ category: productCategory,
       parts: meshList.map((mesh, index) => ({
         id: `part_${index + 1}`,
         name: mesh.displayName,
+        label: mesh.displayName,
+        customerName: mesh.displayName,
+        originalName: mesh.meshName,
         meshName: mesh.meshName,
+        category: mesh.category || "component",
         selectable: mesh.selectable,
         visible: mesh.visible,
+        supportsMaterials: true,
+        supportsVisibility: true,
+        supportsAccessories: mesh.supportsAccessories !== false,
         compatibleLed: mesh.compatibleLed,
         compatibleInsert: mesh.compatibleInsert,
         materialSlots: mesh.materialSlots
           ? mesh.materialSlots.split(",").map((s) => s.trim())
           : ["main"],
-        allowedMaterialCategories: ["wood", "marble", "metal"],
-        compatibleAccessories: [
-  ...(mesh.compatibleAccessories
-    ? mesh.compatibleAccessories.split(",").map((s) => s.trim())
-    : []),
-  ...(mesh.compatibleInsert ? ["insert"] : []),
-  ...(mesh.compatibleLed ? ["led"] : []),
-],
+        allowedMaterialCategories:
+          mesh.category === "mirror"
+            ? ["mirror"]
+            : mesh.category === "hardware"
+            ? ["metal"]
+            : ["wood", "marble", "metal", "mirror"],
+        compatibleAccessories:
+          mesh.supportsAccessories === false
+            ? []
+            : [
+                ...(mesh.compatibleAccessories
+                  ? mesh.compatibleAccessories.split(",").map((s) => s.trim()).filter(Boolean)
+                  : []),
+                ...(mesh.compatibleInsert ? ["insert"] : []),
+                ...(mesh.compatibleLed ? ["led"] : []),
+              ],
           mountPoints: {
   ...(mesh.compatibleLed && {
     led: {
