@@ -452,6 +452,7 @@ function getModelFormat(product: AnyProduct | null) {
     if (modelUrl.includes("model/fbx")) return "fbx";
     if (modelUrl.includes("model/obj")) return "obj";
     if (modelUrl.includes("model/stl")) return "stl";
+    if (modelUrl.includes("model/vnd.collada") || modelUrl.includes("model/dae") || modelUrl.includes("collada")) return "dae";
     if (modelUrl.includes("model/gltf") || modelUrl.includes("model/glb")) return "glb";
     return "glb";
   }
