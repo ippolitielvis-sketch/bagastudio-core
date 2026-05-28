@@ -120,85 +120,6 @@ function forcePreviewMaterials(root: THREE.Object3D) {
   });
 }
 
-
-function normalizePartKey(value: any) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[-.]+/g, "_")
-    .replace(/[^a-z0-9_]/g, "");
-}
-
-function collectMeshCandidateNames(mesh: THREE.Mesh) {
-  const names = new Set<string>();
-  let current: THREE.Object3D | null = mesh;
-
-  while (current) {
-    if (current.name) names.add(current.name);
-    current = current.parent;
-  }
-
-  const data = (mesh.userData || {}) as any;
-  [
-    data.bagastudioPartId,
-    data.bagastudioPartKey,
-    data.originalName,
-    data.meshName,
-  ].forEach((value) => {
-    if (value) names.add(String(value));
-  });
-
-  return Array.from(names).filter(Boolean);
-}
-
-function findProductPartForMesh(
-  mesh: THREE.Mesh,
-  productParts: any[] = [],
-  meshIndex = -1
-) {
-  const candidates = collectMeshCandidateNames(mesh);
-  const normalizedCandidates = candidates.map(normalizePartKey);
-
-  const byExact = productParts.find((part: any) => {
-    const partKeys = [part?.id, part?.meshName, part?.name, part?.label, part?.originalName] 
-      .filter(Boolean)
-      .map(normalizePartKey);
-
-    return partKeys.some((key) => normalizedCandidates.includes(key));
-  });
-
-  if (byExact) return byExact;
-
-  const byContains = productParts.find((part: any) => {
-    const partKeys = [part?.id, part?.meshName, part?.name, part?.label, part?.originalName]
-      .filter(Boolean)
-      .map(normalizePartKey)
-      .filter(Boolean);
-
-    return partKeys.some((key) =>
-      normalizedCandidates.some((candidate) =>
-        candidate.includes(key) || key.includes(candidate)
-      )
-    );
-  });
-
-  if (byContains) return byContains;
-
-  if (meshIndex >= 0 && productParts[meshIndex]) return productParts[meshIndex];
-
-  return null;
-}
-
-function getStableMeshName(mesh: THREE.Mesh, productPart: any, meshIndex: number) {
-  return (
-    productPart?.meshName ||
-    productPart?.id ||
-    mesh.name ||
-    `Mesh_${meshIndex + 1}`
-  );
-}
-
 function buildObjectFromGeometry(geometry: THREE.BufferGeometry) {
   geometry.computeVertexNormals();
   const material = new THREE.MeshStandardMaterial({
@@ -213,6 +134,78 @@ function buildObjectFromGeometry(geometry: THREE.BufferGeometry) {
   group.name = "Imported_STL";
   group.add(mesh);
   return group;
+}
+
+function isImportedModelFormat(format?: string) {
+  return ["obj", "fbx", "stl"].includes(String(format || "").toLowerCase());
+}
+
+function createImportedModelSafeLedBar(
+  mesh: THREE.Mesh,
+  color: string,
+  config: {
+    frontOffset?: number;
+    sideMargin?: number;
+    yOffset?: number;
+    position?: string;
+    intensity?: number;
+  }
+) {
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+
+  const position = String(config.position || "front").toLowerCase();
+  const margin = Number(config.sideMargin ?? 8) / 100;
+  const frontOffset = Number(config.frontOffset ?? 2) / 100;
+  const yOffset = Number(config.yOffset ?? -2) / 100;
+
+  const safeWidth = Math.max(size.x * Math.max(0.15, 1 - margin), 0.08);
+  const safeDepth = Math.max(size.z * Math.max(0.15, 1 - margin), 0.08);
+  const safeHeight = Math.max(size.y, 0.08);
+
+  let geometry: THREE.BoxGeometry;
+  const ledPosition = center.clone();
+
+  if (position.includes("left") || position.includes("right")) {
+    geometry = new THREE.BoxGeometry(0.035, Math.max(safeHeight * 0.9, 0.12), 0.035);
+    ledPosition.x += position.includes("left")
+      ? -size.x / 2 - frontOffset
+      : size.x / 2 + frontOffset;
+    ledPosition.y += yOffset;
+  } else if (position.includes("back")) {
+    geometry = new THREE.BoxGeometry(safeWidth, 0.035, 0.035);
+    ledPosition.z -= size.z / 2 + frontOffset;
+    ledPosition.y += yOffset;
+  } else if (position.includes("top")) {
+    geometry = new THREE.BoxGeometry(safeWidth, 0.035, Math.max(safeDepth * 0.08, 0.035));
+    ledPosition.y += size.y / 2 + frontOffset;
+  } else if (position.includes("bottom") || position.includes("under")) {
+    geometry = new THREE.BoxGeometry(safeWidth, 0.035, Math.max(safeDepth * 0.08, 0.035));
+    ledPosition.y -= size.y / 2 + frontOffset;
+  } else {
+    geometry = new THREE.BoxGeometry(safeWidth, 0.035, 0.035);
+    ledPosition.z += size.z / 2 + frontOffset;
+    ledPosition.y += yOffset;
+  }
+
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: Math.min(1, Math.max(0.35, Number(config.intensity ?? 1) * 0.55)),
+    toneMapped: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const led = new THREE.Mesh(geometry, material);
+  led.name = `LED_${mesh.name}`;
+  led.position.copy(ledPosition);
+  led.renderOrder = 20;
+  led.frustumCulled = false;
+  led.userData.bagastudioImportedSafeLed = true;
+
+  return led;
 }
 
 function ProductModel({
@@ -240,12 +233,19 @@ function ProductModel({
   const [loadedRoot, setLoadedRoot] = useState<THREE.Object3D | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const runtimeModelFormat = useMemo(
+    () => inferModelFormat(productModel, productModelFormat),
+    [productModel, productModelFormat]
+  );
+
+  const useImportedSafeLed = isImportedModelFormat(runtimeModelFormat);
+
   useEffect(() => {
     let cancelled = false;
     setLoadedRoot(null);
     setLoadError(null);
 
-    const format = inferModelFormat(productModel, productModelFormat);
+    const format = runtimeModelFormat;
 
     const onLoaded = (object: THREE.Object3D) => {
       if (cancelled) return;
@@ -275,7 +275,7 @@ function ProductModel({
     return () => {
       cancelled = true;
     };
-  }, [productModel, productModelFormat]);
+  }, [productModel, runtimeModelFormat]);
 
  const setSelectedPartId = useConfigStore(
   (state) => state.setSelectedPart
@@ -292,29 +292,24 @@ const highlightedRef = useRef<{
 
     const clonedScene = loadedRoot.clone(true);
 
-    const sceneMeshes: THREE.Mesh[] = [];
-
     clonedScene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) sceneMeshes.push(child as THREE.Mesh);
-    });
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.name.includes("Piano")) {
+}
+        const partKey = mesh.name;
 
-    sceneMeshes.forEach((mesh, meshIndex) => {
-        const productPart = findProductPartForMesh(mesh, productParts, meshIndex);
-        const stableMeshName = getStableMeshName(mesh, productPart, meshIndex);
-        const originalMeshName = mesh.name || stableMeshName;
-
-        mesh.userData = {
-          ...mesh.userData,
-          originalName: originalMeshName,
-          bagastudioPartId: productPart?.id || stableMeshName,
-          bagastudioPartKey: stableMeshName,
-        };
-
-        if (!mesh.name || /^\d+$/.test(mesh.name)) {
-          mesh.name = stableMeshName;
-        }
-
-        const partKey = stableMeshName;
+        const productPart =
+  productParts.find((p) => p.meshName === mesh.name) ||
+  productParts.find((p) => mesh.name.includes(p.meshName)) ||
+  productParts.find((p) =>
+    mesh.name.toLowerCase().includes("mirror") &&
+    String(p.id).toLowerCase().includes("mirror")
+  ) ||
+  productParts.find((p) =>
+    mesh.name.toLowerCase().includes("specch") &&
+    String(p.id).toLowerCase().includes("mirror")
+  );
 
         //console.log("PRODUCT PART:", productPart);
 
@@ -740,7 +735,10 @@ if (hasLed && ledIsActive) {
       ? "#dff3ff"
       : "#fff1b8";
 
-  const ledBar = createLedBar(mesh, ledColor, ledConfig);
+  const ledBar = useImportedSafeLed
+    ? createImportedModelSafeLedBar(mesh, ledColor, ledConfig)
+    : createLedBar(mesh, ledColor, ledConfig);
+
   clonedScene.add(ledBar);
 }
 const usbActive =
@@ -791,12 +789,14 @@ if (wirelessActive) {
 //   const mirrorLed = createMirrorLedAccessory(mesh);
 //   clonedScene.add(mirrorLed);
 // }
+}
 });
 
 
 return clonedScene;
 }, [
   loadedRoot,
+  runtimeModelFormat,
   productParts,
   productMaterials,
   materials,
@@ -902,16 +902,35 @@ if (position === "top") {
     onClick={(e: any) => {
       e.stopPropagation();
 
-      const clickedMesh = e.object as THREE.Mesh;
-      const allMeshes: THREE.Mesh[] = [];
-      scene.traverse((object) => {
-        if ((object as THREE.Mesh).isMesh) allMeshes.push(object as THREE.Mesh);
-      });
+      const clickedName =
+        e.object.name ||
+        e.object.parent?.name ||
+        "unknown-part";
+const clickedPart =
+  productParts.find((p) => p.meshName === clickedName) ||
+  productParts.find((p) => clickedName.includes(p.meshName)) ||
+  productParts.find((p) =>
+    clickedName.toLowerCase().includes("mirror") &&
+    String(p.id).toLowerCase().includes("mirror")
+  ) ||
+  productParts.find((p) =>
+    clickedName.toLowerCase().includes("specch") &&
+    String(p.id).toLowerCase().includes("mirror")
+  );
+  productParts.find((p) =>
+    clickedName.toLowerCase().includes("mirror") &&
+    String(p.id).toLowerCase().includes("mirror")
+  ) ||
+  productParts.find((p) =>
+    clickedName.toLowerCase().includes("specchio") &&
+    String(p.id).toLowerCase().includes("mirror")
+  );
 
-      const meshIndex = Math.max(0, allMeshes.indexOf(clickedMesh));
-      const clickedPart = findProductPartForMesh(clickedMesh, productParts, meshIndex);
-      const clickedName = getStableMeshName(clickedMesh, clickedPart, meshIndex);
-      const realPartKey = clickedPart?.id || clickedName;
+const realPartKey = clickedPart?.id || clickedName;
+
+    const clickedMesh =
+  scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
+  (e.object as THREE.Mesh);
 
       if (highlightedRef.current) {
         highlightedRef.current.mesh.material =
