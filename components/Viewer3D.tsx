@@ -913,7 +913,262 @@ function applyProductPackageToImportedRoot(root: THREE.Object3D, productPackage:
 
   root.userData.bagastudioRuntimeComponents = productPackage.components;
 
-  if (typeof window !== "undefined") {
+  
+
+/* =========================
+   BagaStudio Catalog Browser V1
+========================= */
+
+function bagastudioNormalizeCatalogText(value: any) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function bagastudioSearchProductLibrary(query = "", filters: any = {}) {
+  const library = bagastudioReadProductLibrary();
+  const normalizedQuery = bagastudioNormalizeCatalogText(query);
+  const categoryFilter = bagastudioNormalizeCatalogText(filters?.category || "");
+  const sourceFormatFilter = bagastudioNormalizeCatalogText(filters?.sourceFormat || "");
+
+  const results = library.filter((item: any) => {
+    const searchableText = bagastudioNormalizeCatalogText([
+      item?.name,
+      item?.productId,
+      item?.productSlug,
+      item?.category,
+      item?.version,
+      item?.sourceFormat,
+      item?.package?.metadata?.engine,
+      item?.package?.metadata?.pipeline,
+    ].filter(Boolean).join(" "));
+
+    const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
+    const matchesCategory =
+      !categoryFilter || bagastudioNormalizeCatalogText(item?.category) === categoryFilter;
+    const matchesSourceFormat =
+      !sourceFormatFilter || bagastudioNormalizeCatalogText(item?.sourceFormat) === sourceFormatFilter;
+
+    return matchesQuery && matchesCategory && matchesSourceFormat;
+  });
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-search", {
+      detail: {
+        query,
+        filters,
+        count: results.length,
+        results,
+      },
+    })
+  );
+
+  return results;
+}
+
+function bagastudioGetProductLibraryCategories() {
+  const categories = bagastudioReadProductLibrary()
+    .map((item: any) => item?.category || "uncategorized")
+    .filter(Boolean);
+
+  return Array.from(new Set(categories)).sort((a: any, b: any) =>
+    String(a).localeCompare(String(b))
+  );
+}
+
+function bagastudioGetProductLibraryCardData(query = "", filters: any = {}) {
+  return bagastudioSearchProductLibrary(query, filters).map((item: any) => ({
+    productId: item?.productId,
+    productSlug: item?.productSlug,
+    name: item?.name || "BagaStudio Product",
+    category: item?.category || "uncategorized",
+    version: item?.version || "1.0.0",
+    sourceFormat: item?.sourceFormat || null,
+    savedAt: item?.savedAt || null,
+    updatedAt: item?.updatedAt || null,
+    thumbnail: item?.thumbnail || null,
+    hasPackage: Boolean(item?.package),
+    hasAdminMapping: Boolean(item?.package?.adminMapping || item?.package?.productPackage?.adminMapping),
+    hasImporterReport: Boolean(item?.package?.importerReport),
+  }));
+}
+
+function bagastudioImportProductLibrary(libraryJson: any, options: any = {}) {
+  const incomingLibrary = Array.isArray(libraryJson)
+    ? libraryJson
+    : Array.isArray(libraryJson?.items)
+      ? libraryJson.items
+      : [];
+
+  if (!incomingLibrary.length) {
+    const error = new Error("Invalid BagaStudio product library import");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-library-import-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const currentLibrary = options?.replace ? [] : bagastudioReadProductLibrary();
+  const currentByKey = new Map(
+    currentLibrary.map((item: any) => [item?.productId || item?.productSlug, item])
+  );
+
+  incomingLibrary.forEach((item: any) => {
+    const key = item?.productId || item?.productSlug || bagastudioCreateProductLibraryId(item?.name);
+    currentByKey.set(key, {
+      ...item,
+      productId: item?.productId || key,
+      productSlug:
+        item?.productSlug ||
+        String(item?.name || key)
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, ""),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  const nextLibrary = Array.from(currentByKey.values()).sort((a: any, b: any) =>
+    String(b?.updatedAt || b?.savedAt || "").localeCompare(String(a?.updatedAt || a?.savedAt || ""))
+  );
+
+  bagastudioWriteProductLibrary(nextLibrary);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-imported", {
+      detail: {
+        replace: Boolean(options?.replace),
+        count: incomingLibrary.length,
+        library: nextLibrary,
+      },
+    })
+  );
+
+  return nextLibrary;
+}
+
+
+
+/* =========================
+   BagaStudio Product Loader V1
+========================= */
+
+let __bagastudioPreparedLibraryProduct: any = null;
+
+function bagastudioExtractProductRuntimePackage(libraryItem: any) {
+  const fullPackage = libraryItem?.package || libraryItem || null;
+  const productPackage = fullPackage?.productPackage || fullPackage || null;
+
+  return {
+    libraryItem,
+    fullPackage,
+    productPackage,
+    adminMapping:
+      fullPackage?.adminMapping ||
+      productPackage?.adminMapping ||
+      null,
+    importerReport:
+      fullPackage?.importerReport ||
+      productPackage?.importerReport ||
+      null,
+    thumbnail:
+      fullPackage?.thumbnail ||
+      productPackage?.thumbnail ||
+      libraryItem?.thumbnail ||
+      null,
+    metadata: {
+      ...(fullPackage?.metadata || {}),
+      ...(productPackage?.metadata || {}),
+      productId: libraryItem?.productId || productPackage?.productId || null,
+      productSlug: libraryItem?.productSlug || productPackage?.productSlug || null,
+      productName: libraryItem?.name || productPackage?.productName || productPackage?.name || null,
+      category: libraryItem?.category || productPackage?.productCategory || null,
+      sourceFormat: libraryItem?.sourceFormat || productPackage?.sourceFormat || null,
+    },
+  };
+}
+
+function bagastudioPrepareProductFromLibrary(productIdOrSlug: string, options: any = {}) {
+  const libraryItem = bagastudioLoadProductFromLibrary(productIdOrSlug);
+  const prepared = bagastudioExtractProductRuntimePackage(libraryItem);
+
+  __bagastudioPreparedLibraryProduct = {
+    ...prepared,
+    preparedAt: new Date().toISOString(),
+    options,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-prepared", {
+      detail: __bagastudioPreparedLibraryProduct,
+    })
+  );
+
+  if (options?.autoApply) {
+    return bagastudioApplyPreparedProduct(options);
+  }
+
+  return __bagastudioPreparedLibraryProduct;
+}
+
+function bagastudioApplyPreparedProduct(options: any = {}) {
+  if (!__bagastudioPreparedLibraryProduct) {
+    const error = new Error("No prepared BagaStudio product available");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-loader-apply-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const prepared = __bagastudioPreparedLibraryProduct;
+
+  __bagastudioLastSavedPackage = prepared.fullPackage || null;
+  (window as any).bagastudioProductPackage = prepared.productPackage || null;
+  (window as any).bagastudioAdminMapping = prepared.adminMapping || null;
+  (window as any).bagastudioLastImporterReport = prepared.importerReport || null;
+  (window as any).__bagastudioLastProductThumbnail = prepared.thumbnail || null;
+  (window as any).__bagastudioLastLoadedLibraryProduct = prepared.libraryItem || null;
+
+  const safeApply = (window as any).bagastudioSafeApplyImporterState;
+  if (options?.safeApply && typeof safeApply === "function") {
+    try {
+      safeApply();
+    } catch (error) {
+      console.warn("BagaStudio Product Loader safe apply skipped", error);
+    }
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-applied", {
+      detail: prepared,
+    })
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:importer-ui-state-refresh", {
+      detail: prepared,
+    })
+  );
+
+  return prepared;
+}
+
+function bagastudioGetPreparedProduct() {
+  return __bagastudioPreparedLibraryProduct;
+}
+
+if (typeof window !== "undefined") {
     prepareImporterUiBridge(root);
     window.dispatchEvent(
       new CustomEvent("bagastudio:product-package-applied", {
@@ -986,7 +1241,262 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
   root.userData.bagastudioImporterFormat = format || "unknown";
   root.userData.bagastudioRuntimeComponents = components;
 
-  if (typeof window !== "undefined") {
+  
+
+/* =========================
+   BagaStudio Catalog Browser V1
+========================= */
+
+function bagastudioNormalizeCatalogText(value: any) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function bagastudioSearchProductLibrary(query = "", filters: any = {}) {
+  const library = bagastudioReadProductLibrary();
+  const normalizedQuery = bagastudioNormalizeCatalogText(query);
+  const categoryFilter = bagastudioNormalizeCatalogText(filters?.category || "");
+  const sourceFormatFilter = bagastudioNormalizeCatalogText(filters?.sourceFormat || "");
+
+  const results = library.filter((item: any) => {
+    const searchableText = bagastudioNormalizeCatalogText([
+      item?.name,
+      item?.productId,
+      item?.productSlug,
+      item?.category,
+      item?.version,
+      item?.sourceFormat,
+      item?.package?.metadata?.engine,
+      item?.package?.metadata?.pipeline,
+    ].filter(Boolean).join(" "));
+
+    const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
+    const matchesCategory =
+      !categoryFilter || bagastudioNormalizeCatalogText(item?.category) === categoryFilter;
+    const matchesSourceFormat =
+      !sourceFormatFilter || bagastudioNormalizeCatalogText(item?.sourceFormat) === sourceFormatFilter;
+
+    return matchesQuery && matchesCategory && matchesSourceFormat;
+  });
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-search", {
+      detail: {
+        query,
+        filters,
+        count: results.length,
+        results,
+      },
+    })
+  );
+
+  return results;
+}
+
+function bagastudioGetProductLibraryCategories() {
+  const categories = bagastudioReadProductLibrary()
+    .map((item: any) => item?.category || "uncategorized")
+    .filter(Boolean);
+
+  return Array.from(new Set(categories)).sort((a: any, b: any) =>
+    String(a).localeCompare(String(b))
+  );
+}
+
+function bagastudioGetProductLibraryCardData(query = "", filters: any = {}) {
+  return bagastudioSearchProductLibrary(query, filters).map((item: any) => ({
+    productId: item?.productId,
+    productSlug: item?.productSlug,
+    name: item?.name || "BagaStudio Product",
+    category: item?.category || "uncategorized",
+    version: item?.version || "1.0.0",
+    sourceFormat: item?.sourceFormat || null,
+    savedAt: item?.savedAt || null,
+    updatedAt: item?.updatedAt || null,
+    thumbnail: item?.thumbnail || null,
+    hasPackage: Boolean(item?.package),
+    hasAdminMapping: Boolean(item?.package?.adminMapping || item?.package?.productPackage?.adminMapping),
+    hasImporterReport: Boolean(item?.package?.importerReport),
+  }));
+}
+
+function bagastudioImportProductLibrary(libraryJson: any, options: any = {}) {
+  const incomingLibrary = Array.isArray(libraryJson)
+    ? libraryJson
+    : Array.isArray(libraryJson?.items)
+      ? libraryJson.items
+      : [];
+
+  if (!incomingLibrary.length) {
+    const error = new Error("Invalid BagaStudio product library import");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-library-import-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const currentLibrary = options?.replace ? [] : bagastudioReadProductLibrary();
+  const currentByKey = new Map(
+    currentLibrary.map((item: any) => [item?.productId || item?.productSlug, item])
+  );
+
+  incomingLibrary.forEach((item: any) => {
+    const key = item?.productId || item?.productSlug || bagastudioCreateProductLibraryId(item?.name);
+    currentByKey.set(key, {
+      ...item,
+      productId: item?.productId || key,
+      productSlug:
+        item?.productSlug ||
+        String(item?.name || key)
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, ""),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  const nextLibrary = Array.from(currentByKey.values()).sort((a: any, b: any) =>
+    String(b?.updatedAt || b?.savedAt || "").localeCompare(String(a?.updatedAt || a?.savedAt || ""))
+  );
+
+  bagastudioWriteProductLibrary(nextLibrary);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-imported", {
+      detail: {
+        replace: Boolean(options?.replace),
+        count: incomingLibrary.length,
+        library: nextLibrary,
+      },
+    })
+  );
+
+  return nextLibrary;
+}
+
+
+
+/* =========================
+   BagaStudio Product Loader V1
+========================= */
+
+let __bagastudioPreparedLibraryProduct: any = null;
+
+function bagastudioExtractProductRuntimePackage(libraryItem: any) {
+  const fullPackage = libraryItem?.package || libraryItem || null;
+  const productPackage = fullPackage?.productPackage || fullPackage || null;
+
+  return {
+    libraryItem,
+    fullPackage,
+    productPackage,
+    adminMapping:
+      fullPackage?.adminMapping ||
+      productPackage?.adminMapping ||
+      null,
+    importerReport:
+      fullPackage?.importerReport ||
+      productPackage?.importerReport ||
+      null,
+    thumbnail:
+      fullPackage?.thumbnail ||
+      productPackage?.thumbnail ||
+      libraryItem?.thumbnail ||
+      null,
+    metadata: {
+      ...(fullPackage?.metadata || {}),
+      ...(productPackage?.metadata || {}),
+      productId: libraryItem?.productId || productPackage?.productId || null,
+      productSlug: libraryItem?.productSlug || productPackage?.productSlug || null,
+      productName: libraryItem?.name || productPackage?.productName || productPackage?.name || null,
+      category: libraryItem?.category || productPackage?.productCategory || null,
+      sourceFormat: libraryItem?.sourceFormat || productPackage?.sourceFormat || null,
+    },
+  };
+}
+
+function bagastudioPrepareProductFromLibrary(productIdOrSlug: string, options: any = {}) {
+  const libraryItem = bagastudioLoadProductFromLibrary(productIdOrSlug);
+  const prepared = bagastudioExtractProductRuntimePackage(libraryItem);
+
+  __bagastudioPreparedLibraryProduct = {
+    ...prepared,
+    preparedAt: new Date().toISOString(),
+    options,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-prepared", {
+      detail: __bagastudioPreparedLibraryProduct,
+    })
+  );
+
+  if (options?.autoApply) {
+    return bagastudioApplyPreparedProduct(options);
+  }
+
+  return __bagastudioPreparedLibraryProduct;
+}
+
+function bagastudioApplyPreparedProduct(options: any = {}) {
+  if (!__bagastudioPreparedLibraryProduct) {
+    const error = new Error("No prepared BagaStudio product available");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-loader-apply-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const prepared = __bagastudioPreparedLibraryProduct;
+
+  __bagastudioLastSavedPackage = prepared.fullPackage || null;
+  (window as any).bagastudioProductPackage = prepared.productPackage || null;
+  (window as any).bagastudioAdminMapping = prepared.adminMapping || null;
+  (window as any).bagastudioLastImporterReport = prepared.importerReport || null;
+  (window as any).__bagastudioLastProductThumbnail = prepared.thumbnail || null;
+  (window as any).__bagastudioLastLoadedLibraryProduct = prepared.libraryItem || null;
+
+  const safeApply = (window as any).bagastudioSafeApplyImporterState;
+  if (options?.safeApply && typeof safeApply === "function") {
+    try {
+      safeApply();
+    } catch (error) {
+      console.warn("BagaStudio Product Loader safe apply skipped", error);
+    }
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-applied", {
+      detail: prepared,
+    })
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:importer-ui-state-refresh", {
+      detail: prepared,
+    })
+  );
+
+  return prepared;
+}
+
+function bagastudioGetPreparedProduct() {
+  return __bagastudioPreparedLibraryProduct;
+}
+
+if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("bagastudio:importer-components-analyzed", {
         detail: {
@@ -2745,18 +3255,71 @@ function ViewerRuntimeControls({
       });
     };
 
+    const generateProductThumbnail = (download = false) => {
+      requestAnimationFrame(() => {
+        const sourceCanvas = gl.domElement;
+        const size = 512;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        ctx.fillStyle = "#111111";
+        ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(sourceCanvas, 0, 0, size, size);
+
+        const dataUrl = canvas.toDataURL("image/png");
+
+        (window as any).__bagastudioLastProductThumbnail = {
+          generatedAt: new Date().toISOString(),
+          width: size,
+          height: size,
+          type: "image/png",
+          dataUrl,
+        };
+
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:product-thumbnail-ready", {
+            detail: (window as any).__bagastudioLastProductThumbnail,
+          })
+        );
+
+        if (download) {
+          const link = document.createElement("a");
+          link.download = `bagastudio-product-thumbnail-${Date.now()}.png`;
+          link.href = dataUrl;
+          link.click();
+        }
+      });
+    };
+
     const handleReset = () => applyCameraView("iso");
     const handleFocus = () => focusObjects();
     const handleScreenshot = () => downloadScreenshot();
+    const handleThumbnail = () => generateProductThumbnail(false);
+    const handleThumbnailDownload = () => generateProductThumbnail(true);
+
+    (window as any).bagastudioGenerateProductThumbnail = handleThumbnail;
+    (window as any).bagastudioDownloadProductThumbnail = handleThumbnailDownload;
 
     window.addEventListener("bagastudio:reset-camera", handleReset);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
     window.addEventListener("bagastudio:screenshot", handleScreenshot);
+    window.addEventListener("bagastudio:generate-thumbnail", handleThumbnail);
+    window.addEventListener("bagastudio:download-thumbnail", handleThumbnailDownload);
 
     return () => {
       window.removeEventListener("bagastudio:reset-camera", handleReset);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:screenshot", handleScreenshot);
+      window.removeEventListener("bagastudio:generate-thumbnail", handleThumbnail);
+      window.removeEventListener("bagastudio:download-thumbnail", handleThumbnailDownload);
+
+      delete (window as any).bagastudioGenerateProductThumbnail;
+      delete (window as any).bagastudioDownloadProductThumbnail;
     };
   }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
 
@@ -2789,6 +3352,14 @@ productMaterials?.length
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensityStore = useConfigStore((state) => state.ledIntensity);
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
+  const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
+    url: string;
+    format: string;
+    name?: string;
+    size?: number;
+    importedAt?: string;
+  } | null>(null);
+  const runtimeImportedModelRef = useRef<{ url: string; format: string; name?: string } | null>(null);
 
   useEffect(() => {
     const setSelectMode = () => setViewerMode("select");
@@ -2806,8 +3377,141 @@ productMaterials?.length
     };
   }, []);
 
+  useEffect(() => {
+    const supportedFormats = ["glb", "gltf", "dae", "fbx", "obj", "stl"];
+
+    const getExtension = (fileName: string) =>
+      String(fileName || "")
+        .split(".")
+        .pop()
+        ?.trim()
+        .toLowerCase() || "";
+
+    const applyRuntimeModel = (payload: any) => {
+      const url = String(payload?.objectUrl || payload?.url || payload?.productModel || "");
+      const name = String(payload?.name || payload?.fileName || "");
+      const format = String(payload?.format || payload?.productModelFormat || getExtension(name) || getExtension(url)).toLowerCase();
+
+      if (!url || !supportedFormats.includes(format)) {
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:viewer-runtime-model-error", {
+            detail: {
+              status: "error",
+              message: "Formato modello non supportato o URL mancante",
+              payload,
+              supportedFormats,
+            },
+          })
+        );
+        return;
+      }
+
+      const previous = runtimeImportedModelRef.current;
+      if (previous?.url && previous.url.startsWith("blob:") && previous.url !== url) {
+        URL.revokeObjectURL(previous.url);
+      }
+
+      const nextModel = {
+        url,
+        format,
+        name: name || `BagaStudio import ${format.toUpperCase()}`,
+        size: Number(payload?.size || 0),
+        importedAt: String(payload?.importedAt || new Date().toISOString()),
+      };
+
+      runtimeImportedModelRef.current = nextModel;
+      setRuntimeImportedModel(nextModel);
+
+      window.dispatchEvent(
+        new CustomEvent("bagastudio:viewer-runtime-model-loaded", {
+          detail: nextModel,
+        })
+      );
+    };
+
+    const handleDragDropModelReady = (event: Event) => {
+      applyRuntimeModel((event as CustomEvent).detail);
+    };
+
+    const handleViewerLoadModel = (event: Event) => {
+      applyRuntimeModel((event as CustomEvent).detail);
+    };
+
+    (window as any).bagastudioLoadModelFile = (file: File) => {
+      const format = getExtension(file?.name || "");
+      if (!file || !supportedFormats.includes(format)) {
+        throw new Error(`Formato non supportato. Usa: ${supportedFormats.join(", ")}`);
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      const payload = {
+        objectUrl,
+        format,
+        name: file.name,
+        size: file.size,
+        type: file.type || null,
+        file,
+        importedAt: new Date().toISOString(),
+      };
+
+      applyRuntimeModel(payload);
+      return payload;
+    };
+
+    (window as any).bagastudioLoadModelUrl = (url: string, format?: string, name?: string) => {
+      const payload = {
+        url,
+        format: format || getExtension(name || url),
+        name: name || url.split("/").pop() || "BagaStudio model",
+        importedAt: new Date().toISOString(),
+      };
+
+      applyRuntimeModel(payload);
+      return payload;
+    };
+
+    (window as any).bagastudioGetRuntimeImportedModel = () => runtimeImportedModelRef.current;
+    (window as any).bagastudioClearRuntimeImportedModel = () => {
+      const previous = runtimeImportedModelRef.current;
+      if (previous?.url && previous.url.startsWith("blob:")) {
+        URL.revokeObjectURL(previous.url);
+      }
+      runtimeImportedModelRef.current = null;
+      setRuntimeImportedModel(null);
+      window.dispatchEvent(new CustomEvent("bagastudio:viewer-runtime-model-cleared"));
+    };
+
+    window.addEventListener("bagastudio:drag-drop-model-ready", handleDragDropModelReady);
+    window.addEventListener("bagastudio:viewer-load-model", handleViewerLoadModel);
+    window.addEventListener("bagastudio:import-model", handleViewerLoadModel);
+
+    return () => {
+      window.removeEventListener("bagastudio:drag-drop-model-ready", handleDragDropModelReady);
+      window.removeEventListener("bagastudio:viewer-load-model", handleViewerLoadModel);
+      window.removeEventListener("bagastudio:import-model", handleViewerLoadModel);
+
+      const previous = runtimeImportedModelRef.current;
+      if (previous?.url && previous.url.startsWith("blob:")) {
+        URL.revokeObjectURL(previous.url);
+      }
+
+      delete (window as any).bagastudioLoadModelFile;
+      delete (window as any).bagastudioLoadModelUrl;
+      delete (window as any).bagastudioGetRuntimeImportedModel;
+      delete (window as any).bagastudioClearRuntimeImportedModel;
+    };
+  }, []);
+
+  const effectiveProductModel = runtimeImportedModel?.url || productModel;
+  const effectiveProductModelFormat = runtimeImportedModel?.format || productModelFormat;
+
   return (
-    <div className="h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
+    <div className="relative h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
+      {runtimeImportedModel && (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-xl border border-emerald-500/30 bg-black/70 px-3 py-2 text-xs text-emerald-100 shadow-lg backdrop-blur">
+          Import attivo: {runtimeImportedModel.name} · {runtimeImportedModel.format.toUpperCase()}
+        </div>
+      )}
       <Canvas
         shadows
         camera={{ position: [20, 10, 22], fov: 70 }}
@@ -2863,8 +3567,8 @@ productMaterials?.length
   ledKelvin={ledKelvin}
   ledIntensity={ledIntensity ?? ledIntensityStore}
   visibility={visibility}
-  productModel={productModel}
-  productModelFormat={productModelFormat}
+  productModel={effectiveProductModel}
+  productModelFormat={effectiveProductModelFormat}
   productParts={productParts}
   woodDirection={woodDirection}
 />
@@ -2890,3 +3594,2301 @@ productMaterials?.length
   );
 }
 
+
+
+
+/* =========================
+   BagaStudio Importer Save System V1
+========================= */
+
+declare global {
+  interface Window {
+   bagastudioSaveCompleteProductPackage?: () => Promise<any>;
+    bagastudioGetLastSavedProductPackage?: () => any;
+    bagastudioSaveLastProductToLibrary?: (options?: any) => any;
+    bagastudioGetProductLibrary?: () => any[];
+    bagastudioExportProductLibrary?: () => any[];
+    bagastudioLoadProductFromLibrary?: (productIdOrSlug: string) => any;
+    bagastudioRemoveProductFromLibrary?: (productIdOrSlug: string) => any[];
+    bagastudioClearProductLibrary?: () => any[];
+    bagastudioSearchProductLibrary?: (query?: string, filters?: any) => any[];
+    bagastudioGetProductLibraryCategories?: () => string[];
+    bagastudioGetProductLibraryCardData?: (query?: string, filters?: any) => any[];
+    bagastudioImportProductLibrary?: (libraryJson: any, options?: any) => any[];
+    bagastudioPrepareProductFromLibrary?: (productIdOrSlug: string, options?: any) => any;
+    bagastudioApplyPreparedProduct?: (options?: any) => any;
+    bagastudioGetPreparedProduct?: () => any;
+  }
+}
+
+let __bagastudioLastSavedPackage: any = null;
+
+async function bagastudioSaveCompleteProductPackageRuntime() {
+  try {
+    const runtimePackage = {
+      savedAt: new Date().toISOString(),
+      version: "ImporterSaveSystemV1",
+      productPackage: (window as any).bagastudioProductPackage || null,
+      adminMapping: (window as any).bagastudioAdminMapping || null,
+      importerReport: (window as any).bagastudioLastImporterReport || null,
+      thumbnail: (window as any).__bagastudioLastProductThumbnail || null,
+      metadata: {
+        engine: "BagaStudio Core",
+        pipeline: "Importer Pipeline V2",
+      },
+    };
+
+    __bagastudioLastSavedPackage = runtimePackage;
+
+    const blob = new Blob(
+      [JSON.stringify(runtimePackage, null, 2)],
+      { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bagastudio-complete-product-package.json";
+    a.click();
+
+    URL.revokeObjectURL(url);
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:complete-product-package-saved", {
+        detail: runtimePackage,
+      })
+    );
+
+    return runtimePackage;
+  } catch (error) {
+    console.error("BagaStudio Save System Error", error);
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:complete-product-package-save-error", {
+        detail: error,
+      })
+    );
+  }
+}
+
+
+/* =========================
+   BagaStudio Product Library V1
+========================= */
+
+const BAGASTUDIO_PRODUCT_LIBRARY_KEY = "bagastudio.productLibrary.v1";
+
+function bagastudioCreateProductLibraryId(base = "product") {
+  const cleanBase = String(base || "product")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "product";
+
+  return `${cleanBase}-${Date.now()}`;
+}
+
+function bagastudioReadProductLibrary() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_PRODUCT_LIBRARY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio Product Library read error", error);
+    return [];
+  }
+}
+
+function bagastudioWriteProductLibrary(items: any[]) {
+  if (typeof window === "undefined") return [];
+
+  const safeItems = Array.isArray(items) ? items : [];
+  window.localStorage.setItem(
+    BAGASTUDIO_PRODUCT_LIBRARY_KEY,
+    JSON.stringify(safeItems)
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-updated", {
+      detail: safeItems,
+    })
+  );
+
+  return safeItems;
+}
+
+function bagastudioSaveLastProductToLibrary(options: any = {}) {
+  const sourcePackage =
+    __bagastudioLastSavedPackage ||
+    (window as any).bagastudioProductPackage ||
+    null;
+
+  if (!sourcePackage) {
+    const error = new Error("No BagaStudio product package available to save");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-library-save-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const productPackage = sourcePackage.productPackage || sourcePackage;
+  const suggestedName =
+    options.name ||
+    productPackage?.productName ||
+    productPackage?.name ||
+    productPackage?.metadata?.name ||
+    "BagaStudio Product";
+
+  const productId =
+    options.productId ||
+    productPackage?.productId ||
+    productPackage?.id ||
+    bagastudioCreateProductLibraryId(suggestedName);
+
+  const productSlug =
+    options.productSlug ||
+    productPackage?.productSlug ||
+    String(suggestedName)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const libraryItem = {
+    productId,
+    productSlug,
+    name: suggestedName,
+    category: options.category || productPackage?.productCategory || "uncategorized",
+    version: options.version || productPackage?.version || "1.0.0",
+    savedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    sourceFormat: options.sourceFormat || productPackage?.sourceFormat || null,
+    thumbnail:
+      options.thumbnail ||
+      sourcePackage.thumbnail ||
+      (window as any).__bagastudioLastProductThumbnail ||
+      null,
+    package: sourcePackage,
+  };
+
+  const currentLibrary = bagastudioReadProductLibrary();
+  const filteredLibrary = currentLibrary.filter(
+    (item: any) =>
+      item?.productId !== libraryItem.productId &&
+      item?.productSlug !== libraryItem.productSlug
+  );
+
+  const nextLibrary = [libraryItem, ...filteredLibrary];
+  bagastudioWriteProductLibrary(nextLibrary);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-item-saved", {
+      detail: libraryItem,
+    })
+  );
+
+  return libraryItem;
+}
+
+function bagastudioLoadProductFromLibrary(productIdOrSlug: string) {
+  const library = bagastudioReadProductLibrary();
+  const item = library.find(
+    (entry: any) =>
+      entry?.productId === productIdOrSlug || entry?.productSlug === productIdOrSlug
+  );
+
+  if (!item) {
+    const error = new Error(`BagaStudio product not found: ${productIdOrSlug}`);
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-library-load-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  __bagastudioLastSavedPackage = item.package || null;
+  (window as any).__bagastudioLastLoadedLibraryProduct = item;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-item-loaded", {
+      detail: item,
+    })
+  );
+
+  return item;
+}
+
+function bagastudioRemoveProductFromLibrary(productIdOrSlug: string) {
+  const nextLibrary = bagastudioReadProductLibrary().filter(
+    (entry: any) =>
+      entry?.productId !== productIdOrSlug && entry?.productSlug !== productIdOrSlug
+  );
+
+  return bagastudioWriteProductLibrary(nextLibrary);
+}
+
+function bagastudioClearProductLibrary() {
+  return bagastudioWriteProductLibrary([]);
+}
+
+function bagastudioExportProductLibrary() {
+  const library = bagastudioReadProductLibrary();
+  const blob = new Blob([JSON.stringify(library, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `bagastudio-product-library-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-exported", {
+      detail: library,
+    })
+  );
+
+  return library;
+}
+
+
+
+/* =========================
+   BagaStudio Catalog Browser V1
+========================= */
+
+function bagastudioNormalizeCatalogText(value: any) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function bagastudioSearchProductLibrary(query = "", filters: any = {}) {
+  const library = bagastudioReadProductLibrary();
+  const normalizedQuery = bagastudioNormalizeCatalogText(query);
+  const categoryFilter = bagastudioNormalizeCatalogText(filters?.category || "");
+  const sourceFormatFilter = bagastudioNormalizeCatalogText(filters?.sourceFormat || "");
+
+  const results = library.filter((item: any) => {
+    const searchableText = bagastudioNormalizeCatalogText([
+      item?.name,
+      item?.productId,
+      item?.productSlug,
+      item?.category,
+      item?.version,
+      item?.sourceFormat,
+      item?.package?.metadata?.engine,
+      item?.package?.metadata?.pipeline,
+    ].filter(Boolean).join(" "));
+
+    const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
+    const matchesCategory =
+      !categoryFilter || bagastudioNormalizeCatalogText(item?.category) === categoryFilter;
+    const matchesSourceFormat =
+      !sourceFormatFilter || bagastudioNormalizeCatalogText(item?.sourceFormat) === sourceFormatFilter;
+
+    return matchesQuery && matchesCategory && matchesSourceFormat;
+  });
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-search", {
+      detail: {
+        query,
+        filters,
+        count: results.length,
+        results,
+      },
+    })
+  );
+
+  return results;
+}
+
+function bagastudioGetProductLibraryCategories() {
+  const categories = bagastudioReadProductLibrary()
+    .map((item: any) => item?.category || "uncategorized")
+    .filter(Boolean);
+
+  return Array.from(new Set(categories)).sort((a: any, b: any) =>
+    String(a).localeCompare(String(b))
+  );
+}
+
+function bagastudioGetProductLibraryCardData(query = "", filters: any = {}) {
+  return bagastudioSearchProductLibrary(query, filters).map((item: any) => ({
+    productId: item?.productId,
+    productSlug: item?.productSlug,
+    name: item?.name || "BagaStudio Product",
+    category: item?.category || "uncategorized",
+    version: item?.version || "1.0.0",
+    sourceFormat: item?.sourceFormat || null,
+    savedAt: item?.savedAt || null,
+    updatedAt: item?.updatedAt || null,
+    thumbnail: item?.thumbnail || null,
+    hasPackage: Boolean(item?.package),
+    hasAdminMapping: Boolean(item?.package?.adminMapping || item?.package?.productPackage?.adminMapping),
+    hasImporterReport: Boolean(item?.package?.importerReport),
+  }));
+}
+
+function bagastudioImportProductLibrary(libraryJson: any, options: any = {}) {
+  const incomingLibrary = Array.isArray(libraryJson)
+    ? libraryJson
+    : Array.isArray(libraryJson?.items)
+      ? libraryJson.items
+      : [];
+
+  if (!incomingLibrary.length) {
+    const error = new Error("Invalid BagaStudio product library import");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-library-import-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const currentLibrary = options?.replace ? [] : bagastudioReadProductLibrary();
+  const currentByKey = new Map(
+    currentLibrary.map((item: any) => [item?.productId || item?.productSlug, item])
+  );
+
+  incomingLibrary.forEach((item: any) => {
+    const key = item?.productId || item?.productSlug || bagastudioCreateProductLibraryId(item?.name);
+    currentByKey.set(key, {
+      ...item,
+      productId: item?.productId || key,
+      productSlug:
+        item?.productSlug ||
+        String(item?.name || key)
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, ""),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  const nextLibrary = Array.from(currentByKey.values()).sort((a: any, b: any) =>
+    String(b?.updatedAt || b?.savedAt || "").localeCompare(String(a?.updatedAt || a?.savedAt || ""))
+  );
+
+  bagastudioWriteProductLibrary(nextLibrary);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-library-imported", {
+      detail: {
+        replace: Boolean(options?.replace),
+        count: incomingLibrary.length,
+        library: nextLibrary,
+      },
+    })
+  );
+
+  return nextLibrary;
+}
+
+
+
+/* =========================
+   BagaStudio Product Loader V1
+========================= */
+
+let __bagastudioPreparedLibraryProduct: any = null;
+
+function bagastudioExtractProductRuntimePackage(libraryItem: any) {
+  const fullPackage = libraryItem?.package || libraryItem || null;
+  const productPackage = fullPackage?.productPackage || fullPackage || null;
+
+  return {
+    libraryItem,
+    fullPackage,
+    productPackage,
+    adminMapping:
+      fullPackage?.adminMapping ||
+      productPackage?.adminMapping ||
+      null,
+    importerReport:
+      fullPackage?.importerReport ||
+      productPackage?.importerReport ||
+      null,
+    thumbnail:
+      fullPackage?.thumbnail ||
+      productPackage?.thumbnail ||
+      libraryItem?.thumbnail ||
+      null,
+    metadata: {
+      ...(fullPackage?.metadata || {}),
+      ...(productPackage?.metadata || {}),
+      productId: libraryItem?.productId || productPackage?.productId || null,
+      productSlug: libraryItem?.productSlug || productPackage?.productSlug || null,
+      productName: libraryItem?.name || productPackage?.productName || productPackage?.name || null,
+      category: libraryItem?.category || productPackage?.productCategory || null,
+      sourceFormat: libraryItem?.sourceFormat || productPackage?.sourceFormat || null,
+    },
+  };
+}
+
+function bagastudioPrepareProductFromLibrary(productIdOrSlug: string, options: any = {}) {
+  const libraryItem = bagastudioLoadProductFromLibrary(productIdOrSlug);
+  const prepared = bagastudioExtractProductRuntimePackage(libraryItem);
+
+  __bagastudioPreparedLibraryProduct = {
+    ...prepared,
+    preparedAt: new Date().toISOString(),
+    options,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-prepared", {
+      detail: __bagastudioPreparedLibraryProduct,
+    })
+  );
+
+  if (options?.autoApply) {
+    return bagastudioApplyPreparedProduct(options);
+  }
+
+  return __bagastudioPreparedLibraryProduct;
+}
+
+function bagastudioApplyPreparedProduct(options: any = {}) {
+  if (!__bagastudioPreparedLibraryProduct) {
+    const error = new Error("No prepared BagaStudio product available");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-loader-apply-error", {
+        detail: error,
+      })
+    );
+
+    throw error;
+  }
+
+  const prepared = __bagastudioPreparedLibraryProduct;
+
+  __bagastudioLastSavedPackage = prepared.fullPackage || null;
+  (window as any).bagastudioProductPackage = prepared.productPackage || null;
+  (window as any).bagastudioAdminMapping = prepared.adminMapping || null;
+  (window as any).bagastudioLastImporterReport = prepared.importerReport || null;
+  (window as any).__bagastudioLastProductThumbnail = prepared.thumbnail || null;
+  (window as any).__bagastudioLastLoadedLibraryProduct = prepared.libraryItem || null;
+
+  const safeApply = (window as any).bagastudioSafeApplyImporterState;
+  if (options?.safeApply && typeof safeApply === "function") {
+    try {
+      safeApply();
+    } catch (error) {
+      console.warn("BagaStudio Product Loader safe apply skipped", error);
+    }
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-loader-applied", {
+      detail: prepared,
+    })
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:importer-ui-state-refresh", {
+      detail: prepared,
+    })
+  );
+
+  return prepared;
+}
+
+function bagastudioGetPreparedProduct() {
+  return __bagastudioPreparedLibraryProduct;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioSaveCompleteProductPackage =
+    bagastudioSaveCompleteProductPackageRuntime;
+
+  window.bagastudioGetLastSavedProductPackage = () =>
+    __bagastudioLastSavedPackage;
+
+
+  window.bagastudioSaveLastProductToLibrary =
+    bagastudioSaveLastProductToLibrary;
+  window.bagastudioGetProductLibrary = bagastudioReadProductLibrary;
+  window.bagastudioExportProductLibrary = bagastudioExportProductLibrary;
+  window.bagastudioLoadProductFromLibrary = bagastudioLoadProductFromLibrary;
+  window.bagastudioRemoveProductFromLibrary = bagastudioRemoveProductFromLibrary;
+  window.bagastudioClearProductLibrary = bagastudioClearProductLibrary;
+  window.bagastudioSearchProductLibrary = bagastudioSearchProductLibrary;
+  window.bagastudioGetProductLibraryCategories = bagastudioGetProductLibraryCategories;
+  window.bagastudioGetProductLibraryCardData = bagastudioGetProductLibraryCardData;
+  window.bagastudioImportProductLibrary = bagastudioImportProductLibrary;
+  window.bagastudioPrepareProductFromLibrary = bagastudioPrepareProductFromLibrary;
+  window.bagastudioApplyPreparedProduct = bagastudioApplyPreparedProduct;
+  window.bagastudioGetPreparedProduct = bagastudioGetPreparedProduct;
+}
+
+
+
+
+/* =========================
+   BagaStudio Drag & Drop Importer V1
+   Conservative runtime bridge: does not replace props or existing loader logic.
+========================= */
+
+declare global {
+  interface Window {
+    bagastudioEnableDragDropImporter?: () => any;
+    bagastudioDisableDragDropImporter?: () => any;
+    bagastudioGetLastDroppedImport?: () => any;
+    bagastudioClearLastDroppedImport?: () => void;
+  }
+}
+
+let __bagastudioDragDropInstalled = false;
+let __bagastudioLastDroppedImport: any = null;
+let __bagastudioDragDropCleanup: null | (() => void) = null;
+
+const BAGASTUDIO_SUPPORTED_MODEL_EXTENSIONS = ["glb", "gltf", "obj", "fbx", "stl", "dae"];
+const BAGASTUDIO_SUPPORTED_PACKAGE_EXTENSIONS = ["json"];
+
+function bagastudioGetFileExtension(fileName: string) {
+  return String(fileName || "")
+    .split(".")
+    .pop()
+    ?.trim()
+    .toLowerCase() || "";
+}
+
+function bagastudioIsSupportedDragFile(file: File) {
+  const ext = bagastudioGetFileExtension(file.name);
+  return (
+    BAGASTUDIO_SUPPORTED_MODEL_EXTENSIONS.includes(ext) ||
+    BAGASTUDIO_SUPPORTED_PACKAGE_EXTENSIONS.includes(ext)
+  );
+}
+
+function bagastudioReadDroppedJson(file: File) {
+  return new Promise<any>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result || "{}")));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error("Unable to read dropped JSON file"));
+    reader.readAsText(file);
+  });
+}
+
+async function bagastudioHandleDroppedFiles(files: File[]) {
+  const validFiles = files.filter(bagastudioIsSupportedDragFile);
+
+  if (!validFiles.length) {
+    const warning = {
+      status: "warning",
+      message: "Nessun file supportato. Formati: GLB, GLTF, OBJ, FBX, STL, DAE, JSON.",
+      droppedAt: new Date().toISOString(),
+      files: files.map((file) => file.name),
+    };
+
+    window.dispatchEvent(new CustomEvent("bagastudio:drag-drop-import-warning", { detail: warning }));
+    return warning;
+  }
+
+  const result: any = {
+    status: "ready",
+    droppedAt: new Date().toISOString(),
+    models: [],
+    packages: [],
+    files: validFiles.map((file) => ({
+      name: file.name,
+      size: file.size,
+      type: file.type || null,
+      extension: bagastudioGetFileExtension(file.name),
+    })),
+  };
+
+  for (const file of validFiles) {
+    const extension = bagastudioGetFileExtension(file.name);
+
+    if (BAGASTUDIO_SUPPORTED_MODEL_EXTENSIONS.includes(extension)) {
+      const objectUrl = URL.createObjectURL(file);
+      const modelPayload = {
+        name: file.name,
+        size: file.size,
+        type: file.type || null,
+        format: extension,
+        objectUrl,
+        file,
+        importedAt: new Date().toISOString(),
+      };
+
+      result.models.push(modelPayload);
+
+      window.dispatchEvent(
+        new CustomEvent("bagastudio:drag-drop-model-ready", {
+          detail: modelPayload,
+        })
+      );
+    }
+
+    if (BAGASTUDIO_SUPPORTED_PACKAGE_EXTENSIONS.includes(extension)) {
+      try {
+        const json = await bagastudioReadDroppedJson(file);
+        const packagePayload = {
+          name: file.name,
+          size: file.size,
+          type: file.type || "application/json",
+          json,
+          importedAt: new Date().toISOString(),
+        };
+
+        result.packages.push(packagePayload);
+
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:drag-drop-json-ready", {
+            detail: packagePayload,
+          })
+        );
+      } catch (error) {
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:drag-drop-json-error", {
+            detail: {
+              name: file.name,
+              error,
+              message: error instanceof Error ? error.message : "Errore lettura JSON",
+            },
+          })
+        );
+      }
+    }
+  }
+
+  __bagastudioLastDroppedImport = result;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:drag-drop-import-ready", {
+      detail: result,
+    })
+  );
+
+  return result;
+}
+
+function bagastudioEnableDragDropImporterRuntime() {
+  if (typeof window === "undefined" || typeof document === "undefined") return null;
+
+  if (__bagastudioDragDropInstalled) {
+    return {
+      status: "already-enabled",
+      lastDroppedImport: __bagastudioLastDroppedImport,
+    };
+  }
+
+  const onDragOver = (event: DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.classList.add("bagastudio-drag-over");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:drag-drop-over", {
+        detail: { active: true },
+      })
+    );
+  };
+
+  const onDragLeave = (event: DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.classList.remove("bagastudio-drag-over");
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:drag-drop-over", {
+        detail: { active: false },
+      })
+    );
+  };
+
+  const onDrop = async (event: DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.classList.remove("bagastudio-drag-over");
+
+    const files = Array.from(event.dataTransfer?.files || []);
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:drag-drop-start", {
+        detail: {
+          count: files.length,
+          files: files.map((file) => file.name),
+        },
+      })
+    );
+
+    try {
+      await bagastudioHandleDroppedFiles(files);
+    } catch (error) {
+      window.dispatchEvent(
+        new CustomEvent("bagastudio:drag-drop-import-error", {
+          detail: {
+            error,
+            message: error instanceof Error ? error.message : "Errore import drag & drop",
+          },
+        })
+      );
+    }
+  };
+
+  window.addEventListener("dragover", onDragOver);
+  window.addEventListener("dragleave", onDragLeave);
+  window.addEventListener("drop", onDrop);
+
+  __bagastudioDragDropCleanup = () => {
+    window.removeEventListener("dragover", onDragOver);
+    window.removeEventListener("dragleave", onDragLeave);
+    window.removeEventListener("drop", onDrop);
+    document.body.classList.remove("bagastudio-drag-over");
+  };
+
+  __bagastudioDragDropInstalled = true;
+
+  const enabledPayload = {
+    status: "enabled",
+    supportedModelFormats: BAGASTUDIO_SUPPORTED_MODEL_EXTENSIONS,
+    supportedPackageFormats: BAGASTUDIO_SUPPORTED_PACKAGE_EXTENSIONS,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:drag-drop-importer-enabled", {
+      detail: enabledPayload,
+    })
+  );
+
+  return enabledPayload;
+}
+
+function bagastudioDisableDragDropImporterRuntime() {
+  if (__bagastudioDragDropCleanup) {
+    __bagastudioDragDropCleanup();
+  }
+
+  __bagastudioDragDropInstalled = false;
+  __bagastudioDragDropCleanup = null;
+
+  const disabledPayload = { status: "disabled" };
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:drag-drop-importer-disabled", {
+        detail: disabledPayload,
+      })
+    );
+  }
+
+  return disabledPayload;
+}
+
+if (typeof window !== "undefined") {
+  (window as any).bagastudioEnableDragDropImporter = bagastudioEnableDragDropImporterRuntime;
+  (window as any).bagastudioDisableDragDropImporter = bagastudioDisableDragDropImporterRuntime;
+  (window as any).bagastudioGetLastDroppedImport = () => __bagastudioLastDroppedImport;
+  (window as any).bagastudioClearLastDroppedImport = () => {
+    __bagastudioLastDroppedImport = null;
+  };
+
+  bagastudioEnableDragDropImporterRuntime();
+}
+
+
+/* =========================
+   BagaStudio Cloud Ready Storage Bridge V1
+   Local-first bridge prepared for future backend/cloud persistence.
+   It does not replace the current Product Library or Importer Save System.
+========================= */
+
+declare global {
+  interface Window {
+    bagastudioBuildCloudProductPayload?: (options?: any) => any;
+    bagastudioSaveProductToCloudBridge?: (options?: any) => any;
+    bagastudioGetCloudBridgeQueue?: () => any[];
+    bagastudioClearCloudBridgeQueue?: () => any[];
+    bagastudioMarkCloudBridgeItemSynced?: (cloudBridgeId: string, remoteData?: any) => any;
+    bagastudioExportCloudBridgeQueue?: () => any[];
+  }
+}
+
+const BAGASTUDIO_CLOUD_BRIDGE_STORAGE_KEY = "bagastudio.cloudBridge.queue.v1";
+let __bagastudioLastCloudBridgePayload: any = null;
+
+function bagastudioReadCloudBridgeQueue(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_CLOUD_BRIDGE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio cloud bridge queue read failed", error);
+    return [];
+  }
+}
+
+function bagastudioWriteCloudBridgeQueue(queue: any[]) {
+  if (typeof window === "undefined") return [];
+
+  const normalizedQueue = Array.isArray(queue) ? queue : [];
+  window.localStorage.setItem(
+    BAGASTUDIO_CLOUD_BRIDGE_STORAGE_KEY,
+    JSON.stringify(normalizedQueue)
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:cloud-bridge-queue-updated", {
+      detail: normalizedQueue,
+    })
+  );
+
+  return normalizedQueue;
+}
+
+function bagastudioBuildCloudProductPayloadRuntime(options: any = {}) {
+  const savedPackage =
+    (window as any).bagastudioGetLastSavedProductPackage?.() ||
+    (window as any).__bagastudioLastCompleteProductPackage ||
+    null;
+
+  const productPackage =
+    savedPackage?.productPackage ||
+    (window as any).bagastudioProductPackage ||
+    null;
+
+  const adminMapping =
+    savedPackage?.adminMapping ||
+    (window as any).bagastudioAdminMapping ||
+    null;
+
+  const importerReport =
+    savedPackage?.importerReport ||
+    (window as any).bagastudioLastImporterReport ||
+    null;
+
+  const thumbnail =
+    savedPackage?.thumbnail ||
+    (window as any).__bagastudioLastProductThumbnail ||
+    null;
+
+  const catalogProduct =
+    savedPackage?.catalogProduct ||
+    (window as any).bagastudioCatalogProduct ||
+    null;
+
+  const payload = {
+    cloudBridgeId:
+      options.cloudBridgeId ||
+      `cloud_bridge_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    target: options.target || "local-first-cloud-ready",
+    tenantId: options.tenantId || null,
+    workspaceId: options.workspaceId || null,
+    productId:
+      options.productId ||
+      catalogProduct?.productId ||
+      productPackage?.productId ||
+      productPackage?.id ||
+      null,
+    productSlug:
+      options.productSlug ||
+      catalogProduct?.productSlug ||
+      productPackage?.productSlug ||
+      null,
+    productName:
+      options.productName ||
+      catalogProduct?.productName ||
+      productPackage?.productName ||
+      productPackage?.name ||
+      "BagaStudio Imported Product",
+    productCategory:
+      options.productCategory ||
+      catalogProduct?.productCategory ||
+      productPackage?.productCategory ||
+      "uncategorized",
+    source: {
+      engine: "BagaStudio Core",
+      module: "CloudReadyStorageBridgeV1",
+      mode: "local-first",
+    },
+    assets: {
+      glb: options.glb || null,
+      textureRefs: options.textureRefs || productPackage?.textureRefs || [],
+      thumbnail,
+    },
+    data: {
+      catalogProduct,
+      productPackage,
+      adminMapping,
+      importerReport,
+      savedPackage,
+    },
+    sync: {
+      isSynced: false,
+      remoteId: null,
+      remoteUrl: null,
+      syncedAt: null,
+      lastError: null,
+    },
+  };
+
+  __bagastudioLastCloudBridgePayload = payload;
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:cloud-bridge-payload-ready", {
+        detail: payload,
+      })
+    );
+  }
+
+  return payload;
+}
+
+function bagastudioSaveProductToCloudBridgeRuntime(options: any = {}) {
+  const payload = bagastudioBuildCloudProductPayloadRuntime(options);
+  const queue = bagastudioReadCloudBridgeQueue();
+  const nextQueue = [payload, ...queue].slice(0, options.maxItems || 50);
+  bagastudioWriteCloudBridgeQueue(nextQueue);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:cloud-bridge-product-queued", {
+      detail: payload,
+    })
+  );
+
+  return payload;
+}
+
+function bagastudioMarkCloudBridgeItemSyncedRuntime(cloudBridgeId: string, remoteData: any = {}) {
+  const queue = bagastudioReadCloudBridgeQueue();
+  const updatedQueue = queue.map((item) => {
+    if (item?.cloudBridgeId !== cloudBridgeId) return item;
+
+    return {
+      ...item,
+      status: "synced",
+      updatedAt: new Date().toISOString(),
+      sync: {
+        ...(item.sync || {}),
+        isSynced: true,
+        remoteId: remoteData.remoteId || item.sync?.remoteId || null,
+        remoteUrl: remoteData.remoteUrl || item.sync?.remoteUrl || null,
+        syncedAt: new Date().toISOString(),
+        lastError: null,
+      },
+    };
+  });
+
+  bagastudioWriteCloudBridgeQueue(updatedQueue);
+
+  const syncedItem = updatedQueue.find((item) => item?.cloudBridgeId === cloudBridgeId) || null;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:cloud-bridge-item-synced", {
+      detail: syncedItem,
+    })
+  );
+
+  return syncedItem;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioBuildCloudProductPayload = bagastudioBuildCloudProductPayloadRuntime;
+  window.bagastudioSaveProductToCloudBridge = bagastudioSaveProductToCloudBridgeRuntime;
+  window.bagastudioGetCloudBridgeQueue = bagastudioReadCloudBridgeQueue;
+  window.bagastudioClearCloudBridgeQueue = () => bagastudioWriteCloudBridgeQueue([]);
+  window.bagastudioMarkCloudBridgeItemSynced = bagastudioMarkCloudBridgeItemSyncedRuntime;
+  window.bagastudioExportCloudBridgeQueue = () => bagastudioReadCloudBridgeQueue();
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:cloud-bridge-ready", {
+      detail: {
+        status: "ready",
+        mode: "local-first",
+        storageKey: BAGASTUDIO_CLOUD_BRIDGE_STORAGE_KEY,
+      },
+    })
+  );
+}
+
+
+
+/* =========================
+   BagaStudio Versioning & Backup V1
+   Local-first product/package backup system for catalog-safe recovery.
+   Keeps Cloud Bridge, Product Library and Importer Save System untouched.
+========================= */
+
+declare global {
+  interface Window {
+    bagastudioCreateProductBackup?: (options?: any) => any;
+    bagastudioGetProductBackups?: () => any[];
+    bagastudioGetProductBackupById?: (backupId: string) => any;
+    bagastudioRestoreProductBackup?: (backupId: string) => any;
+    bagastudioDeleteProductBackup?: (backupId: string) => any[];
+    bagastudioClearProductBackups?: () => any[];
+    bagastudioExportProductBackups?: () => any[];
+  }
+}
+
+const BAGASTUDIO_PRODUCT_BACKUP_STORAGE_KEY = "bagastudio.productBackups.v1";
+let __bagastudioLastProductBackup: any = null;
+let __bagastudioLastRestoredProductBackup: any = null;
+
+function bagastudioReadProductBackupsRuntime(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_PRODUCT_BACKUP_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio product backups read failed", error);
+    return [];
+  }
+}
+
+function bagastudioWriteProductBackupsRuntime(backups: any[]) {
+  if (typeof window === "undefined") return [];
+
+  const normalizedBackups = Array.isArray(backups) ? backups : [];
+  window.localStorage.setItem(
+    BAGASTUDIO_PRODUCT_BACKUP_STORAGE_KEY,
+    JSON.stringify(normalizedBackups)
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backups-updated", {
+      detail: normalizedBackups,
+    })
+  );
+
+  return normalizedBackups;
+}
+
+function bagastudioBuildProductBackupRuntime(options: any = {}) {
+  const savedPackage =
+    (window as any).bagastudioGetLastSavedProductPackage?.() ||
+    (window as any).__bagastudioLastCompleteProductPackage ||
+    null;
+
+  const productPackage =
+    savedPackage?.productPackage ||
+    (window as any).bagastudioProductPackage ||
+    null;
+
+  const adminMapping =
+    savedPackage?.adminMapping ||
+    (window as any).bagastudioAdminMapping ||
+    null;
+
+  const importerReport =
+    savedPackage?.importerReport ||
+    (window as any).bagastudioLastImporterReport ||
+    null;
+
+  const catalogProduct =
+    savedPackage?.catalogProduct ||
+    (window as any).bagastudioCatalogProduct ||
+    null;
+
+  const thumbnail =
+    savedPackage?.thumbnail ||
+    (window as any).__bagastudioLastProductThumbnail ||
+    null;
+
+  const cloudPayload =
+    (window as any).bagastudioBuildCloudProductPayload?.({
+      target: "backup-snapshot",
+    }) ||
+    null;
+
+  const createdAt = new Date().toISOString();
+  const productId =
+    options.productId ||
+    catalogProduct?.productId ||
+    productPackage?.productId ||
+    productPackage?.id ||
+    `bagastudio_product_${Date.now()}`;
+
+  const backup = {
+    backupId:
+      options.backupId ||
+      `backup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    backupVersion: "1.0.0",
+    createdAt,
+    updatedAt: createdAt,
+    reason: options.reason || "manual-backup",
+    label:
+      options.label ||
+      catalogProduct?.productName ||
+      productPackage?.productName ||
+      productPackage?.name ||
+      "BagaStudio Product Backup",
+    productId,
+    productSlug:
+      options.productSlug ||
+      catalogProduct?.productSlug ||
+      productPackage?.productSlug ||
+      null,
+    productCategory:
+      options.productCategory ||
+      catalogProduct?.productCategory ||
+      productPackage?.productCategory ||
+      "uncategorized",
+    source: {
+      engine: "BagaStudio Core",
+      module: "VersioningBackupV1",
+      mode: "local-first",
+    },
+    snapshot: {
+      catalogProduct,
+      productPackage,
+      adminMapping,
+      importerReport,
+      thumbnail,
+      savedPackage,
+      cloudPayload,
+    },
+    restore: {
+      canRestoreProductPackage: !!productPackage,
+      canRestoreAdminMapping: !!adminMapping,
+      canRestoreCatalogProduct: !!catalogProduct,
+      canRestoreThumbnail: !!thumbnail,
+    },
+  };
+
+  __bagastudioLastProductBackup = backup;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backup-built", {
+      detail: backup,
+    })
+  );
+
+  return backup;
+}
+
+function bagastudioCreateProductBackupRuntime(options: any = {}) {
+  const backup = bagastudioBuildProductBackupRuntime(options);
+  const backups = bagastudioReadProductBackupsRuntime();
+  const maxItems = Number.isFinite(options.maxItems) ? options.maxItems : 25;
+  const nextBackups = [backup, ...backups].slice(0, maxItems);
+
+  bagastudioWriteProductBackupsRuntime(nextBackups);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backup-created", {
+      detail: backup,
+    })
+  );
+
+  return backup;
+}
+
+function bagastudioGetProductBackupByIdRuntime(backupId: string) {
+  const backups = bagastudioReadProductBackupsRuntime();
+  return backups.find((backup) => backup?.backupId === backupId) || null;
+}
+
+function bagastudioRestoreProductBackupRuntime(backupId: string) {
+  const backup = bagastudioGetProductBackupByIdRuntime(backupId);
+
+  if (!backup) {
+    const result = {
+      status: "error",
+      backupId,
+      message: "Backup not found",
+    };
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:product-backup-restore-error", {
+        detail: result,
+      })
+    );
+
+    return result;
+  }
+
+  const snapshot = backup.snapshot || {};
+
+  if (snapshot.productPackage) {
+    (window as any).bagastudioProductPackage = snapshot.productPackage;
+  }
+
+  if (snapshot.adminMapping) {
+    (window as any).bagastudioAdminMapping = snapshot.adminMapping;
+  }
+
+  if (snapshot.importerReport) {
+    (window as any).bagastudioLastImporterReport = snapshot.importerReport;
+  }
+
+  if (snapshot.catalogProduct) {
+    (window as any).bagastudioCatalogProduct = snapshot.catalogProduct;
+  }
+
+  if (snapshot.thumbnail) {
+    (window as any).__bagastudioLastProductThumbnail = snapshot.thumbnail;
+  }
+
+  if (snapshot.savedPackage) {
+    (window as any).__bagastudioLastCompleteProductPackage = snapshot.savedPackage;
+  }
+
+  __bagastudioLastRestoredProductBackup = backup;
+
+  const result = {
+    status: "restored",
+    backupId,
+    restoredAt: new Date().toISOString(),
+    backup,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backup-restored", {
+      detail: result,
+    })
+  );
+
+  return result;
+}
+
+function bagastudioDeleteProductBackupRuntime(backupId: string) {
+  const backups = bagastudioReadProductBackupsRuntime();
+  const nextBackups = backups.filter((backup) => backup?.backupId !== backupId);
+  bagastudioWriteProductBackupsRuntime(nextBackups);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backup-deleted", {
+      detail: {
+        backupId,
+        remaining: nextBackups.length,
+      },
+    })
+  );
+
+  return nextBackups;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioCreateProductBackup = bagastudioCreateProductBackupRuntime;
+  window.bagastudioGetProductBackups = bagastudioReadProductBackupsRuntime;
+  window.bagastudioGetProductBackupById = bagastudioGetProductBackupByIdRuntime;
+  window.bagastudioRestoreProductBackup = bagastudioRestoreProductBackupRuntime;
+  window.bagastudioDeleteProductBackup = bagastudioDeleteProductBackupRuntime;
+  window.bagastudioClearProductBackups = () => bagastudioWriteProductBackupsRuntime([]);
+  window.bagastudioExportProductBackups = () => bagastudioReadProductBackupsRuntime();
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-backup-system-ready", {
+      detail: {
+        status: "ready",
+        storageKey: BAGASTUDIO_PRODUCT_BACKUP_STORAGE_KEY,
+        mode: "local-first",
+      },
+    })
+  );
+}
+
+
+/* -------------------------------------------------------------
+   BagaStudio Product Registry / Index V1
+   Local-first index for catalog search, Admin lists and future SaaS sync.
+------------------------------------------------------------- */
+
+declare global {
+  interface Window {
+    bagastudioRegisterCurrentProduct?: (options?: any) => any;
+    bagastudioGetProductRegistry?: () => any[];
+    bagastudioSearchProductRegistry?: (query?: string, filters?: any) => any[];
+    bagastudioGetProductRegistryItem?: (productId: string) => any;
+    bagastudioRemoveProductRegistryItem?: (productId: string) => any[];
+    bagastudioClearProductRegistry?: () => any[];
+    bagastudioExportProductRegistry?: () => any[];
+  }
+}
+
+const BAGASTUDIO_PRODUCT_REGISTRY_STORAGE_KEY = "bagastudio.productRegistry.v1";
+let __bagastudioLastRegisteredProduct: any = null;
+
+function bagastudioSafeSlugRuntime(value: string) {
+  return String(value || "bagastudio-product")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "bagastudio-product";
+}
+
+function bagastudioReadProductRegistryRuntime(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_PRODUCT_REGISTRY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio product registry read failed", error);
+    return [];
+  }
+}
+
+function bagastudioWriteProductRegistryRuntime(items: any[]) {
+  if (typeof window === "undefined") return [];
+
+  const cleanItems = Array.isArray(items) ? items.filter(Boolean) : [];
+
+  try {
+    window.localStorage.setItem(
+      BAGASTUDIO_PRODUCT_REGISTRY_STORAGE_KEY,
+      JSON.stringify(cleanItems)
+    );
+  } catch (error) {
+    console.warn("BagaStudio product registry write failed", error);
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-updated", {
+      detail: {
+        storageKey: BAGASTUDIO_PRODUCT_REGISTRY_STORAGE_KEY,
+        count: cleanItems.length,
+        items: cleanItems,
+      },
+    })
+  );
+
+  return cleanItems;
+}
+
+function bagastudioBuildProductRegistryItemRuntime(options: any = {}) {
+  const savedPackage =
+    options.savedPackage ||
+    (window as any).bagastudioGetLastSavedProductPackage?.() ||
+    (window as any).__bagastudioLastCompleteProductPackage ||
+    null;
+
+  const catalogProduct =
+    options.catalogProduct ||
+    savedPackage?.catalogProduct ||
+    (window as any).bagastudioCatalogProduct ||
+    null;
+
+  const productPackage =
+    options.productPackage ||
+    savedPackage?.productPackage ||
+    (window as any).bagastudioProductPackage ||
+    null;
+
+  const adminMapping =
+    options.adminMapping ||
+    savedPackage?.adminMapping ||
+    (window as any).bagastudioAdminMapping ||
+    null;
+
+  const importerReport =
+    options.importerReport ||
+    savedPackage?.importerReport ||
+    (window as any).bagastudioLastImporterReport ||
+    null;
+
+  const thumbnail =
+    options.thumbnail ||
+    savedPackage?.thumbnail ||
+    (window as any).__bagastudioLastProductThumbnail ||
+    null;
+
+  const productId =
+    options.productId ||
+    catalogProduct?.productId ||
+    productPackage?.productId ||
+    savedPackage?.productId ||
+    `bagastudio_product_${Date.now()}`;
+
+  const productName =
+    options.productName ||
+    catalogProduct?.productName ||
+    productPackage?.productName ||
+    savedPackage?.productName ||
+    "BagaStudio Product";
+
+  const category =
+    options.category ||
+    catalogProduct?.productCategory ||
+    productPackage?.productCategory ||
+    savedPackage?.productCategory ||
+    "uncategorized";
+
+  const components =
+    productPackage?.components ||
+    adminMapping?.components ||
+    savedPackage?.components ||
+    [];
+
+  const componentCount = Array.isArray(components) ? components.length : 0;
+  const sourceFormat =
+    options.sourceFormat ||
+    catalogProduct?.sourceFormat ||
+    productPackage?.sourceFormat ||
+    importerReport?.sourceFormat ||
+    savedPackage?.sourceFormat ||
+    "unknown";
+
+  const now = new Date().toISOString();
+  const productSlug =
+    options.productSlug ||
+    catalogProduct?.productSlug ||
+    bagastudioSafeSlugRuntime(productName);
+
+  const registryItem = {
+    productId,
+    productSlug,
+    productName,
+    category,
+    sourceFormat,
+    componentCount,
+    status: options.status || "draft",
+    tags: Array.isArray(options.tags) ? options.tags : [],
+    createdAt:
+      options.createdAt ||
+      catalogProduct?.createdAt ||
+      productPackage?.createdAt ||
+      savedPackage?.createdAt ||
+      now,
+    updatedAt: now,
+    engineVersion:
+      options.engineVersion ||
+      catalogProduct?.engineVersion ||
+      productPackage?.engineVersion ||
+      "BagaStudio Core Importer Save System V1",
+    thumbnailPreview: thumbnail
+      ? {
+          generatedAt: thumbnail.generatedAt || null,
+          width: thumbnail.width || null,
+          height: thumbnail.height || null,
+          type: thumbnail.type || "image/png",
+          dataUrl: thumbnail.dataUrl || null,
+        }
+      : null,
+    references: {
+      hasSavedPackage: Boolean(savedPackage),
+      hasProductPackage: Boolean(productPackage),
+      hasAdminMapping: Boolean(adminMapping),
+      hasImporterReport: Boolean(importerReport),
+      hasThumbnail: Boolean(thumbnail),
+    },
+    searchText: [productName, productSlug, category, sourceFormat, ...(Array.isArray(options.tags) ? options.tags : [])]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+    module: "ProductRegistryIndexV1",
+  };
+
+  __bagastudioLastRegisteredProduct = registryItem;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-item-built", {
+      detail: registryItem,
+    })
+  );
+
+  return registryItem;
+}
+
+function bagastudioRegisterCurrentProductRuntime(options: any = {}) {
+  const item = bagastudioBuildProductRegistryItemRuntime(options);
+  const registry = bagastudioReadProductRegistryRuntime();
+  const withoutCurrent = registry.filter((entry) => entry?.productId !== item.productId);
+  const nextRegistry = [item, ...withoutCurrent].slice(0, 500);
+
+  bagastudioWriteProductRegistryRuntime(nextRegistry);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registered", {
+      detail: {
+        item,
+        count: nextRegistry.length,
+      },
+    })
+  );
+
+  return item;
+}
+
+function bagastudioSearchProductRegistryRuntime(query = "", filters: any = {}) {
+  const registry = bagastudioReadProductRegistryRuntime();
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+
+  return registry.filter((item) => {
+    const matchesQuery = !normalizedQuery || String(item?.searchText || "").includes(normalizedQuery);
+    const matchesCategory = !filters?.category || item?.category === filters.category;
+    const matchesStatus = !filters?.status || item?.status === filters.status;
+    const matchesFormat = !filters?.sourceFormat || item?.sourceFormat === filters.sourceFormat;
+    return matchesQuery && matchesCategory && matchesStatus && matchesFormat;
+  });
+}
+
+function bagastudioGetProductRegistryItemRuntime(productId: string) {
+  return bagastudioReadProductRegistryRuntime().find((item) => item?.productId === productId) || null;
+}
+
+function bagastudioRemoveProductRegistryItemRuntime(productId: string) {
+  const registry = bagastudioReadProductRegistryRuntime();
+  const nextRegistry = registry.filter((item) => item?.productId !== productId);
+  bagastudioWriteProductRegistryRuntime(nextRegistry);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-item-removed", {
+      detail: {
+        productId,
+        count: nextRegistry.length,
+      },
+    })
+  );
+
+  return nextRegistry;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioRegisterCurrentProduct = bagastudioRegisterCurrentProductRuntime;
+  window.bagastudioGetProductRegistry = bagastudioReadProductRegistryRuntime;
+  window.bagastudioSearchProductRegistry = bagastudioSearchProductRegistryRuntime;
+  window.bagastudioGetProductRegistryItem = bagastudioGetProductRegistryItemRuntime;
+  window.bagastudioRemoveProductRegistryItem = bagastudioRemoveProductRegistryItemRuntime;
+  window.bagastudioClearProductRegistry = () => bagastudioWriteProductRegistryRuntime([]);
+  window.bagastudioExportProductRegistry = () => bagastudioReadProductRegistryRuntime();
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-ready", {
+      detail: {
+        status: "ready",
+        storageKey: BAGASTUDIO_PRODUCT_REGISTRY_STORAGE_KEY,
+        mode: "local-first",
+      },
+    })
+  );
+}
+
+
+/* -------------------------------------------------------------
+   BagaStudio Filters + Tags V1
+   Advanced local catalog filters, facets, sorting and tag helpers.
+------------------------------------------------------------- */
+
+declare global {
+  interface Window {
+    bagastudioSearchProductsAdvanced?: (params?: any) => any;
+    bagastudioGetProductRegistryFacets?: () => any;
+    bagastudioAddProductTags?: (productId: string, tags: string[]) => any;
+    bagastudioRemoveProductTags?: (productId: string, tags: string[]) => any;
+    bagastudioSetProductFavorite?: (productId: string, favorite?: boolean) => any;
+    bagastudioSetProductArchived?: (productId: string, archived?: boolean) => any;
+  }
+}
+
+function bagastudioNormalizeCatalogTokenRuntime(value: any) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function bagastudioNormalizeTagListRuntime(tags: any): string[] {
+  const source = Array.isArray(tags) ? tags : String(tags || "").split(",");
+  return Array.from(
+    new Set(
+      source
+        .map((tag) => String(tag || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function bagastudioUpdateProductRegistryEntryRuntime(productId: string, updater: (item: any) => any) {
+  const registry = bagastudioReadProductRegistryRuntime();
+  let updatedItem: any = null;
+
+  const nextRegistry = registry.map((item) => {
+    if (item?.productId !== productId) return item;
+    updatedItem = updater({ ...item });
+    return updatedItem;
+  });
+
+  bagastudioWriteProductRegistryRuntime(nextRegistry);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-entry-updated", {
+      detail: {
+        productId,
+        item: updatedItem,
+        count: nextRegistry.length,
+      },
+    })
+  );
+
+  return updatedItem;
+}
+
+function bagastudioGetProductRegistryFacetsRuntime() {
+  const registry = bagastudioReadProductRegistryRuntime();
+
+  const facets = registry.reduce(
+    (acc, item) => {
+      const category = item?.category || "uncategorized";
+      const status = item?.status || "unknown";
+      const sourceFormat = item?.sourceFormat || item?.format || "unknown";
+      const tags = bagastudioNormalizeTagListRuntime(item?.tags || []);
+
+      acc.categories[category] = (acc.categories[category] || 0) + 1;
+      acc.statuses[status] = (acc.statuses[status] || 0) + 1;
+      acc.sourceFormats[sourceFormat] = (acc.sourceFormats[sourceFormat] || 0) + 1;
+      tags.forEach((tag) => {
+        acc.tags[tag] = (acc.tags[tag] || 0) + 1;
+      });
+
+      if (item?.favorite) acc.favorites += 1;
+      if (item?.archived) acc.archived += 1;
+
+      return acc;
+    },
+    {
+      total: registry.length,
+      favorites: 0,
+      archived: 0,
+      categories: {} as Record<string, number>,
+      statuses: {} as Record<string, number>,
+      sourceFormats: {} as Record<string, number>,
+      tags: {} as Record<string, number>,
+    }
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-registry-facets", {
+      detail: facets,
+    })
+  );
+
+  return facets;
+}
+
+function bagastudioSearchProductsAdvancedRuntime(params: any = {}) {
+  const {
+    query = "",
+    category,
+    status,
+    sourceFormat,
+    tags = [],
+    favorite,
+    archived = false,
+    sortBy = "updatedAt",
+    sortDirection = "desc",
+    limit = 100,
+  } = params || {};
+
+  const normalizedQuery = bagastudioNormalizeCatalogTokenRuntime(query);
+  const normalizedTags = bagastudioNormalizeTagListRuntime(tags).map(bagastudioNormalizeCatalogTokenRuntime);
+
+  const registry = bagastudioReadProductRegistryRuntime();
+
+  const filtered = registry.filter((item) => {
+    const itemTags = bagastudioNormalizeTagListRuntime(item?.tags || []).map(bagastudioNormalizeCatalogTokenRuntime);
+    const searchable = [
+      item?.searchText,
+      item?.productId,
+      item?.productSlug,
+      item?.name,
+      item?.displayName,
+      item?.category,
+      item?.sourceFormat,
+      itemTags.join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
+    const matchesCategory = !category || item?.category === category;
+    const matchesStatus = !status || item?.status === status;
+    const matchesFormat = !sourceFormat || item?.sourceFormat === sourceFormat || item?.format === sourceFormat;
+    const matchesTags = normalizedTags.length === 0 || normalizedTags.every((tag) => itemTags.includes(tag));
+    const matchesFavorite = typeof favorite !== "boolean" || Boolean(item?.favorite) === favorite;
+    const matchesArchived = typeof archived !== "boolean" || Boolean(item?.archived) === archived;
+
+    return matchesQuery && matchesCategory && matchesStatus && matchesFormat && matchesTags && matchesFavorite && matchesArchived;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const av = a?.[sortBy] || "";
+    const bv = b?.[sortBy] || "";
+    const result = String(av).localeCompare(String(bv));
+    return sortDirection === "asc" ? result : -result;
+  });
+
+  const result = {
+    query,
+    filters: { category, status, sourceFormat, tags: normalizedTags, favorite, archived },
+    sortBy,
+    sortDirection,
+    total: sorted.length,
+    items: sorted.slice(0, Number(limit) || 100),
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-search-results", {
+      detail: result,
+    })
+  );
+
+  return result;
+}
+
+function bagastudioAddProductTagsRuntime(productId: string, tags: string[]) {
+  const newTags = bagastudioNormalizeTagListRuntime(tags);
+  return bagastudioUpdateProductRegistryEntryRuntime(productId, (item) => ({
+    ...item,
+    tags: bagastudioNormalizeTagListRuntime([...(item?.tags || []), ...newTags]),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+function bagastudioRemoveProductTagsRuntime(productId: string, tags: string[]) {
+  const removeTags = bagastudioNormalizeTagListRuntime(tags).map(bagastudioNormalizeCatalogTokenRuntime);
+  return bagastudioUpdateProductRegistryEntryRuntime(productId, (item) => ({
+    ...item,
+    tags: bagastudioNormalizeTagListRuntime(item?.tags || []).filter(
+      (tag) => !removeTags.includes(bagastudioNormalizeCatalogTokenRuntime(tag))
+    ),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+function bagastudioSetProductFavoriteRuntime(productId: string, favorite = true) {
+  return bagastudioUpdateProductRegistryEntryRuntime(productId, (item) => ({
+    ...item,
+    favorite: Boolean(favorite),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+function bagastudioSetProductArchivedRuntime(productId: string, archived = true) {
+  return bagastudioUpdateProductRegistryEntryRuntime(productId, (item) => ({
+    ...item,
+    archived: Boolean(archived),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioSearchProductsAdvanced = bagastudioSearchProductsAdvancedRuntime;
+  window.bagastudioGetProductRegistryFacets = bagastudioGetProductRegistryFacetsRuntime;
+  window.bagastudioAddProductTags = bagastudioAddProductTagsRuntime;
+  window.bagastudioRemoveProductTags = bagastudioRemoveProductTagsRuntime;
+  window.bagastudioSetProductFavorite = bagastudioSetProductFavoriteRuntime;
+  window.bagastudioSetProductArchived = bagastudioSetProductArchivedRuntime;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:filters-tags-ready", {
+      detail: {
+        status: "ready",
+        features: ["advanced-search", "facets", "tags", "favorites", "archive"],
+      },
+    })
+  );
+}
+
+// ============================================================
+// BagaStudio Core - Smart Collections V1
+// Conservative runtime layer for catalog grouping and saved views.
+// ============================================================
+
+declare global {
+  interface Window {
+    bagastudioCreateProductCollection?: (collection: any) => any;
+    bagastudioGetProductCollections?: () => any[];
+    bagastudioUpdateProductCollection?: (collectionId: string, patch: any) => any;
+    bagastudioDeleteProductCollection?: (collectionId: string) => any;
+    bagastudioAddProductsToCollection?: (collectionId: string, productIds: string[]) => any;
+    bagastudioRemoveProductsFromCollection?: (collectionId: string, productIds: string[]) => any;
+    bagastudioGetCollectionProducts?: (collectionId: string) => any;
+    bagastudioCreateSmartCollection?: (collection: any) => any;
+    bagastudioRefreshSmartCollection?: (collectionId: string) => any;
+  }
+}
+
+const BAGASTUDIO_PRODUCT_COLLECTIONS_KEY = "bagastudio_product_collections_v1";
+
+function bagastudioReadProductCollectionsRuntime(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_PRODUCT_COLLECTIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio collections read failed", error);
+    return [];
+  }
+}
+
+function bagastudioWriteProductCollectionsRuntime(collections: any[]) {
+  if (typeof window === "undefined") return [];
+
+  const safeCollections = Array.isArray(collections) ? collections : [];
+  window.localStorage.setItem(BAGASTUDIO_PRODUCT_COLLECTIONS_KEY, JSON.stringify(safeCollections, null, 2));
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-collections-updated", {
+      detail: {
+        total: safeCollections.length,
+        collections: safeCollections,
+      },
+    })
+  );
+
+  return safeCollections;
+}
+
+function bagastudioCreateProductCollectionRuntime(collection: any = {}) {
+  const now = new Date().toISOString();
+  const name = String(collection?.name || collection?.displayName || "Nuova collezione").trim();
+  const collectionId = String(
+    collection?.collectionId ||
+      collection?.id ||
+      `collection_${name.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || Date.now()}_${Date.now()}`
+  );
+
+  const nextCollection = {
+    collectionId,
+    id: collectionId,
+    name,
+    displayName: collection?.displayName || name,
+    description: collection?.description || "",
+    type: collection?.type || "manual",
+    productIds: Array.isArray(collection?.productIds) ? Array.from(new Set(collection.productIds.map(String))) : [],
+    query: collection?.query || null,
+    filters: collection?.filters || {},
+    tags: bagastudioNormalizeTagListRuntime(collection?.tags || []),
+    createdAt: collection?.createdAt || now,
+    updatedAt: now,
+  };
+
+  const collections = bagastudioReadProductCollectionsRuntime();
+  const filtered = collections.filter((item) => item?.collectionId !== collectionId && item?.id !== collectionId);
+  const result = bagastudioWriteProductCollectionsRuntime([nextCollection, ...filtered]);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-collection-created", {
+      detail: nextCollection,
+    })
+  );
+
+  return nextCollection;
+}
+
+function bagastudioUpdateProductCollectionRuntime(collectionId: string, patch: any = {}) {
+  const now = new Date().toISOString();
+  const collections = bagastudioReadProductCollectionsRuntime();
+  let updated: any = null;
+
+  const next = collections.map((item) => {
+    if (item?.collectionId !== collectionId && item?.id !== collectionId) return item;
+
+    updated = {
+      ...item,
+      ...patch,
+      collectionId: item?.collectionId || collectionId,
+      id: item?.id || collectionId,
+      tags: patch?.tags ? bagastudioNormalizeTagListRuntime(patch.tags) : item?.tags || [],
+      updatedAt: now,
+    };
+
+    return updated;
+  });
+
+  bagastudioWriteProductCollectionsRuntime(next);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-collection-updated", {
+      detail: updated,
+    })
+  );
+
+  return updated;
+}
+
+function bagastudioDeleteProductCollectionRuntime(collectionId: string) {
+  const collections = bagastudioReadProductCollectionsRuntime();
+  const next = collections.filter((item) => item?.collectionId !== collectionId && item?.id !== collectionId);
+  bagastudioWriteProductCollectionsRuntime(next);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-collection-deleted", {
+      detail: { collectionId },
+    })
+  );
+
+  return { collectionId, deleted: collections.length !== next.length };
+}
+
+function bagastudioAddProductsToCollectionRuntime(collectionId: string, productIds: string[] = []) {
+  const ids = Array.from(new Set((productIds || []).map(String).filter(Boolean)));
+  const collections = bagastudioReadProductCollectionsRuntime();
+  const collection = collections.find((item) => item?.collectionId === collectionId || item?.id === collectionId);
+  if (!collection) return null;
+
+  const currentIds = Array.isArray(collection.productIds) ? collection.productIds.map(String) : [];
+  return bagastudioUpdateProductCollectionRuntime(collectionId, {
+    productIds: Array.from(new Set([...currentIds, ...ids])),
+  });
+}
+
+function bagastudioRemoveProductsFromCollectionRuntime(collectionId: string, productIds: string[] = []) {
+  const removeIds = new Set((productIds || []).map(String).filter(Boolean));
+  const collections = bagastudioReadProductCollectionsRuntime();
+  const collection = collections.find((item) => item?.collectionId === collectionId || item?.id === collectionId);
+  if (!collection) return null;
+
+  const currentIds = Array.isArray(collection.productIds) ? collection.productIds.map(String) : [];
+  return bagastudioUpdateProductCollectionRuntime(collectionId, {
+    productIds: currentIds.filter((id: string) => !removeIds.has(id)),
+  });
+}
+
+function bagastudioGetCollectionProductsRuntime(collectionId: string) {
+  const collections = bagastudioReadProductCollectionsRuntime();
+  const collection = collections.find((item) => item?.collectionId === collectionId || item?.id === collectionId);
+  const registry = bagastudioReadProductRegistryRuntime();
+
+  if (!collection) {
+    return { collectionId, collection: null, total: 0, items: [] };
+  }
+
+  let items: any[] = [];
+
+  if (collection.type === "smart") {
+    const result = bagastudioSearchProductsAdvancedRuntime({
+      query: collection?.query || "",
+      ...(collection?.filters || {}),
+      limit: 1000,
+    });
+    items = result?.items || [];
+  } else {
+    const ids = new Set((collection.productIds || []).map(String));
+    items = registry.filter((item) => ids.has(String(item?.productId || item?.id)));
+  }
+
+  const result = {
+    collectionId: collection.collectionId || collection.id,
+    collection,
+    total: items.length,
+    items,
+  };
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:product-collection-products", {
+      detail: result,
+    })
+  );
+
+  return result;
+}
+
+function bagastudioCreateSmartCollectionRuntime(collection: any = {}) {
+  return bagastudioCreateProductCollectionRuntime({
+    ...collection,
+    type: "smart",
+    productIds: [],
+    query: collection?.query || "",
+    filters: collection?.filters || {},
+  });
+}
+
+function bagastudioRefreshSmartCollectionRuntime(collectionId: string) {
+  const result = bagastudioGetCollectionProductsRuntime(collectionId);
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:smart-collection-refreshed", {
+      detail: result,
+    })
+  );
+
+  return result;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioCreateProductCollection = bagastudioCreateProductCollectionRuntime;
+  window.bagastudioGetProductCollections = bagastudioReadProductCollectionsRuntime;
+  window.bagastudioUpdateProductCollection = bagastudioUpdateProductCollectionRuntime;
+  window.bagastudioDeleteProductCollection = bagastudioDeleteProductCollectionRuntime;
+  window.bagastudioAddProductsToCollection = bagastudioAddProductsToCollectionRuntime;
+  window.bagastudioRemoveProductsFromCollection = bagastudioRemoveProductsFromCollectionRuntime;
+  window.bagastudioGetCollectionProducts = bagastudioGetCollectionProductsRuntime;
+  window.bagastudioCreateSmartCollection = bagastudioCreateSmartCollectionRuntime;
+  window.bagastudioRefreshSmartCollection = bagastudioRefreshSmartCollectionRuntime;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:smart-collections-ready", {
+      detail: {
+        status: "ready",
+        features: ["manual-collections", "smart-collections", "saved-views", "collection-products"],
+      },
+    })
+  );
+}
+
+// ============================================================
+// BagaStudio Core - AI Recommendation Engine V1
+// Conservative runtime layer for AI-ready metadata, semantic index,
+// similar products and catalog recommendations.
+// ============================================================
+
+declare global {
+  interface Window {
+    bagastudioBuildAiCatalogIndex?: () => any[];
+    bagastudioGetAiProductMetadata?: (productId: string) => any;
+    bagastudioFindSimilarProducts?: (productId: string, limit?: number) => any;
+    bagastudioRecommendProducts?: (criteria?: any, limit?: number) => any;
+  }
+}
+
+const BAGASTUDIO_AI_INDEX_KEY = "bagastudio_ai_catalog_index_v1";
+
+function bagastudioNormalizeAiTextRuntime(value: any): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function bagastudioTokenizeAiRuntime(value: any): string[] {
+  const normalized = bagastudioNormalizeAiTextRuntime(value);
+  return Array.from(
+    new Set(
+      normalized
+        .split(/[^a-z0-9]+/i)
+        .map((token: string) => token.trim())
+        .filter((token: string) => token.length >= 2)
+    )
+  );
+}
+
+function bagastudioReadAiRegistryRuntime(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    if (typeof window.bagastudioGetProductRegistry === "function") {
+      const registry = window.bagastudioGetProductRegistry();
+      return Array.isArray(registry) ? registry : [];
+    }
+  } catch (error) {
+    console.warn("BagaStudio AI registry bridge failed", error);
+  }
+
+  try {
+    const raw = window.localStorage.getItem("bagastudio_product_registry_v1");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("BagaStudio AI registry read failed", error);
+    return [];
+  }
+}
+
+function bagastudioBuildAiMetadataRuntime(product: any): any {
+  const productId = String(product?.productId || product?.id || product?.slug || `product_${Date.now()}`);
+  const name = String(product?.name || product?.productName || product?.title || productId);
+  const category = String(product?.category || product?.productCategory || "uncategorized");
+  const tags = Array.isArray(product?.tags) ? product.tags.map(String) : [];
+  const materials = Array.isArray(product?.materials) ? product.materials.map(String) : [];
+  const collections = Array.isArray(product?.collections) ? product.collections.map(String) : [];
+  const sourceText = [
+    productId,
+    name,
+    category,
+    product?.description,
+    product?.sourceFormat,
+    product?.engineVersion,
+    ...tags,
+    ...materials,
+    ...collections,
+  ].join(" ");
+  const semanticTags = Array.from(new Set([...tags, ...materials, category, ...bagastudioTokenizeAiRuntime(sourceText)]));
+
+  return {
+    productId,
+    name,
+    category,
+    tags,
+    materials,
+    collections,
+    semanticTags,
+    searchText: bagastudioNormalizeAiTextRuntime(sourceText),
+    aiScore: semanticTags.length + (product?.thumbnail ? 5 : 0) + (product?.productPackage ? 10 : 0),
+    sourceFormat: product?.sourceFormat || product?.metadata?.sourceFormat || null,
+    thumbnail: product?.thumbnail || product?.preview || null,
+    raw: product,
+    indexedAt: new Date().toISOString(),
+  };
+}
+
+function bagastudioBuildAiCatalogIndexRuntime(): any[] {
+  const registry = bagastudioReadAiRegistryRuntime();
+  const index = registry.map((product: any) => bagastudioBuildAiMetadataRuntime(product));
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(BAGASTUDIO_AI_INDEX_KEY, JSON.stringify(index));
+    } catch (error) {
+      console.warn("BagaStudio AI index save failed", error);
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:ai-catalog-index-ready", {
+        detail: {
+          status: "ready",
+          total: index.length,
+          index,
+        },
+      })
+    );
+  }
+
+  return index;
+}
+
+function bagastudioReadAiCatalogIndexRuntime(): any[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(BAGASTUDIO_AI_INDEX_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch (error) {
+    console.warn("BagaStudio AI index read failed", error);
+  }
+
+  return bagastudioBuildAiCatalogIndexRuntime();
+}
+
+function bagastudioGetAiProductMetadataRuntime(productId: string): any {
+  const index = bagastudioReadAiCatalogIndexRuntime();
+  const found = index.find((item: any) => String(item?.productId) === String(productId));
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:ai-product-metadata", {
+      detail: found || null,
+    })
+  );
+
+  return found || null;
+}
+
+function bagastudioSimilarityScoreRuntime(a: any, b: any): number {
+  const aTags = new Set((a?.semanticTags || []).map(String));
+  const bTags = new Set((b?.semanticTags || []).map(String));
+ const shared = (Array.from(aTags) as string[]).filter((tag: string) => bTags.has(tag)).length;
+  const categoryBoost = a?.category && b?.category && a.category === b.category ? 5 : 0;
+  const materialBoost = (a?.materials || []).some((material: string) => (b?.materials || []).includes(material)) ? 3 : 0;
+  return shared + categoryBoost + materialBoost;
+}
+
+function bagastudioFindSimilarProductsRuntime(productId: string, limit = 6): any {
+  const index = bagastudioReadAiCatalogIndexRuntime();
+  const source = index.find((item: any) => String(item?.productId) === String(productId));
+
+  if (!source) {
+    const emptyResult = { productId, total: 0, items: [] };
+    window.dispatchEvent(new CustomEvent("bagastudio:similar-products-ready", { detail: emptyResult }));
+    return emptyResult;
+  }
+
+  const items = index
+    .filter((item: any) => String(item?.productId) !== String(productId))
+    .map((item: any) => ({
+      ...item,
+      similarityScore: bagastudioSimilarityScoreRuntime(source, item),
+    }))
+    .filter((item: any) => item.similarityScore > 0)
+    .sort((a: any, b: any) => b.similarityScore - a.similarityScore)
+    .slice(0, limit);
+
+  const result = { productId, total: items.length, source, items };
+  window.dispatchEvent(new CustomEvent("bagastudio:similar-products-ready", { detail: result }));
+  return result;
+}
+
+function bagastudioRecommendProductsRuntime(criteria: any = {}, limit = 8): any {
+  const index = bagastudioReadAiCatalogIndexRuntime();
+  const queryTokens = bagastudioTokenizeAiRuntime(criteria?.query || criteria?.text || "");
+  const category = criteria?.category ? String(criteria.category) : "";
+  const tags = Array.isArray(criteria?.tags) ? criteria.tags.map(String) : [];
+
+  const items = index
+    .map((item: any) => {
+      const semanticTags = new Set((item?.semanticTags || []).map(String));
+      const queryScore = queryTokens.filter((token: string) => semanticTags.has(token) || item?.searchText?.includes(token)).length;
+      const categoryScore = category && item?.category === category ? 6 : 0;
+      const tagScore = tags.filter((tag: string) => semanticTags.has(tag)).length * 2;
+      const score = queryScore + categoryScore + tagScore + Number(item?.aiScore || 0) * 0.05;
+      return { ...item, recommendationScore: score };
+    })
+    .filter((item: any) => item.recommendationScore > 0 || (!criteria?.query && !category && tags.length === 0))
+    .sort((a: any, b: any) => b.recommendationScore - a.recommendationScore)
+    .slice(0, limit);
+
+  const result = {
+    criteria,
+    total: items.length,
+    items,
+    generatedAt: new Date().toISOString(),
+  };
+
+  window.dispatchEvent(new CustomEvent("bagastudio:product-recommendations-ready", { detail: result }));
+  return result;
+}
+
+if (typeof window !== "undefined") {
+  window.bagastudioBuildAiCatalogIndex = bagastudioBuildAiCatalogIndexRuntime;
+  window.bagastudioGetAiProductMetadata = bagastudioGetAiProductMetadataRuntime;
+  window.bagastudioFindSimilarProducts = bagastudioFindSimilarProductsRuntime;
+  window.bagastudioRecommendProducts = bagastudioRecommendProductsRuntime;
+
+  window.dispatchEvent(
+    new CustomEvent("bagastudio:ai-recommendation-engine-ready", {
+      detail: {
+        status: "ready",
+        features: [
+          "ai-metadata",
+          "semantic-index",
+          "similar-products",
+          "recommendations",
+          "future-ai-assistant-bridge",
+        ],
+      },
+    })
+  );
+}

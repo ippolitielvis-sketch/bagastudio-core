@@ -47,6 +47,57 @@ const DEFAULT_VIEWS = [
 ];
 
 
+const SUPPORTED_IMPORT_MODEL_ACCEPT = ".glb,.gltf,.dae,.fbx,.obj,.stl";
+const SUPPORTED_IMPORT_MODEL_FORMATS = ["glb", "gltf", "dae", "fbx", "obj", "stl"] as const;
+
+function getImportFileFormat(fileName: string) {
+  return String(fileName.split(".").pop() || "").trim().toLowerCase();
+}
+
+function isSupportedImportModel(file: File) {
+  return SUPPORTED_IMPORT_MODEL_FORMATS.includes(getImportFileFormat(file.name) as any);
+}
+
+function createImportedModelProduct(file: File, objectUrl: string, format: string, baseProduct?: AnyProduct | null) {
+  const cleanName = file.name.replace(/\.[^/.]+$/, "");
+  const now = new Date().toISOString();
+
+  return normalizeProduct({
+    ...(baseProduct || demoProduct2),
+    id: `imported-${cleanName.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}-${Date.now()}`,
+    name: cleanName,
+    displayName: cleanName,
+    source: "local-import",
+    createdAt: now,
+    updatedAt: now,
+    assets: {
+      ...(baseProduct?.assets || {}),
+      originalFileName: file.name,
+      originalFileUrl: objectUrl,
+      originalFormat: format,
+      format,
+      modelFormat: format,
+      modelUrl: objectUrl,
+      importedAt: now,
+    },
+    parts: Array.isArray(baseProduct?.parts) ? baseProduct.parts : [],
+    views: Array.isArray(baseProduct?.views) && baseProduct.views.length ? baseProduct.views : DEFAULT_VIEWS,
+    dimensions: baseProduct?.dimensions || {
+      width: { default: 180, min: 60, max: 400, step: 1 },
+      height: { default: 100, min: 40, max: 250, step: 1 },
+      depth: { default: 60, min: 20, max: 200, step: 1 },
+    },
+    importer: {
+      sourceFileName: file.name,
+      sourceFormat: format,
+      sizeBytes: file.size,
+      importedAt: now,
+      pipeline: "Importer UI V2",
+    },
+  });
+}
+
+
 const DICTIONARY = {
   it: {
     language: "Lingua",
@@ -452,7 +503,6 @@ function getModelFormat(product: AnyProduct | null) {
     if (modelUrl.includes("model/fbx")) return "fbx";
     if (modelUrl.includes("model/obj")) return "obj";
     if (modelUrl.includes("model/stl")) return "stl";
-    if (modelUrl.includes("model/vnd.collada") || modelUrl.includes("model/dae") || modelUrl.includes("collada")) return "dae";
     if (modelUrl.includes("model/gltf") || modelUrl.includes("model/glb")) return "glb";
     return "glb";
   }
@@ -530,10 +580,78 @@ const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
 const [language, setLanguage] = useState<"it" | "en">(() => getInitialLanguage());
 const t = DICTIONARY[language];
 const viewerShellRef = useRef<HTMLElement | null>(null);
+const importedModelUrlRef = useRef<string | null>(null);
+const [importedModelName, setImportedModelName] = useState("");
+const [importedModelFormat, setImportedModelFormat] = useState("");
+const [importerStatus, setImporterStatus] = useState("");
+const [isImporterDragging, setIsImporterDragging] = useState(false);
+const [importerUiState, setImporterUiState] = useState<any>(null);
+const [lastImporterEvent, setLastImporterEvent] = useState("");
 
 useEffect(() => {
   window.localStorage.setItem("bagastudio-language", language);
 }, [language]);
+
+
+useEffect(() => {
+  const refreshImporterUiState = () => {
+    const getter = (window as any).bagastudioGetImporterUiState;
+    const refresher = (window as any).bagastudioRefreshImporterUiState;
+
+    try {
+      const nextState = typeof refresher === "function" ? refresher() : typeof getter === "function" ? getter() : null;
+      if (nextState) setImporterUiState(nextState);
+    } catch (error) {
+      console.warn("BagaStudio importer UI state refresh failed", error);
+    }
+  };
+
+  const handleImporterUiState = (event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    setImporterUiState(detail || null);
+    setLastImporterEvent("Stato importer aggiornato");
+  };
+
+  const handleImporterRuntimeEvent = (event: Event) => {
+    setLastImporterEvent((event as CustomEvent).type.replace("bagastudio:", ""));
+    refreshImporterUiState();
+  };
+
+  const watchedEvents = [
+    "bagastudio:importer-ui-state",
+    "bagastudio:importer-report-ready",
+    "bagastudio:importer-product-package-ready",
+    "bagastudio:admin-mapping-ready",
+    "bagastudio:importer-glb-ready",
+    "bagastudio:product-thumbnail-ready",
+    "bagastudio:importer-compatibility-guard",
+    "bagastudio:complete-product-package-saved",
+  ];
+
+  window.addEventListener("bagastudio:importer-ui-state", handleImporterUiState as EventListener);
+  watchedEvents
+    .filter((eventName) => eventName !== "bagastudio:importer-ui-state")
+    .forEach((eventName) => window.addEventListener(eventName, handleImporterRuntimeEvent as EventListener));
+
+  const timer = window.setTimeout(refreshImporterUiState, 300);
+
+  return () => {
+    window.clearTimeout(timer);
+    window.removeEventListener("bagastudio:importer-ui-state", handleImporterUiState as EventListener);
+    watchedEvents
+      .filter((eventName) => eventName !== "bagastudio:importer-ui-state")
+      .forEach((eventName) => window.removeEventListener(eventName, handleImporterRuntimeEvent as EventListener));
+  };
+}, []);
+
+useEffect(() => {
+  return () => {
+    if (importedModelUrlRef.current) {
+      URL.revokeObjectURL(importedModelUrlRef.current);
+      importedModelUrlRef.current = null;
+    }
+  };
+}, []);
 
 function goNextView() {
   const views = runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS;
@@ -647,6 +765,59 @@ const availableAccessories = useMemo(() => {
     language,
     saveAutosave,
   ]);
+
+  async function handleModelFileImport(file: File) {
+    const format = getImportFileFormat(file.name);
+
+    if (!isSupportedImportModel(file)) {
+      const message = `Formato non supportato: .${format || "sconosciuto"}. Formati supportati: ${SUPPORTED_IMPORT_MODEL_ACCEPT}`;
+      setImporterStatus(message);
+      alert(message);
+      return;
+    }
+
+    if (importedModelUrlRef.current) {
+      URL.revokeObjectURL(importedModelUrlRef.current);
+      importedModelUrlRef.current = null;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    importedModelUrlRef.current = objectUrl;
+
+    const nextProduct = createImportedModelProduct(file, objectUrl, format, runtimeProduct);
+
+    setRuntimeProduct(nextProduct);
+    setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
+    setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
+    setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
+    setActiveView(nextProduct.views?.[0]?.id || "iso");
+    setSelectedPart(null);
+    setImportName(file.name);
+    setImportedModelName(file.name);
+    setImportedModelFormat(format.toUpperCase());
+    setImporterStatus(`Modello importato: ${file.name} (.${format})`);
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:import-model-file", {
+        detail: {
+          fileName: file.name,
+          format,
+          objectUrl,
+          sizeBytes: file.size,
+          importedAt: new Date().toISOString(),
+        },
+      })
+    );
+
+    window.setTimeout(() => {
+      try {
+        const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
+        if (state) setImporterUiState(state);
+      } catch (error) {
+        console.warn("BagaStudio importer state not ready yet", error);
+      }
+    }, 500);
+  }
 
   async function handleProductJsonImport(file: File) {
     try {
@@ -840,6 +1011,46 @@ const availableAccessories = useMemo(() => {
         <p className="mt-2 text-xs text-neutral-400">{importName}</p>
       )}
 
+      <div className="mt-4 rounded-2xl border border-sky-400/20 bg-black/25 p-4 text-xs text-neutral-300">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="font-black uppercase tracking-[0.22em] text-sky-300">Stato runtime importer</p>
+          <button
+            type="button"
+            onClick={() => {
+              const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
+              setImporterUiState(state || null);
+              setLastImporterEvent("Refresh manuale");
+            }}
+            className="rounded-xl border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[11px] font-black text-sky-100 hover:bg-sky-400/15"
+          >
+            Aggiorna
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Modello</span>
+            <span className="font-bold text-white">{importerUiState?.hasImportedModel ? "Pronto" : importedModelName ? "Caricato" : "Non caricato"}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Package</span>
+            <span className="font-bold text-white">{importerUiState?.hasProductPackage ? "Disponibile" : "Non pronto"}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Mapping</span>
+            <span className="font-bold text-white">{importerUiState?.hasAdminMapping ? "Disponibile" : "Non pronto"}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Report</span>
+            <span className="font-bold text-white">{importerUiState?.hasImporterReport ? "Disponibile" : "Non pronto"}</span>
+          </div>
+        </div>
+
+        {lastImporterEvent && (
+          <p className="mt-3 text-[11px] text-sky-200">Ultimo evento: {lastImporterEvent}</p>
+        )}
+      </div>
+
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           onClick={() => {
@@ -938,6 +1149,119 @@ const availableAccessories = useMemo(() => {
       <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
         BagaStudio Core
       </p>
+    </section>
+
+    <section className="rounded-3xl border border-sky-400/25 bg-sky-500/5 p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
+      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
+        IMPORTER UI V2
+      </p>
+      <h2 className="mb-2 text-lg font-black text-white">Importa modello 3D</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-300">
+        Formati supportati: GLB, GLTF, DAE, FBX, OBJ, STL. Puoi selezionare il file oppure trascinarlo direttamente nel viewer.
+      </p>
+
+      <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-black/20 px-4 py-5 text-center transition hover:border-sky-300 hover:bg-sky-400/10">
+        <span className="text-sm font-black text-white">Seleziona modello 3D</span>
+        <span className="mt-1 block text-xs text-sky-200">{SUPPORTED_IMPORT_MODEL_ACCEPT}</span>
+        <input
+          type="file"
+          accept={SUPPORTED_IMPORT_MODEL_ACCEPT}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) handleModelFileImport(file);
+            event.target.value = "";
+          }}
+        />
+      </label>
+
+      {(importedModelName || importerStatus) && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">
+          {importedModelName && (
+            <p><span className="font-bold text-white">File:</span> {importedModelName}</p>
+          )}
+          {importedModelFormat && (
+            <p><span className="font-bold text-white">Formato:</span> {importedModelFormat}</p>
+          )}
+          {importerStatus && (
+            <p className="mt-1 text-sky-200">{importerStatus}</p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Scarica GLB
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadImporterJsonBundle?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Scarica JSON bundle
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Product Package
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastAdminMapping?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Admin Mapping
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastImporterReport?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Report Importer
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadProductThumbnail?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Thumbnail
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadImporterCompletePackage?.()}
+          className="col-span-2 rounded-2xl border border-sky-400/30 bg-sky-500/10 px-3 py-3 text-xs font-black text-sky-100 hover:border-sky-300/60 hover:bg-sky-400/15"
+        >
+          Scarica pacchetto completo
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const result = (window as any).bagastudioCheckImporterCompatibility?.();
+            setLastImporterEvent(result?.status ? `Compatibility: ${result.status}` : "Compatibility check avviato");
+            const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
+            setImporterUiState(state || null);
+          }}
+          className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-100 hover:border-emerald-300/60 hover:bg-emerald-400/15"
+        >
+          Verifica compatibilità
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const result = (window as any).bagastudioSaveCompleteProductPackage?.();
+            setLastImporterEvent(result ? "Save Product avviato" : "Save Product non disponibile");
+          }}
+          className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100 hover:border-amber-300/60 hover:bg-amber-400/15"
+        >
+          Salva prodotto
+        </button>
+      </div>
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
@@ -1359,8 +1683,34 @@ const availableAccessories = useMemo(() => {
 
 <section
   ref={viewerShellRef}
-  className="relative overflow-hidden rounded-2xl border border-sky-400/15 bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)]"
+  onDragOver={(event) => {
+    event.preventDefault();
+    setIsImporterDragging(true);
+  }}
+  onDragLeave={(event) => {
+    if (event.currentTarget === event.target) {
+      setIsImporterDragging(false);
+    }
+  }}
+  onDrop={(event) => {
+    event.preventDefault();
+    setIsImporterDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) handleModelFileImport(file);
+  }}
+  className={`relative overflow-hidden rounded-2xl border bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)] ${
+    isImporterDragging ? "border-sky-300 ring-2 ring-sky-400/60" : "border-sky-400/15"
+  }`}
 >
+  {isImporterDragging && (
+    <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-300 bg-sky-500/10 text-center backdrop-blur-sm">
+      <div className="rounded-3xl border border-sky-300/40 bg-[#07111c]/90 px-8 py-6 shadow-2xl">
+        <p className="text-xl font-black text-white">Rilascia il modello 3D</p>
+        <p className="mt-2 text-sm font-semibold text-sky-200">GLB, GLTF, DAE, FBX, OBJ, STL</p>
+      </div>
+    </div>
+  )}
+
   <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
     {[
       ["↖", t.toolSelect, "select"],
