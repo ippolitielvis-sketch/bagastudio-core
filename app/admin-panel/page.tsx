@@ -35,6 +35,17 @@ ledPosition: string;
 
 
 const BAGASTUDIO_ADMIN_AUTOSAVE_KEY = "bagastudio_core_admin_autosave_v1";
+const BAGASTUDIO_PRODUCT_LIBRARY_KEY = "bagastudio_core_product_library_v1";
+
+type ProductLibraryItem = {
+  id: string;
+  name: string;
+  category: string;
+  brand: string;
+  sourceFileName: string;
+  savedAt: string;
+  packageJson: string;
+};
 
 const DEFAULT_PRODUCT_MATERIALS = [
   { id: "acciaio_ossidato", name: "Acciaio Ossidato", category: "metal", textureUrl: "/textures/Acciaio_Ossidato.webp", roughness: 0.55, metalness: 0.8 },
@@ -692,6 +703,13 @@ const ADMIN_I18N = {
     chooseFile: "Scegli file",
     noFileSelected: "Nessun file selezionato",
     language: "Lingua",
+    productLibrary: "Libreria prodotti",
+    libraryDesc: "Salva e richiama package prodotto preparati nell’Admin.",
+    saveToLibrary: "Salva in libreria",
+    loadProduct: "Carica prodotto",
+    deleteProduct: "Elimina",
+    emptyLibrary: "Nessun prodotto salvato nella libreria.",
+    librarySaved: "Prodotto salvato in libreria.",
   },
   en: {
     adminPanel: "Admin Panel",
@@ -758,6 +776,13 @@ const ADMIN_I18N = {
     chooseFile: "Choose file",
     noFileSelected: "No file selected",
     language: "Language",
+    productLibrary: "Product library",
+    libraryDesc: "Save and recall product packages prepared in the Admin.",
+    saveToLibrary: "Save to library",
+    loadProduct: "Load product",
+    deleteProduct: "Delete",
+    emptyLibrary: "No products saved in the library.",
+    librarySaved: "Product saved to library.",
   },
 } as const;
 
@@ -795,6 +820,7 @@ const [mapperCategoryFilter, setMapperCategoryFilter] = useState("all");
 const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
+const [productLibrary, setProductLibrary] = useState<ProductLibraryItem[]>([]);
 const autosaveHydratedRef = useRef(false);
 const meshCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 const meshInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -1045,6 +1071,303 @@ const importBackupFile = async (file: File | undefined) => {
   }
 };
 
+useEffect(() => {
+  if (typeof window === "undefined") return;
+
+  try {
+    const saved = window.localStorage.getItem(BAGASTUDIO_PRODUCT_LIBRARY_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    setProductLibrary(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    setProductLibrary([]);
+  }
+}, []);
+
+function persistProductLibrary(nextLibrary: ProductLibraryItem[]) {
+  setProductLibrary(nextLibrary);
+
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      BAGASTUDIO_PRODUCT_LIBRARY_KEY,
+      JSON.stringify(nextLibrary)
+    );
+  } catch (error) {
+    console.warn("BagaStudio product library save skipped", error);
+  }
+}
+
+function buildCurrentProductPackageJson() {
+  const normalizeCsv = (value: string, fallback: string[] = []) => {
+    const items = value
+      ? value.split(",").map((item) => item.trim()).filter(Boolean)
+      : fallback;
+    return Array.from(new Set(items));
+  };
+
+  const isCanonicalGlb = ["glb", "gltf"].includes(modelExtension);
+  const safeModelName = modelFileName || "imported-model.glb";
+  const primaryModelUrl = modelDataUrl || `/models/${safeModelName}`;
+
+  const packageId =
+    productId ||
+    productName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-|-$/g, "") ||
+    "new-product";
+  const now = new Date().toISOString();
+
+  const components = meshList.map((mesh, index) => {
+    const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
+    const compatibleAccessories =
+      mesh.supportsAccessories === false
+        ? []
+        : normalizeCsv(mesh.compatibleAccessories, [
+            ...(mesh.compatibleInsert ? ["insert"] : []),
+            ...(mesh.compatibleLed ? ["led"] : []),
+          ]);
+
+    return {
+      id: `part_${index + 1}`,
+      name: mesh.displayName,
+      label: mesh.displayName,
+      customerName: mesh.displayName,
+      originalName: mesh.meshName,
+      meshName: mesh.meshName,
+      category: mesh.category || "component",
+      selectable: mesh.selectable,
+      visible: mesh.visible,
+      supportsMaterials: true,
+      supportsVisibility: true,
+      supportsAccessories: mesh.supportsAccessories !== false,
+      compatibleLed: mesh.compatibleLed,
+      compatibleInsert: mesh.compatibleInsert,
+      materialSlots,
+      allowedMaterialCategories:
+        mesh.category === "mirror"
+          ? ["mirror"]
+          : mesh.category === "hardware"
+          ? ["metal"]
+          : ["wood", "marble", "metal", "mirror"],
+      compatibleAccessories: Array.from(
+        new Set([
+          ...compatibleAccessories,
+          ...(mesh.compatibleInsert ? ["insert"] : []),
+          ...(mesh.compatibleLed ? ["led"] : []),
+        ])
+      ),
+      mountPoints: {
+        ...(mesh.compatibleLed && {
+          led: {
+            frontOffset: Number(mesh.ledFrontOffset || 0),
+            sideMargin: Number(mesh.ledSideMargin || 0),
+            yOffset: Number(mesh.ledYOffset || 0),
+            position: mesh.ledPosition || "front",
+          },
+        }),
+        ...(mesh.compatibleInsert && {
+          insert: {
+            position:
+              mesh.displayName?.toLowerCase().includes("piano") ||
+              mesh.meshName?.toLowerCase().includes("piano") ||
+              mesh.meshName?.toLowerCase().includes("orizzontale")
+                ? ["top"]
+                : mesh.displayName?.toLowerCase().includes("fianco") ||
+                  mesh.meshName?.toLowerCase().includes("fianco") ||
+                  mesh.meshName?.toLowerCase().includes("side")
+                ? ["side"]
+                : mesh.insertPosition
+                ? mesh.insertPosition.split(",").map((item) => item.trim()).filter(Boolean)
+                : ["front"],
+            offset: {
+              x: Number(mesh.insertOffsetX || 0),
+              y:
+                mesh.insertPosition === "top" ||
+                mesh.displayName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("orizzontale")
+                  ? 0.08
+                  : Number(mesh.insertOffsetY || 0),
+              z:
+                mesh.insertPosition === "top" ||
+                mesh.displayName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("piano") ||
+                mesh.meshName?.toLowerCase().includes("orizzontale")
+                  ? 0
+                  : Number(mesh.insertOffsetZ || 1),
+            },
+          },
+        }),
+      },
+    };
+  });
+
+  return JSON.stringify(
+    {
+      schema: "bagastudio-product-package",
+      packageVersion: packageVersion || "2.0.0",
+      generatedAt: now,
+      viewerCompatible: true,
+      engine: {
+        name: "BagaStudio Core",
+        minViewerVersion: "1.0.0",
+        canonicalModelFormat: "glb",
+        supportsEmbeddedModelDataUrl: true,
+        supportsRuntimeMaterials: true,
+        supportsComponentVisibility: true,
+        supportsAccessories: true,
+      },
+      metadata: {
+        id: packageId,
+        name: productName,
+        brand: productBrand || "BagaStudio Core",
+        productCategory,
+        sourceFileName: safeModelName,
+        originalFormat: modelExtension,
+        componentCount: components.length,
+      },
+      id: packageId,
+      name: productName,
+      brand: productBrand || "BagaStudio Core",
+      category: productCategory,
+      version: packageVersion || "2.0.0",
+      assets: {
+        modelUrl: primaryModelUrl,
+        embeddedModelDataUrl: modelDataUrl || null,
+        originalFileUrl: `/models/${safeModelName}`,
+        originalFormat: modelExtension,
+        sourceFileName: safeModelName,
+        convertedModelUrl: isCanonicalGlb ? primaryModelUrl : "/models/demo-product-2.glb",
+        requiresConversion: !isCanonicalGlb,
+        conversionTargetFormat: "glb",
+      },
+      dimensions: {
+        width: { min: widthMin, max: widthMax, step: 10, default: widthDefault },
+        height: { min: heightMin, max: heightMax, step: 10, default: heightDefault },
+        depth: { min: depthMin, max: depthMax, step: 5, default: depthDefault },
+      },
+      defaultConfiguration: {
+        dimensions: {
+          width: widthDefault,
+          height: heightDefault,
+          depth: depthDefault,
+        },
+        activeViewId: "iso",
+      },
+      components,
+      parts: components,
+      materials: DEFAULT_PRODUCT_MATERIALS,
+      options: [],
+      accessories: [
+        { id: "insert", name: "Inserto", stateType: "insert" },
+        { id: "led", name: "LED", stateType: "accessory" },
+      ],
+      pricing: {
+        basePrice: 900,
+        margin: 0,
+        vat: 22,
+      },
+      views: DEFAULT_PRODUCT_VIEWS,
+    },
+    null,
+    2
+  );
+}
+
+function saveCurrentProductToLibrary() {
+  const packageJson = generatedJson || buildCurrentProductPackageJson();
+
+  const item: ProductLibraryItem = {
+    id: productId || `product-${Date.now()}`,
+    name: productName || "Nuovo prodotto",
+    category: productCategory || "custom",
+    brand: productBrand || "BagaStudio Core",
+    sourceFileName: modelFileName || "",
+    savedAt: new Date().toISOString(),
+    packageJson,
+  };
+
+  const nextLibrary = [
+    item,
+    ...productLibrary.filter((product) => product.id !== item.id),
+  ];
+
+  persistProductLibrary(nextLibrary);
+  setGeneratedJson(packageJson);
+  setBackupStatus(adminT.librarySaved);
+}
+
+function loadProductFromLibrary(item: ProductLibraryItem) {
+  try {
+    const parsed = JSON.parse(item.packageJson);
+
+    setProductId(parsed.id || parsed.metadata?.id || item.id);
+    setProductName(parsed.name || parsed.metadata?.name || item.name);
+    setProductCategory(parsed.category || parsed.metadata?.productCategory || item.category);
+    setProductBrand(parsed.brand || parsed.metadata?.brand || item.brand);
+    setPackageVersion(parsed.packageVersion || parsed.version || "2.0.0");
+
+    setWidthMin(Number(parsed.dimensions?.width?.min ?? widthMin));
+    setWidthDefault(Number(parsed.dimensions?.width?.default ?? widthDefault));
+    setWidthMax(Number(parsed.dimensions?.width?.max ?? widthMax));
+    setHeightMin(Number(parsed.dimensions?.height?.min ?? heightMin));
+    setHeightDefault(Number(parsed.dimensions?.height?.default ?? heightDefault));
+    setHeightMax(Number(parsed.dimensions?.height?.max ?? heightMax));
+    setDepthMin(Number(parsed.dimensions?.depth?.min ?? depthMin));
+    setDepthDefault(Number(parsed.dimensions?.depth?.default ?? depthDefault));
+    setDepthMax(Number(parsed.dimensions?.depth?.max ?? depthMax));
+
+    setModelFileName(parsed.assets?.sourceFileName || item.sourceFileName || "");
+    setModelExtension(parsed.assets?.originalFormat || "glb");
+    setModelDataUrl(parsed.assets?.embeddedModelDataUrl || parsed.assets?.modelUrl || "");
+    setModelPreviewUrl(parsed.assets?.embeddedModelDataUrl || parsed.assets?.modelUrl || "");
+
+    const parts = Array.isArray(parsed.parts) ? parsed.parts : parsed.components || [];
+    setMeshList(
+      parts.map((part: any) => ({
+        meshName: part.meshName || part.originalName || part.id,
+        displayName: part.customerName || part.label || part.name || part.meshName || part.id,
+        category: part.category || "component",
+        selectable: part.selectable !== false,
+        visible: part.visible !== false,
+        compatibleLed: Boolean(part.compatibleLed),
+        compatibleInsert: Boolean(part.compatibleInsert),
+        supportsAccessories: part.supportsAccessories !== false,
+        materialSlots: Array.isArray(part.materialSlots)
+          ? part.materialSlots.join(", ")
+          : part.materialSlots || "main",
+        compatibleAccessories: Array.isArray(part.compatibleAccessories)
+          ? part.compatibleAccessories.join(", ")
+          : part.compatibleAccessories || "",
+        ledPosition: part.mountPoints?.led?.position || "front",
+        ledFrontOffset: String(part.mountPoints?.led?.frontOffset ?? "4"),
+        ledSideMargin: String(part.mountPoints?.led?.sideMargin ?? "5"),
+        ledYOffset: String(part.mountPoints?.led?.yOffset ?? "0"),
+        insertPosition: Array.isArray(part.mountPoints?.insert?.position)
+          ? part.mountPoints.insert.position.join(", ")
+          : part.mountPoints?.insert?.position || "front",
+        insertOffsetX: String(part.mountPoints?.insert?.offset?.x ?? "0"),
+        insertOffsetY: String(part.mountPoints?.insert?.offset?.y ?? "0"),
+        insertOffsetZ: String(part.mountPoints?.insert?.offset?.z ?? "1"),
+      }))
+    );
+
+    setGeneratedJson(item.packageJson);
+    setSelectedMeshName("");
+  } catch (error) {
+    console.error("BagaStudio product library load error", error);
+  }
+}
+
+function deleteProductFromLibrary(productIdToDelete: string) {
+  persistProductLibrary(
+    productLibrary.filter((product) => product.id !== productIdToDelete)
+  );
+}
+
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.10),transparent_28%),#02070d] text-white">
       <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">
@@ -1187,6 +1510,68 @@ const importBackupFile = async (file: File | undefined) => {
               </label>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">{adminT.productLibrary}</h2>
+              <p className="mt-1 text-sm text-slate-400">{adminT.libraryDesc}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={saveCurrentProductToLibrary}
+              className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.24)] transition hover:bg-cyan-400"
+            >
+              {adminT.saveToLibrary}
+            </button>
+          </div>
+
+          {productLibrary.length === 0 ? (
+            <p className="rounded-2xl border border-cyan-400/10 bg-black/30 p-4 text-sm text-slate-400">
+              {adminT.emptyLibrary}
+            </p>
+          ) : (
+            <div className="grid gap-3">
+              {productLibrary.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-base font-black text-white">{item.name}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {item.brand} · {item.category} · {item.sourceFileName || "package JSON"}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {new Date(item.savedAt).toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => loadProductFromLibrary(item)}
+                        className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20"
+                      >
+                        {adminT.loadProduct}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteProductFromLibrary(item.id)}
+                        className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-100 transition hover:bg-red-500/20"
+                      >
+                        {adminT.deleteProduct}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
@@ -1817,171 +2202,7 @@ insertOffsetZ: "1",
 </div>
           <button
   onClick={() => {
-    const normalizeCsv = (value: string, fallback: string[] = []) => {
-      const items = value
-        ? value.split(",").map((item) => item.trim()).filter(Boolean)
-        : fallback;
-      return Array.from(new Set(items));
-    };
-
-    const isCanonicalGlb = ["glb", "gltf"].includes(modelExtension);
-    const safeModelName = modelFileName || "imported-model.glb";
-    const primaryModelUrl = modelDataUrl || `/models/${safeModelName}`;
-
-    const packageId = productId || productName.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "new-product";
-    const now = new Date().toISOString();
-
-    const components = meshList.map((mesh, index) => {
-      const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
-      const compatibleAccessories =
-        mesh.supportsAccessories === false
-          ? []
-          : normalizeCsv(mesh.compatibleAccessories, [
-              ...(mesh.compatibleInsert ? ["insert"] : []),
-              ...(mesh.compatibleLed ? ["led"] : []),
-            ]);
-
-      return {
-        id: `part_${index + 1}`,
-        name: mesh.displayName,
-        label: mesh.displayName,
-        customerName: mesh.displayName,
-        originalName: mesh.meshName,
-        meshName: mesh.meshName,
-        category: mesh.category || "component",
-        selectable: mesh.selectable,
-        visible: mesh.visible,
-        supportsMaterials: true,
-        supportsVisibility: true,
-        supportsAccessories: mesh.supportsAccessories !== false,
-        compatibleLed: mesh.compatibleLed,
-        compatibleInsert: mesh.compatibleInsert,
-        materialSlots,
-        allowedMaterialCategories:
-          mesh.category === "mirror"
-            ? ["mirror"]
-            : mesh.category === "hardware"
-            ? ["metal"]
-            : ["wood", "marble", "metal", "mirror"],
-        compatibleAccessories: Array.from(new Set([
-          ...compatibleAccessories,
-          ...(mesh.compatibleInsert ? ["insert"] : []),
-          ...(mesh.compatibleLed ? ["led"] : []),
-        ])),
-        mountPoints: {
-          ...(mesh.compatibleLed && {
-            led: {
-              frontOffset: Number(mesh.ledFrontOffset || 0),
-              sideMargin: Number(mesh.ledSideMargin || 0),
-              yOffset: Number(mesh.ledYOffset || 0),
-              position: mesh.ledPosition || "front",
-            },
-          }),
-          ...(mesh.compatibleInsert && {
-            insert: {
-              position:
-                mesh.displayName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("piano") ||
-                mesh.meshName?.toLowerCase().includes("orizzontale")
-                  ? ["top"]
-                  : mesh.displayName?.toLowerCase().includes("fianco") ||
-                    mesh.meshName?.toLowerCase().includes("fianco") ||
-                    mesh.meshName?.toLowerCase().includes("side")
-                  ? ["side"]
-                  : mesh.insertPosition
-                  ? mesh.insertPosition.split(",").map((item) => item.trim()).filter(Boolean)
-                  : ["front"],
-              offset: {
-                x: Number(mesh.insertOffsetX || 0),
-                y:
-                  mesh.insertPosition === "top" ||
-                  mesh.displayName?.toLowerCase().includes("piano") ||
-                  mesh.meshName?.toLowerCase().includes("piano") ||
-                  mesh.meshName?.toLowerCase().includes("orizzontale")
-                    ? 0.08
-                    : Number(mesh.insertOffsetY || 0),
-                z:
-                  mesh.insertPosition === "top" ||
-                  mesh.displayName?.toLowerCase().includes("piano") ||
-                  mesh.meshName?.toLowerCase().includes("piano") ||
-                  mesh.meshName?.toLowerCase().includes("orizzontale")
-                    ? 0
-                    : Number(mesh.insertOffsetZ || 1),
-              },
-            },
-          }),
-        },
-      };
-    });
-
-    const productPackage = {
-      schema: "bagastudio-product-package",
-      packageVersion: packageVersion || "2.0.0",
-      generatedAt: now,
-      viewerCompatible: true,
-      engine: {
-        name: "BagaStudio Core",
-        minViewerVersion: "1.0.0",
-        canonicalModelFormat: "glb",
-        supportsEmbeddedModelDataUrl: true,
-        supportsRuntimeMaterials: true,
-        supportsComponentVisibility: true,
-        supportsAccessories: true,
-      },
-      metadata: {
-        id: packageId,
-        name: productName,
-        brand: productBrand || "BagaStudio Core",
-        productCategory,
-        sourceFileName: safeModelName,
-        originalFormat: modelExtension,
-        componentCount: components.length,
-      },
-      id: packageId,
-      name: productName,
-      brand: productBrand || "BagaStudio Core",
-      category: productCategory,
-      version: packageVersion || "2.0.0",
-      assets: {
-        modelUrl: primaryModelUrl,
-        embeddedModelDataUrl: modelDataUrl || null,
-        originalFileUrl: `/models/${safeModelName}`,
-        originalFormat: modelExtension,
-        sourceFileName: safeModelName,
-        convertedModelUrl: isCanonicalGlb ? primaryModelUrl : "/models/demo-product-2.glb",
-        requiresConversion: !isCanonicalGlb,
-        conversionTargetFormat: "glb",
-      },
-      dimensions: {
-        width: { min: widthMin, max: widthMax, step: 10, default: widthDefault },
-        height: { min: heightMin, max: heightMax, step: 10, default: heightDefault },
-        depth: { min: depthMin, max: depthMax, step: 5, default: depthDefault },
-      },
-      defaultConfiguration: {
-        dimensions: {
-          width: widthDefault,
-          height: heightDefault,
-          depth: depthDefault,
-        },
-        activeViewId: "iso",
-      },
-      components,
-      parts: components,
-      materials: DEFAULT_PRODUCT_MATERIALS,
-      options: [],
-      accessories: [
-        { id: "insert", name: "Inserto", stateType: "insert" },
-        { id: "led", name: "LED", stateType: "accessory" },
-      ],
-      pricing: {
-        basePrice: 900,
-        margin: 0,
-        vat: 22,
-      },
-      views: DEFAULT_PRODUCT_VIEWS,
-    };
-
-    const jsonString = JSON.stringify(productPackage, null, 2);
+    const jsonString = buildCurrentProductPackageJson();
 
     setGeneratedJson(jsonString);
     downloadJsonFile("product-package.json", jsonString);
