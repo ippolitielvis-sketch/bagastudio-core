@@ -788,6 +788,8 @@ const [modelPreviewUrl, setModelPreviewUrl] = useState("");
 const [modelDataUrl, setModelDataUrl] = useState("");
 const [selectedMeshName, setSelectedMeshName] = useState("");
 const [selectedMeshPulse, setSelectedMeshPulse] = useState(0);
+const [mapperSearch, setMapperSearch] = useState("");
+const [mapperCategoryFilter, setMapperCategoryFilter] = useState("all");
 const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
@@ -823,6 +825,56 @@ function selectMeshCard(meshName: string) {
     });
   });
 }
+
+
+function updateMeshConfig(meshName: string, patch: Partial<MeshConfig>) {
+  if (!meshName) return;
+
+  setMeshList((current) =>
+    current.map((item) =>
+      item.meshName === meshName ? { ...item, ...patch } : item
+    )
+  );
+}
+
+const mapperCategories = useMemo(() => {
+  const categories = Array.from(
+    new Set(meshList.map((mesh) => mesh.category || "component"))
+  );
+  return categories.sort((a, b) => a.localeCompare(b));
+}, [meshList]);
+
+const filteredMapperMeshes = useMemo(() => {
+  const query = mapperSearch.trim().toLowerCase();
+
+  return meshList
+    .map((mesh, index) => ({ mesh, index }))
+    .filter(({ mesh }) => {
+      const category = mesh.category || "component";
+      const matchesCategory =
+        mapperCategoryFilter === "all" || category === mapperCategoryFilter;
+
+      const matchesSearch =
+        query.length === 0 ||
+        mesh.meshName.toLowerCase().includes(query) ||
+        mesh.displayName.toLowerCase().includes(query) ||
+        category.toLowerCase().includes(query);
+
+      return matchesCategory && matchesSearch;
+    });
+}, [meshList, mapperSearch, mapperCategoryFilter]);
+
+const groupedMapperMeshes = useMemo(() => {
+  const groups = new Map<string, Array<{ mesh: MeshConfig; index: number }>>();
+
+  filteredMapperMeshes.forEach((item) => {
+    const category = item.mesh.category || "component";
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category)?.push(item);
+  });
+
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+}, [filteredMapperMeshes]);
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
@@ -1314,18 +1366,74 @@ insertOffsetZ: "1",
   </div>
 </section>
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
-          <h2 className="text-xl font-semibold mb-4">
-            {adminT.mapping}
-          </h2>
+          <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">
+                {adminT.mapping}
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                {filteredMapperMeshes.length} / {meshList.length} componenti visibili
+              </p>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_180px_auto]">
+              <input
+                value={mapperSearch}
+                onChange={(event) => setMapperSearch(event.target.value)}
+                placeholder="Cerca mesh, nome o categoria"
+                className="rounded-xl border border-cyan-400/20 bg-[#02070d] px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300"
+              />
+
+              <select
+                value={mapperCategoryFilter}
+                onChange={(event) => setMapperCategoryFilter(event.target.value)}
+                className="rounded-xl border border-cyan-400/20 bg-[#02070d] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300"
+              >
+                <option value="all">Tutte le categorie</option>
+                {mapperCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMapperSearch("");
+                  setMapperCategoryFilter("all");
+                }}
+                className="rounded-xl border border-cyan-400/20 bg-white/[0.04] px-4 py-2 text-sm font-bold text-white transition hover:border-cyan-300/50 hover:bg-cyan-400/10"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
 
           <div className="rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
   {meshList.length === 0 ? (
     <p className="text-slate-400">
       {adminT.emptyMesh}
     </p>
+  ) : filteredMapperMeshes.length === 0 ? (
+    <p className="text-slate-400">
+      Nessun componente trovato con i filtri attuali.
+    </p>
   ) : (
-    <div className="space-y-2">
-      {meshList.map((mesh, index) => (
+    <div className="space-y-4">
+      {groupedMapperMeshes.map(([category, items]) => (
+        <div key={category} className="rounded-2xl border border-cyan-400/10 bg-white/[0.02] p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-cyan-200">
+              {category}
+            </span>
+            <span className="text-xs text-slate-500">
+              {items.length} componenti
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {items.map(({ mesh, index }) => (
  <div
   key={index}
   ref={(el) => {
@@ -1363,11 +1471,13 @@ insertOffsetZ: "1",
   }}
   value={mesh.displayName}
       onChange={(e) => {
-        const updated = [...meshList];
-        updated[index].displayName = e.target.value;
-        updated[index].category = updated[index].category || guessComponentCategory(e.target.value);
-        setMeshList(updated);
+        const nextDisplayName = e.target.value;
+        updateMeshConfig(mesh.meshName, {
+          displayName: nextDisplayName,
+          category: mesh.category || guessComponentCategory(nextDisplayName),
+        });
       }}
+      onClick={(e) => e.stopPropagation()}
       className="w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white"
     />
 
@@ -1377,10 +1487,9 @@ insertOffsetZ: "1",
         <select
           value={mesh.category || "component"}
           onChange={(e) => {
-            const updated = [...meshList];
-            updated[index].category = e.target.value;
-            setMeshList(updated);
+            updateMeshConfig(mesh.meshName, { category: e.target.value });
           }}
+          onClick={(e) => e.stopPropagation()}
           className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
         >
           <option value="panel">Panel</option>
@@ -1404,10 +1513,9 @@ insertOffsetZ: "1",
           type="checkbox"
           checked={mesh.supportsAccessories !== false}
           onChange={(e) => {
-            const updated = [...meshList];
-            updated[index].supportsAccessories = e.target.checked;
-            setMeshList(updated);
+            updateMeshConfig(mesh.meshName, { supportsAccessories: e.target.checked });
           }}
+          onClick={(e) => e.stopPropagation()}
         />
         {adminT.supportsAccessories}
       </label>
@@ -1419,10 +1527,9 @@ insertOffsetZ: "1",
   type="checkbox"
   checked={mesh.selectable}
   onChange={(e) => {
-    const updated = [...meshList];
-    updated[index].selectable = e.target.checked;
-    setMeshList(updated);
+    updateMeshConfig(mesh.meshName, { selectable: e.target.checked });
   }}
+  onClick={(e) => e.stopPropagation()}
 />
     {adminT.selectable}
   </label>
@@ -1432,10 +1539,9 @@ insertOffsetZ: "1",
   type="checkbox"
   checked={mesh.visible}
   onChange={(e) => {
-    const updated = [...meshList];
-    updated[index].visible = e.target.checked;
-    setMeshList(updated);
+    updateMeshConfig(mesh.meshName, { visible: e.target.checked });
   }}
+  onClick={(e) => e.stopPropagation()}
 />
     {adminT.visible}
   </label>
@@ -1445,10 +1551,9 @@ insertOffsetZ: "1",
   type="checkbox"
   checked={mesh.compatibleLed}
   onChange={(e) => {
-    const updated = [...meshList];
-    updated[index].compatibleLed = e.target.checked;
-    setMeshList(updated);
+    updateMeshConfig(mesh.meshName, { compatibleLed: e.target.checked });
   }}
+  onClick={(e) => e.stopPropagation()}
 />
     {adminT.ledCompatible}
   </label>
@@ -1458,10 +1563,9 @@ insertOffsetZ: "1",
   type="checkbox"
   checked={mesh.compatibleInsert}
   onChange={(e) => {
-    const updated = [...meshList];
-    updated[index].compatibleInsert = e.target.checked;
-    setMeshList(updated);
+    updateMeshConfig(mesh.meshName, { compatibleInsert: e.target.checked });
   }}
+  onClick={(e) => e.stopPropagation()}
 />
     {adminT.insertCompatible}
   </label>
@@ -1473,10 +1577,9 @@ insertOffsetZ: "1",
       <select
         value={mesh.ledPosition}
         onChange={(e) => {
-          const updated = [...meshList];
-          updated[index].ledPosition = e.target.value;
-          setMeshList(updated);
+          updateMeshConfig(mesh.meshName, { ledPosition: e.target.value });
         }}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       >
         <option value="front">Front</option>
@@ -1491,10 +1594,9 @@ insertOffsetZ: "1",
         type="number"
         value={mesh.ledFrontOffset}
         onChange={(e) => {
-          const updated = [...meshList];
-          updated[index].ledFrontOffset = e.target.value;
-          setMeshList(updated);
+          updateMeshConfig(mesh.meshName, { ledFrontOffset: e.target.value });
         }}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
@@ -1505,10 +1607,9 @@ insertOffsetZ: "1",
         type="number"
         value={mesh.ledSideMargin}
         onChange={(e) => {
-          const updated = [...meshList];
-          updated[index].ledSideMargin = e.target.value;
-          setMeshList(updated);
+          updateMeshConfig(mesh.meshName, { ledSideMargin: e.target.value });
         }}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
@@ -1519,10 +1620,9 @@ insertOffsetZ: "1",
         type="number"
         value={mesh.ledYOffset}
         onChange={(e) => {
-          const updated = [...meshList];
-          updated[index].ledYOffset = e.target.value;
-          setMeshList(updated);
+          updateMeshConfig(mesh.meshName, { ledYOffset: e.target.value });
         }}
+        onClick={(e) => e.stopPropagation()}
         className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
       />
     </div>
@@ -1534,10 +1634,9 @@ insertOffsetZ: "1",
     <input
       value={mesh.materialSlots}
       onChange={(e) => {
-        const updated = [...meshList];
-        updated[index].materialSlots = e.target.value;
-        setMeshList(updated);
+        updateMeshConfig(mesh.meshName, { materialSlots: e.target.value });
       }}
+      onClick={(e) => e.stopPropagation()}
       placeholder="main, top, frontale"
       className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
     />
@@ -1548,10 +1647,9 @@ insertOffsetZ: "1",
     <input
       value={mesh.compatibleAccessories}
       onChange={(e) => {
-        const updated = [...meshList];
-        updated[index].compatibleAccessories = e.target.value;
-        setMeshList(updated);
+        updateMeshConfig(mesh.meshName, { compatibleAccessories: e.target.value });
       }}
+      onClick={(e) => e.stopPropagation()}
       placeholder="led, inserto, maniglia"
       className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
     />
@@ -1559,6 +1657,9 @@ insertOffsetZ: "1",
 </div>
   </div>
 ))}
+          </div>
+        </div>
+      ))}
     </div>
   )}
 </div>
