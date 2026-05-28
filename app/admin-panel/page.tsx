@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Bounds } from "@react-three/drei";
@@ -786,6 +787,7 @@ const [modelExtension, setModelExtension] = useState("glb");
 const [modelPreviewUrl, setModelPreviewUrl] = useState("");
 const [modelDataUrl, setModelDataUrl] = useState("");
 const [selectedMeshName, setSelectedMeshName] = useState("");
+const [selectedMeshPulse, setSelectedMeshPulse] = useState(0);
 const [modelRotationY, setModelRotationY] = useState(0);
 const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({});
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
@@ -803,8 +805,24 @@ useEffect(() => {
   setTimeout(() => {
     meshInputRefs.current[selectedMeshName]?.focus();
     meshInputRefs.current[selectedMeshName]?.select();
-  }, 250);
-}, [selectedMeshName]);
+  }, 80);
+}, [selectedMeshName, selectedMeshPulse]);
+
+function selectMeshCard(meshName: string) {
+  if (!meshName) return;
+
+  flushSync(() => {
+    setSelectedMeshName(meshName);
+    setSelectedMeshPulse((value) => value + 1);
+  });
+
+  requestAnimationFrame(() => {
+    meshCardRefs.current[meshName]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  });
+}
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
@@ -1287,7 +1305,7 @@ insertOffsetZ: "1",
   fileName={modelFileName}
   selectedMeshName={selectedMeshName}
   onSelectMesh={(meshName) => {
-    setSelectedMeshName(meshName);
+    selectMeshCard(meshName);
   }}
   modelRotationY={modelRotationY}
 />
@@ -1314,7 +1332,7 @@ insertOffsetZ: "1",
     meshCardRefs.current[mesh.meshName] = el;
   }}
   onClick={() => {
-    setSelectedMeshName(mesh.meshName);
+    selectMeshCard(mesh.meshName);
   }}
   className={`rounded-lg border p-3 space-y-2 ${
     selectedMeshName === mesh.meshName
@@ -1330,8 +1348,13 @@ insertOffsetZ: "1",
   />
 )}
 
-<div className="text-xs text-slate-500">
-  Mesh: {mesh.meshName}
+<div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+  <span>Mesh: {mesh.meshName}</span>
+  {selectedMeshName === mesh.meshName && (
+    <span className="rounded-full border border-cyan-300/40 bg-cyan-400/15 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-cyan-200">
+      Selezionato
+    </span>
+  )}
 </div>
 
     <input
