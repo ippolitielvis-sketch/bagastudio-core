@@ -13,11 +13,20 @@ import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 import { resolveDaeHierarchy } from "@/lib/importer/daeHierarchyResolver";
 import { buildImporterReport } from "@/lib/importer/importerReportBuilder";
 import { convertDaeToRuntimeGlb } from "@/lib/importer/runtimeGlbConverter";
+import { parseCixFiles, type CixPart } from "@/lib/importer/cixParser";
+import {
+  buildCsvCixMatcherReport,
+  matchCsvPartsToCixParts,
+  parseSpazio3DCsv,
+  type CsvCixMatch,
+  type CsvPart,
+} from "@/lib/importer/csvCixMatcher";
 
 type MeshConfig = {
   meshName: string;
   displayName: string;
   category: string;
+  componentCategory?: string;
   partId?: string;
   componentType?: string;
   runtimeRole?: string;
@@ -29,6 +38,21 @@ type MeshConfig = {
   supportsAccessories: boolean;
   materialSlots: string;
   compatibleAccessories: string;
+
+  dimensions?: string;
+  technicalPoints?: string;
+  assemblyOrder?: string;
+  panelThickness?: string;
+  materialCode?: string;
+  edgeBanding?: string;
+  hardware?: string;
+  drillings?: string;
+  manufacturingData?: string;
+  constraintRole?: string;
+  hardwareLinks?: string;
+  drillingLinks?: string;
+  dependencyParents?: string;
+  dependencyChildren?: string;
 
   ledFrontOffset: string;
 ledSideMargin: string;
@@ -138,7 +162,87 @@ type GeometryCompletionReport = {
   generatedAt: string;
 };
 
+type CsvCixMatcherReportState = {
+  totalCsvParts: number;
+  matchedParts: number;
+  unmatchedParts: number;
+  averageConfidence: number;
+  matches: CsvCixMatch[];
+};
+
+type AutoMappingEngineV2ReviewItem = {
+  severity: "info" | "warning" | "critical";
+  label: string;
+  reason: string;
+  suggestedAction: string;
+};
+
+type AutoMappingEngineV2ReportState = {
+  schema: "bagastudio-auto-mapping-engine-report";
+  version: 2 | 2.3 | 2.4 | 2.5;
+  totalMatches: number;
+  eligibleMatches: number;
+  appliedMatches: number;
+  createdPlaceholders: number;
+  skippedLowConfidence: number;
+  averageConfidence: number;
+  confidenceThreshold: number;
+  qualityScore: number;
+  qualityLevel: "excellent" | "good" | "warning" | "critical";
+  recommendedActions: string[];
+  riskyMatches: string[];
+  lowConfidenceMatches: string[];
+  reviewQueue: AutoMappingEngineV2ReviewItem[];
+  classificationSummary?: AutoMappingEngineV25ClassificationSummary;
+  classifiedComponents?: AutoMappingEngineV25ClassifiedComponent[];
+  meshCountBefore: number;
+  meshCountAfter: number;
+  updatedComponents: string[];
+  placeholderComponents: string[];
+  generatedAt: string;
+  notes: string[];
+};
+
+type AutoMappingEngineV25ComponentCategory =
+  | "top"
+  | "bottom"
+  | "back"
+  | "side_panel"
+  | "shelf"
+  | "door"
+  | "drawer_front"
+  | "drawer_box"
+  | "divider"
+  | "mirror"
+  | "countertop"
+  | "baseboard"
+  | "leg"
+  | "hardware"
+  | "lighting"
+  | "insert"
+  | "panel"
+  | "unknown";
+
+type AutoMappingEngineV25ClassifiedComponent = {
+  meshName: string;
+  displayName: string;
+  componentCategory: AutoMappingEngineV25ComponentCategory;
+  confidence: number;
+  reason: string;
+};
+
+type AutoMappingEngineV25ClassificationSummary = {
+  version: "2.5";
+  totalComponents: number;
+  classifiedComponents: number;
+  unknownComponents: number;
+  categories: Record<string, number>;
+  generatedAt: string;
+};
+
 const SPACE3D_SUPPORTED_FORMATS = ".s3d,.s3dbak";
+const SPACE3D_CSV_SUPPORTED_FORMATS = ".csv";
+const SPACE3D_CIX_SUPPORTED_FORMATS = ".cix";
 
 const SPACE3D_COMPONENT_KEYWORDS = [
   "fianco",
@@ -298,6 +402,20 @@ function space3DReportToMeshConfigs(report: Space3DAnalyzerReport): MeshConfig[]
     supportsAccessories: !["lighting"].includes(component.category),
     materialSlots: "main",
     compatibleAccessories: component.category === "hardware" ? "hardware" : "",
+    dimensions: "",
+    technicalPoints: "",
+    assemblyOrder: "",
+    panelThickness: "",
+    materialCode: "",
+    edgeBanding: "",
+    hardware: component.category === "hardware" ? component.name : "",
+    drillings: "",
+    manufacturingData: "",
+    constraintRole: "",
+    hardwareLinks: "",
+    drillingLinks: "",
+    dependencyParents: "",
+    dependencyChildren: "",
     ledFrontOffset: "4",
     ledSideMargin: "5",
     ledYOffset: "0",
@@ -473,12 +591,225 @@ function normalizeComponentCategory(category: string, displayName = "") {
   return guessComponentCategory(displayName || "");
 }
 
+
+function parseBagaStudioCsvField(value?: string) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseBagaStudioJsonField<T>(value: string | undefined, fallback: T): T {
+  const cleanValue = String(value || "").trim();
+  if (!cleanValue) return fallback;
+
+  try {
+    return JSON.parse(cleanValue) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+
+
+type ManufacturingConstraintRoleV1 = "STRUCTURAL" | "DERIVED" | "ACCESSORY" | "HARDWARE" | "UNKNOWN";
+
+function inferManufacturingConstraintRoleV1(componentCategory: string, category: string, displayName = ""): ManufacturingConstraintRoleV1 {
+  const value = `${componentCategory} ${category} ${displayName}`.toLowerCase();
+
+  if (
+    value.includes("minifix") ||
+    value.includes("spina") ||
+    value.includes("basetta") ||
+    value.includes("cerniera") ||
+    value.includes("guida") ||
+    value.includes("ferramenta") ||
+    value.includes("hardware")
+  ) {
+    return "HARDWARE";
+  }
+
+  if (
+    value.includes("maniglia") ||
+    value.includes("led") ||
+    value.includes("specchio") ||
+    value.includes("accessory") ||
+    value.includes("accessorio") ||
+    componentCategory === "mirror"
+  ) {
+    return "ACCESSORY";
+  }
+
+  if (
+    componentCategory === "side_panel" ||
+    componentCategory === "divider" ||
+    componentCategory === "top" ||
+    componentCategory === "bottom" ||
+    value.includes("fianco") ||
+    value.includes("divisorio") ||
+    value.includes("cielo") ||
+    value.includes("fondo")
+  ) {
+    return "STRUCTURAL";
+  }
+
+  if (
+    componentCategory === "shelf" ||
+    componentCategory === "back" ||
+    componentCategory === "drawer_front" ||
+    componentCategory === "drawer_box" ||
+    componentCategory === "door" ||
+    value.includes("ripiano") ||
+    value.includes("schiena") ||
+    value.includes("cassetto") ||
+    value.includes("anta")
+  ) {
+    return "DERIVED";
+  }
+
+  return "UNKNOWN";
+}
+
+function buildHardwareAnalyzerV1(mesh: MeshConfig, partId: string, componentCategory: AutoMappingEngineV25ComponentCategory, runtimeRole: string) {
+  const constraintRole = (mesh.constraintRole as ManufacturingConstraintRoleV1) || inferManufacturingConstraintRoleV1(componentCategory, mesh.category || "", mesh.displayName || mesh.meshName);
+  const hardwareLinks = parseBagaStudioJsonField(mesh.hardwareLinks, parseBagaStudioCsvField(mesh.hardware).map((hardwareType) => ({
+    hardwareType,
+    quantity: 1,
+    source: "hardware-field",
+  })));
+  const drillingLinks = parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []));
+  const dependencyParents = parseBagaStudioCsvField(mesh.dependencyParents);
+  const dependencyChildren = parseBagaStudioCsvField(mesh.dependencyChildren);
+
+  return {
+    schema: "bagastudio-hardware-analyzer-v1",
+    version: 1,
+    componentId: partId,
+    meshName: mesh.meshName,
+    componentCategory,
+    runtimeRole,
+    constraintRole,
+    dependencyGraph: {
+      parents: dependencyParents,
+      children: dependencyChildren,
+    },
+    hardwareLinks,
+    drillingLinks,
+    parametricRules: {
+      preserveExternalDimensions: true,
+      recalculateInternalDimensions: constraintRole === "STRUCTURAL" || constraintRole === "DERIVED",
+      drillingReferenceMode: "parametric-prepared",
+      defaultZRule: mesh.panelThickness ? "thickness / 2" : null,
+    },
+    validationTargets: {
+      checkHardwareOutsidePanel: true,
+      checkDrillingsOutsidePanel: true,
+      checkMinimumEdgeDistance: true,
+      checkHardwareCollisions: true,
+      checkThicknessCompatibility: true,
+    },
+  };
+}
+
+function buildDefaultEdgeBanding(componentCategory: AutoMappingEngineV25ComponentCategory, runtimeRole: string) {
+  const isPanelLike = ["top", "bottom", "back", "side_panel", "shelf", "door", "drawer_front", "divider", "countertop", "baseboard"].includes(componentCategory);
+  if (!isPanelLike) {
+    return {
+      top: null,
+      bottom: null,
+      left: null,
+      right: null,
+      source: "not-panel",
+    };
+  }
+
+  return {
+    top: "ABS 1mm",
+    bottom: "ABS 1mm",
+    left: "ABS 1mm",
+    right: "ABS 1mm",
+    source: runtimeRole || "default-panel-rule",
+  };
+}
+
+function buildManufacturingMetadataV31(mesh: MeshConfig, componentCategory: AutoMappingEngineV25ComponentCategory, runtimeRole: string) {
+  const panelThickness = mesh.panelThickness ? Number(mesh.panelThickness) : null;
+  const edgeBanding = parseBagaStudioJsonField(
+    mesh.edgeBanding,
+    buildDefaultEdgeBanding(componentCategory, runtimeRole)
+  );
+  const hardware = parseBagaStudioCsvField(mesh.hardware);
+  const drillings = parseBagaStudioJsonField(mesh.drillings, []);
+  const technicalPoints = parseBagaStudioJsonField(mesh.technicalPoints, []);
+  const manufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {});
+
+  return {
+    schema: "bagastudio-manufacturing-metadata",
+    version: "3.1",
+    panelThickness,
+    materialCode: String(mesh.materialCode || "").trim() || null,
+    edgeBanding,
+    hardware,
+    drillings,
+    technicalPoints,
+    manufacturingData,
+    source: "admin-panel-v3-1",
+    readiness: {
+      hasThickness: panelThickness !== null && Number.isFinite(panelThickness),
+      hasMaterialCode: Boolean(String(mesh.materialCode || "").trim()),
+      hasEdgeBanding: Boolean(edgeBanding),
+      hasHardware: hardware.length > 0,
+      hasDrillings: Array.isArray(drillings) && drillings.length > 0,
+      hasTechnicalPoints: Array.isArray(technicalPoints) && technicalPoints.length > 0,
+    },
+  };
+}
+
+function buildProductPackageV3ComponentData(mesh: MeshConfig, componentCategory: AutoMappingEngineV25ComponentCategory, runtimeRole: string) {
+  const dimensions = parseBagaStudioJsonField(mesh.dimensions, {
+    width: null,
+    height: null,
+    depth: null,
+    unit: "mm",
+    source: "admin-manual-or-space3d-future",
+  });
+
+  const technicalPoints = parseBagaStudioJsonField(mesh.technicalPoints, []);
+  const hardware = parseBagaStudioCsvField(mesh.hardware);
+  const drillings = parseBagaStudioJsonField(mesh.drillings, []);
+  const manufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {});
+  const manufacturingMetadataV31 = buildManufacturingMetadataV31(mesh, componentCategory, runtimeRole);
+
+  return {
+    schema: "bagastudio-component-v3-data",
+    version: 3.1,
+    componentCategory,
+    runtimeRole,
+    dimensions,
+    materialSlots: parseBagaStudioCsvField(mesh.materialSlots || "main"),
+    compatibleAccessories: parseBagaStudioCsvField(mesh.compatibleAccessories),
+    technicalPoints,
+    assemblyOrder: Number(mesh.assemblyOrder || 0),
+    panelThickness: mesh.panelThickness ? Number(mesh.panelThickness) : null,
+    materialCode: String(mesh.materialCode || "").trim() || null,
+    edgeBanding: manufacturingMetadataV31.edgeBanding,
+    hardware,
+    drillings,
+    manufacturingData,
+    manufacturingMetadata: manufacturingMetadataV31,
+    manufacturingMetadataV31,
+    parametricEditReady: true,
+    csvRegenerationReady: Boolean(mesh.panelThickness || mesh.dimensions || mesh.hardware || mesh.drillings),
+  };
+}
+
 function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
   const category = normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName);
   const partId = buildStablePartId({ ...mesh, category }, index);
   const runtimeRole = mesh.runtimeRole || guessRuntimeRole(mesh.displayName || mesh.meshName || partId, category);
+  const componentCategory = (mesh.componentCategory || inferAutoMappingEngineV25ComponentCategory(mesh.displayName || mesh.meshName || partId, category).componentCategory) as AutoMappingEngineV25ComponentCategory;
   const componentType = mesh.componentType || (category === "panel" ? "configurable-panel" : `${category}-component`);
-  const tags = buildRuntimeTags(mesh, category, runtimeRole);
+  const tags = buildRuntimeTags({ ...mesh, tags: `${mesh.tags || ""}, class:${componentCategory}` }, category, runtimeRole);
 
   const normalizeCsv = (value: string, fallback: string[] = []) => {
     const items = value
@@ -488,6 +819,8 @@ function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
   };
 
   const materialSlots = normalizeCsv(mesh.materialSlots, ["main"]);
+  const componentV3Data = buildProductPackageV3ComponentData(mesh, componentCategory, runtimeRole);
+  const hardwareAnalyzerV1 = buildHardwareAnalyzerV1(mesh, partId, componentCategory, runtimeRole);
   const compatibleAccessories =
     mesh.supportsAccessories === false
       ? []
@@ -508,6 +841,7 @@ function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
     originalName: mesh.meshName,
     meshName: mesh.meshName,
     category,
+    componentCategory,
     componentType,
     runtimeRole,
     tags,
@@ -519,6 +853,23 @@ function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
     compatibleLed: Boolean(mesh.compatibleLed),
     compatibleInsert: Boolean(mesh.compatibleInsert),
     materialSlots,
+    dimensions: componentV3Data.dimensions,
+    technicalPoints: componentV3Data.technicalPoints,
+    assemblyOrder: componentV3Data.assemblyOrder,
+    panelThickness: componentV3Data.panelThickness,
+    materialCode: componentV3Data.materialCode,
+    edgeBanding: componentV3Data.edgeBanding,
+    hardware: componentV3Data.hardware,
+    drillings: componentV3Data.drillings,
+    manufacturingData: componentV3Data.manufacturingData,
+    manufacturingMetadata: componentV3Data.manufacturingMetadataV31,
+    manufacturingMetadataV31: componentV3Data.manufacturingMetadataV31,
+    constraintRole: hardwareAnalyzerV1.constraintRole,
+    dependencyGraph: hardwareAnalyzerV1.dependencyGraph,
+    hardwareLinks: hardwareAnalyzerV1.hardwareLinks,
+    drillingLinks: hardwareAnalyzerV1.drillingLinks,
+    hardwareAnalyzerV1,
+    productPackageV3: componentV3Data,
     allowedMaterialCategories:
       category === "mirror"
         ? ["mirror"]
@@ -539,6 +890,7 @@ function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
       meshName: mesh.meshName,
       displayName: mesh.displayName,
       category,
+      componentCategory,
       componentType,
       runtimeRole,
       tags,
@@ -550,8 +902,18 @@ function buildRuntimeComponentV2(mesh: MeshConfig, index: number) {
         accessories: mesh.supportsAccessories !== false,
         pricing: true,
         bom: true,
-        technicalPoints: false,
+        technicalPoints: true,
+        productPackageV3: true,
+        hardwareAnalyzerV1: true,
+        manufacturingConstraintsV1: true,
+        parametricEdit: "prepared",
+        csvRegeneration: "prepared",
       },
+      productPackageV3: componentV3Data,
+      manufacturingMetadataV31: componentV3Data.manufacturingMetadataV31,
+      hardwareAnalyzerV1,
+      constraintRole: hardwareAnalyzerV1.constraintRole,
+      dependencyGraph: hardwareAnalyzerV1.dependencyGraph,
     },
     mountPoints: {
       ...(mesh.compatibleLed && {
@@ -627,6 +989,20 @@ function extractMeshesFromObject(object: THREE.Object3D) {
             : guessedName.includes("Inserto")
             ? "inserto"
             : "",
+        dimensions: "",
+        technicalPoints: "",
+        assemblyOrder: "",
+        panelThickness: "",
+        materialCode: "",
+        edgeBanding: "",
+        hardware: guessedName === "Maniglia" ? guessedName : "",
+        drillings: "",
+        manufacturingData: "",
+        constraintRole: "",
+        hardwareLinks: "",
+        drillingLinks: "",
+        dependencyParents: "",
+        dependencyChildren: "",
             ledPosition: "front",
             ledFrontOffset: "4",
 ledSideMargin: "5",
@@ -702,6 +1078,7 @@ function normalizeAdminMeshList(meshes: MeshConfig[]) {
     meshName: mesh.meshName || `Mesh_${index + 1}`,
     displayName: mesh.displayName || mesh.meshName || `Componente ${index + 1}`,
     category: normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName || ""),
+    componentCategory: mesh.componentCategory || inferAutoMappingEngineV25ComponentCategory(mesh.displayName || mesh.meshName || "", mesh.category).componentCategory,
     partId: buildStablePartId(mesh, index),
     componentType: mesh.componentType || "",
     runtimeRole: mesh.runtimeRole || guessRuntimeRole(mesh.displayName || mesh.meshName || "", normalizeComponentCategory(mesh.category, mesh.displayName || mesh.meshName || "")),
@@ -722,6 +1099,359 @@ function normalizeAdminMeshList(meshes: MeshConfig[]) {
     insertOffsetY: mesh.insertOffsetY || "0",
     insertOffsetZ: mesh.insertOffsetZ || "1",
   }));
+}
+
+
+function inferAutoMappingEngineV25ComponentCategory(name: string, fallbackCategory = ""): AutoMappingEngineV25ClassifiedComponent {
+  const source = `${name} ${fallbackCategory}`.toLowerCase();
+  const has = (...words: string[]) => words.some((word) => source.includes(word));
+
+  const make = (componentCategory: AutoMappingEngineV25ComponentCategory, confidence: number, reason: string): AutoMappingEngineV25ClassifiedComponent => ({
+    meshName: "",
+    displayName: name,
+    componentCategory,
+    confidence,
+    reason,
+  });
+
+  if (has("specchio", "mirror")) return make("mirror", 96, "keyword specchio/mirror");
+  if (has("led", "strip", "luce")) return make("lighting", 95, "keyword LED/luce");
+  if (has("maniglia", "cerniera", "ferramenta", "vite", "basetta", "handle", "hinge")) return make("hardware", 93, "keyword ferramenta");
+  if (has("piede", "gamba", "leg")) return make("leg", 90, "keyword piede/gamba");
+  if (has("zoccolo", "plinth", "baseboard")) return make("baseboard", 92, "keyword zoccolo");
+  if (has("schiena", "retro", "back")) return make("back", 94, "keyword schiena/retro");
+  if (has("fianco sinistro", "fianco sx", "left side", "side left")) return make("side_panel", 95, "keyword fianco sinistro");
+  if (has("fianco destro", "fianco dx", "right side", "side right")) return make("side_panel", 95, "keyword fianco destro");
+  if (has("fianco", "side panel", "side_panel")) return make("side_panel", 90, "keyword fianco");
+  if (has("fondo", "bottom")) return make("bottom", 93, "keyword fondo/bottom");
+  if (has("cielo", "top panel")) return make("top", 92, "keyword cielo/top panel");
+  if (has("piano", "top", "countertop")) return make("countertop", 88, "keyword piano/top");
+  if (has("ripiano", "mensola", "shelf")) return make("shelf", 94, "keyword ripiano/mensola");
+  if (has("divisorio", "tramezzo", "separator", "divider")) return make("divider", 92, "keyword divisorio");
+  if (has("frontale cassetto", "drawer front")) return make("drawer_front", 96, "keyword frontale cassetto");
+  if (has("cassetto", "drawer box", "cassettone")) return make("drawer_box", 86, "keyword cassetto");
+  if (has("anta", "door")) return make("door", 94, "keyword anta/door");
+  if (has("frontale", "front")) return make("drawer_front", 78, "keyword frontale generico");
+  if (has("inserto", "marmo", "insert")) return make("insert", 86, "keyword inserto/marmo");
+  if (has("pannello", "panel")) return make("panel", 70, "keyword pannello generico");
+
+  return make("unknown", 0, "nessuna regola V2.5 riconosciuta");
+}
+
+function classifyAutoMappingEngineV25Mesh(mesh: MeshConfig): MeshConfig {
+  const classified = inferAutoMappingEngineV25ComponentCategory(
+    mesh.displayName || mesh.meshName || "",
+    mesh.category || ""
+  );
+
+  return {
+    ...mesh,
+    componentCategory: mesh.componentCategory || classified.componentCategory,
+    runtimeRole:
+      mesh.runtimeRole && mesh.runtimeRole !== "component"
+        ? mesh.runtimeRole
+        : classified.componentCategory === "side_panel"
+        ? "side"
+        : classified.componentCategory,
+    tags: Array.from(
+      new Set(
+        [mesh.tags || "", "auto-mapping-v2.5", `class:${classified.componentCategory}`]
+          .join(",")
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      )
+    ).join(", "),
+  };
+}
+
+function buildAutoMappingEngineV25ClassificationReport(meshes: MeshConfig[]) {
+  const classifiedComponents = meshes.map((mesh) => {
+    const classified = inferAutoMappingEngineV25ComponentCategory(
+      mesh.displayName || mesh.meshName || "",
+      mesh.category || ""
+    );
+
+    return {
+      ...classified,
+      meshName: mesh.meshName,
+      displayName: mesh.displayName || mesh.meshName,
+      componentCategory: (mesh.componentCategory || classified.componentCategory) as AutoMappingEngineV25ComponentCategory,
+    };
+  });
+
+  const categories = classifiedComponents.reduce<Record<string, number>>((acc, item) => {
+    acc[item.componentCategory] = (acc[item.componentCategory] || 0) + 1;
+    return acc;
+  }, {});
+
+  const summary: AutoMappingEngineV25ClassificationSummary = {
+    version: "2.5",
+    totalComponents: classifiedComponents.length,
+    classifiedComponents: classifiedComponents.filter((item) => item.componentCategory !== "unknown").length,
+    unknownComponents: classifiedComponents.filter((item) => item.componentCategory === "unknown").length,
+    categories,
+    generatedAt: new Date().toISOString(),
+  };
+
+  return { summary, classifiedComponents };
+}
+
+
+const AUTO_MAPPING_ENGINE_V2_MIN_CONFIDENCE = 60;
+const AUTO_MAPPING_ENGINE_V2_HIGH_CONFIDENCE = 85;
+const AUTO_MAPPING_ENGINE_V2_SAFE_QUALITY_SCORE = 80;
+
+function normalizeAutoMappingV2Key(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/^[0-9]+[-_\s]*/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inferAutoMappingV2Category(name: string) {
+  const lower = name.toLowerCase();
+
+  if (lower.includes("specchio") || lower.includes("mirror")) return "mirror";
+  if (lower.includes("led")) return "lighting";
+  if (lower.includes("maniglia") || lower.includes("cerniera") || lower.includes("basetta") || lower.includes("piede")) return "hardware";
+  if (lower.includes("inserto") || lower.includes("marmo")) return "insert";
+  if (
+    lower.includes("fianco") ||
+    lower.includes("fondo") ||
+    lower.includes("cielo") ||
+    lower.includes("schiena") ||
+    lower.includes("ripiano") ||
+    lower.includes("mensola") ||
+    lower.includes("anta") ||
+    lower.includes("cassetto") ||
+    lower.includes("frontale") ||
+    lower.includes("zoccolo") ||
+    lower.includes("pannello") ||
+    lower.includes("top") ||
+    lower.includes("base")
+  ) {
+    return "panel";
+  }
+
+  return guessComponentCategory(name);
+}
+
+function inferAutoMappingV2MaterialSlots(name: string, category: string) {
+  const lower = name.toLowerCase();
+
+  if (category === "mirror") return "mirror";
+  if (category === "hardware") return "metal";
+  if (lower.includes("piano") || lower.includes("top")) return "top";
+  if (lower.includes("frontale") || lower.includes("anta") || lower.includes("cassetto")) return "front";
+
+  return "main";
+}
+
+function buildAutoMappingV2MeshFromMatch(match: CsvCixMatch, index: number): MeshConfig {
+  const csvName = match.csvPart?.name || `Componente CSV ${index + 1}`;
+  const cixName = match.cixPart?.partName || match.cixPart?.fileName || csvName;
+  const displayName = csvName || cixName;
+  const category = normalizeComponentCategory(inferAutoMappingV2Category(displayName), displayName);
+  const componentCategory = inferAutoMappingEngineV25ComponentCategory(displayName, category).componentCategory;
+  const runtimeRole = guessRuntimeRole(displayName, category);
+  const isPanel = category === "panel";
+
+  return {
+    meshName: `auto_v2_${String(index + 1).padStart(3, "0")}_${slugifyBagaStudioId(cixName, "part")}`,
+    displayName,
+    category,
+    componentCategory,
+    partId: `auto_v2_${String(index + 1).padStart(3, "0")}_${slugifyBagaStudioId(displayName, "part")}`,
+    componentType: isPanel ? "configurable-panel" : `${category}-component`,
+    runtimeRole,
+    tags: [
+      "auto-mapping-v2",
+      "space3d",
+      match.cixPart ? "cix-linked" : "csv-only",
+      runtimeRole,
+      category,
+    ].filter(Boolean).join(", "),
+    selectable: true,
+    visible: true,
+    compatibleLed: isPanel || displayName.toLowerCase().includes("led"),
+    compatibleInsert: isPanel,
+    supportsAccessories: !["mirror", "lighting"].includes(category),
+    materialSlots: inferAutoMappingV2MaterialSlots(displayName, category),
+    compatibleAccessories: isPanel ? "led, insert" : category === "hardware" ? "hardware" : "",
+    ledPosition: "front",
+    ledFrontOffset: "4",
+    ledSideMargin: "5",
+    ledYOffset: "0",
+    insertPosition: runtimeRole === "top" ? "top" : runtimeRole === "side" ? "side" : "front",
+    insertOffsetX: "0",
+    insertOffsetY: runtimeRole === "top" ? "0.08" : "0",
+    insertOffsetZ: runtimeRole === "top" ? "0" : "1",
+  };
+}
+
+function mergeAutoMappingV2MatchIntoMesh(mesh: MeshConfig, match: CsvCixMatch, index: number): MeshConfig {
+  const mapped = buildAutoMappingV2MeshFromMatch(match, index);
+  const nextTags = Array.from(
+    new Set(
+      [mesh.tags || "", mapped.tags, "production-linked"]
+        .join(",")
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  ).join(", ");
+
+  return {
+    ...mesh,
+    displayName: mesh.displayName?.trim() ? mesh.displayName : mapped.displayName,
+    category: normalizeComponentCategory(mesh.category || mapped.category, mesh.displayName || mapped.displayName),
+    componentCategory: mesh.componentCategory || mapped.componentCategory,
+    partId: mesh.partId || mapped.partId,
+    componentType: mesh.componentType || mapped.componentType,
+    runtimeRole: mesh.runtimeRole || mapped.runtimeRole,
+    tags: nextTags,
+    selectable: mesh.selectable !== false,
+    visible: mesh.visible !== false,
+    compatibleLed: Boolean(mesh.compatibleLed || mapped.compatibleLed),
+    compatibleInsert: Boolean(mesh.compatibleInsert || mapped.compatibleInsert),
+    supportsAccessories: mesh.supportsAccessories !== false,
+    materialSlots: mesh.materialSlots || mapped.materialSlots,
+    compatibleAccessories: mesh.compatibleAccessories || mapped.compatibleAccessories,
+    ledPosition: mesh.ledPosition || mapped.ledPosition,
+    ledFrontOffset: mesh.ledFrontOffset || mapped.ledFrontOffset,
+    ledSideMargin: mesh.ledSideMargin || mapped.ledSideMargin,
+    ledYOffset: mesh.ledYOffset || mapped.ledYOffset,
+    insertPosition: mesh.insertPosition || mapped.insertPosition,
+    insertOffsetX: mesh.insertOffsetX || mapped.insertOffsetX,
+    insertOffsetY: mesh.insertOffsetY || mapped.insertOffsetY,
+    insertOffsetZ: mesh.insertOffsetZ || mapped.insertOffsetZ,
+  };
+}
+
+
+function buildAutoMappingEngineV2ReviewQueue(params: {
+  riskyMatches: string[];
+  lowConfidenceMatches: string[];
+  placeholderComponents: string[];
+  qualityLevel: AutoMappingEngineV2ReportState["qualityLevel"];
+}) {
+  const reviewQueue: AutoMappingEngineV2ReviewItem[] = [];
+
+  params.placeholderComponents.slice(0, 25).forEach((component) => {
+    reviewQueue.push({
+      severity: "warning",
+      label: component,
+      reason: "Pezzo trovato in CSV/CIX ma non collegato a una mesh geometrica esistente.",
+      suggestedAction: "Controllare se il componente deve essere creato come placeholder metadata o se manca una mesh nel modello importato.",
+    });
+  });
+
+  params.riskyMatches.slice(0, 25).forEach((match) => {
+    reviewQueue.push({
+      severity: "warning",
+      label: match,
+      reason: "Match sopra soglia ma con confidenza non alta.",
+      suggestedAction: "Verificare nome componente, categoria e collegamento CIX prima del salvataggio definitivo.",
+    });
+  });
+
+  params.lowConfidenceMatches.slice(0, 25).forEach((match) => {
+    reviewQueue.push({
+      severity: "critical",
+      label: match,
+      reason: "Match sotto soglia minima Auto Mapping V2.",
+      suggestedAction: "Correggere nomi CSV/CIX o completare manualmente il mapping.",
+    });
+  });
+
+  if (reviewQueue.length === 0) {
+    reviewQueue.push({
+      severity: "info",
+      label: "Auto Mapping V2.3",
+      reason: "Nessun elemento critico rilevato nella coda di revisione.",
+      suggestedAction: params.qualityLevel === "excellent" || params.qualityLevel === "good"
+        ? "Procedere con controllo visivo e salvataggio Product Package."
+        : "Controllare comunque il mapping prima di usare il prodotto in catalogo.",
+    });
+  }
+
+  return reviewQueue;
+}
+
+function evaluateAutoMappingEngineV2Quality(params: {
+  totalMatches: number;
+  eligibleMatches: number;
+  appliedMatches: number;
+  createdPlaceholders: number;
+  skippedLowConfidence: number;
+  averageConfidence: number;
+  riskyMatches: string[];
+}): Pick<AutoMappingEngineV2ReportState, "qualityScore" | "qualityLevel" | "recommendedActions"> {
+  const totalMatches = Math.max(1, params.totalMatches);
+  const eligibilityRatio = params.eligibleMatches / totalMatches;
+  const appliedRatio = params.appliedMatches / totalMatches;
+  const placeholderPenalty = params.createdPlaceholders > 0 ? Math.min(18, params.createdPlaceholders * 2) : 0;
+  const lowConfidencePenalty = params.skippedLowConfidence > 0 ? Math.min(22, params.skippedLowConfidence * 2) : 0;
+  const riskyPenalty = params.riskyMatches.length > 0 ? Math.min(20, params.riskyMatches.length * 3) : 0;
+
+  const qualityScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        params.averageConfidence * 0.45 +
+          eligibilityRatio * 25 +
+          appliedRatio * 30 -
+          placeholderPenalty -
+          lowConfidencePenalty -
+          riskyPenalty
+      )
+    )
+  );
+
+  const qualityLevel =
+    qualityScore >= 90
+      ? "excellent"
+      : qualityScore >= AUTO_MAPPING_ENGINE_V2_SAFE_QUALITY_SCORE
+      ? "good"
+      : qualityScore >= 60
+      ? "warning"
+      : "critical";
+
+  const recommendedActions: string[] = [];
+
+  if (params.skippedLowConfidence > 0) {
+    recommendedActions.push("Controllare i match sotto soglia: alcuni pezzi CSV/CIX non sono stati applicati automaticamente.");
+  }
+
+  if (params.createdPlaceholders > 0) {
+    recommendedActions.push("Verificare i placeholder metadata: indicano pezzi di produzione senza mesh geometrica trovata nel modello.");
+  }
+
+  if (params.riskyMatches.length > 0) {
+    recommendedActions.push("Verificare manualmente i match ambigui prima di salvare il prodotto in catalogo.");
+  }
+
+  if (qualityLevel === "excellent" || qualityLevel === "good") {
+    recommendedActions.push("Mapping idoneo per generare Product Package, mantenendo comunque controllo visivo componenti.");
+  }
+
+  if (qualityLevel === "critical") {
+    recommendedActions.push("Non considerare il mapping definitivo: servono nomi mesh più coerenti o un mapping manuale di supporto.");
+  }
+
+  return {
+    qualityScore,
+    qualityLevel,
+    recommendedActions,
+  };
 }
 
 function AdminGLBModel({
@@ -1508,10 +2238,21 @@ const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({})
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
 const [productLibrary, setProductLibrary] = useState<ProductLibraryItem[]>([]);
 const [librarySearch, setLibrarySearch] = useState("");
+const [textureSearch, setTextureSearch] = useState("");
 const [selectedLibraryProductId, setSelectedLibraryProductId] = useState("");
 const [space3DFileName, setSpace3DFileName] = useState("");
 const [space3DAnalyzerReport, setSpace3DAnalyzerReport] = useState<Space3DAnalyzerReport | null>(null);
 const [space3DStatus, setSpace3DStatus] = useState("S3D analyzer in attesa");
+const [space3DCsvFileName, setSpace3DCsvFileName] = useState("");
+const [space3DCsvParts, setSpace3DCsvParts] = useState<CsvPart[]>([]);
+const [space3DCixFileNames, setSpace3DCixFileNames] = useState<string[]>([]);
+const [space3DCixParts, setSpace3DCixParts] = useState<CixPart[]>([]);
+const [csvCixMatcherReport, setCsvCixMatcherReport] = useState<CsvCixMatcherReportState | null>(null);
+const [csvCixStatus, setCsvCixStatus] = useState("CSV/CIX matcher in attesa");
+const [autoMappingV2Report, setAutoMappingV2Report] = useState<AutoMappingEngineV2ReportState | null>(null);
+const [autoMappingV2Status, setAutoMappingV2Status] = useState("Auto Mapping Engine V2 in attesa");
+const [autoMappingV2LastSnapshot, setAutoMappingV2LastSnapshot] = useState<MeshConfig[] | null>(null);
+const [autoMappingV2ReviewedLabels, setAutoMappingV2ReviewedLabels] = useState<Record<string, boolean>>({});
 const [geometryCompletionReport, setGeometryCompletionReport] = useState<GeometryCompletionReport>({
   status: "idle",
   daeMeshCount: 0,
@@ -1631,6 +2372,31 @@ const filteredProductLibrary = useMemo(() => {
   });
 }, [productLibrary, librarySearch]);
 
+const filteredDefaultProductMaterials = useMemo(() => {
+  const query = textureSearch.trim().toLowerCase();
+
+  if (!query) return DEFAULT_PRODUCT_MATERIALS;
+
+  return DEFAULT_PRODUCT_MATERIALS.filter((material) => {
+    const haystack = [material.id, material.name, material.category, material.textureUrl]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+}, [textureSearch]);
+
+const filteredSpace3DAnalyzerMaterials = useMemo(() => {
+  const query = textureSearch.trim().toLowerCase();
+  const materials = space3DAnalyzerReport?.materials || [];
+
+  if (!query) return materials;
+
+  return materials.filter((material) =>
+    [material.id, material.name, material.category].join(" ").toLowerCase().includes(query)
+  );
+}, [space3DAnalyzerReport, textureSearch]);
+
 const selectedLibraryProduct = useMemo(() => {
   return productLibrary.find((item) => item.id === selectedLibraryProductId) || productLibrary[0] || null;
 }, [productLibrary, selectedLibraryProductId]);
@@ -1704,6 +2470,9 @@ const buildAdminBackup = (includeHeavyModelData = true) => ({
     space3DAnalyzerReport,
     space3DStatus,
     geometryCompletionReport,
+    autoMappingV2Report,
+    autoMappingV2Status,
+    autoMappingV2ReviewedLabels,
   },
 });
 
@@ -1764,6 +2533,9 @@ const restoreAdminBackup = (backup: any) => {
     missingParts: [],
     generatedAt: "",
   });
+  setAutoMappingV2Report(state.autoMappingV2Report || null);
+  setAutoMappingV2Status(state.autoMappingV2Status || "Auto Mapping Engine V2 in attesa");
+  setAutoMappingV2ReviewedLabels(state.autoMappingV2ReviewedLabels || {});
 
   setBackupStatus(`${adminT.restoreCompleted}: ${new Date().toLocaleString()}`);
 };
@@ -1991,12 +2763,98 @@ function buildCurrentProductPackageJson() {
     "new-product";
   const now = new Date().toISOString();
 
-  const components = meshList.map((mesh, index) => buildRuntimeComponentV2(mesh, index));
+  const normalizeProductionMatchKey = (value: string) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/\.[a-z0-9]+$/i, "")
+      .replace(/^[0-9]+[-_\s]*/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/[^\w\sàèéìòù]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const findProductionMatchForMesh = (mesh: MeshConfig) => {
+    const meshKeys = [
+      mesh.displayName,
+      mesh.meshName,
+      mesh.partId || "",
+      mesh.runtimeRole || "",
+    ]
+      .map(normalizeProductionMatchKey)
+      .filter(Boolean);
+
+    return (
+      csvCixMatcherReport?.matches?.find((match) => {
+        const csvKey = normalizeProductionMatchKey(match.csvPart.name);
+        const cixKey = normalizeProductionMatchKey(match.cixPart?.partName || "");
+
+        return meshKeys.some(
+          (key) =>
+            key === csvKey ||
+            key === cixKey ||
+            csvKey.includes(key) ||
+            cixKey.includes(key) ||
+            key.includes(csvKey) ||
+            key.includes(cixKey)
+        );
+      }) || null
+    );
+  };
+
+  const components = meshList.map((mesh, index) => {
+    const runtimeComponent = buildRuntimeComponentV2(mesh, index);
+    const productionMatch = findProductionMatchForMesh(mesh);
+
+    return {
+      ...runtimeComponent,
+      productionReady: Boolean(productionMatch?.cixPart),
+      csvSource: productionMatch?.csvPart?.name || null,
+      cixSource: productionMatch?.cixPart?.fileName || null,
+      productionMaterial: productionMatch?.csvPart?.material || null,
+      productionQuantity: productionMatch?.csvPart?.quantity || null,
+      productionConfidence: productionMatch?.confidence || 0,
+      productionDimensions: productionMatch
+        ? {
+            width: productionMatch.csvPart.width,
+            depth: productionMatch.csvPart.depth,
+            thickness: productionMatch.csvPart.thickness,
+          }
+        : null,
+    };
+  });
 
   const componentCategories = Array.from(new Set(components.map((component) => component.category))).sort();
+  const productPackageV3Summary = {
+    schema: "bagastudio-product-package-v3-summary",
+    version: 3.1,
+    componentCount: components.length,
+    componentCategories: Array.from(new Set(components.map((component: any) => component.componentCategory || component.category))).sort(),
+    manufacturingReadyComponents: components.filter((component: any) => Boolean(component.productPackageV3?.csvRegenerationReady)).length,
+    manufacturingMetadataReadyComponents: components.filter((component: any) => Boolean(component.manufacturingMetadataV31?.readiness?.hasThickness || component.manufacturingMetadataV31?.readiness?.hasHardware || component.manufacturingMetadataV31?.readiness?.hasDrillings)).length,
+    panelThicknessComponents: components.filter((component: any) => component.panelThickness !== null && component.panelThickness !== undefined).length,
+    hardwareLinkedComponents: components.filter((component: any) => Array.isArray(component.hardware) && component.hardware.length > 0).length,
+    constraintRoles: components.reduce((acc: Record<string, number>, component: any) => {
+      const role = component.constraintRole || "UNKNOWN";
+      acc[role] = (acc[role] || 0) + 1;
+      return acc;
+    }, {}),
+    hardwareAnalyzerReadyComponents: components.filter((component: any) => Boolean(component.hardwareAnalyzerV1)).length,
+    hardwareLinkedComponentsV1: components.filter((component: any) => Array.isArray(component.hardwareLinks) && component.hardwareLinks.length > 0).length,
+    drillingLinkedComponentsV1: components.filter((component: any) => Array.isArray(component.drillingLinks) && component.drillingLinks.length > 0).length,
+    dependencyGraphReadyComponents: components.filter((component: any) => Boolean(component.dependencyGraph)).length,
+    parametricEditReady: true,
+    futureModules: {
+      parametricEdit: "prepared",
+      manufacturingOverride: "prepared",
+      csvRegeneration: "prepared",
+      bomEngine: "prepared",
+      assemblyEngine: "prepared",
+      technicalSheets: "prepared",
+    },
+  };
   const runtimeMetadata = {
     schema: "bagastudio-runtime-metadata",
-    version: 2,
+    version: 3,
     generatedAt: now,
     componentCount: components.length,
     categories: componentCategories,
@@ -2019,8 +2877,8 @@ function buildCurrentProductPackageJson() {
   return JSON.stringify(
     {
       schema: "bagastudio-product-package",
-      packageVersion: packageVersion || "2.0.0",
-      productPackageVersion: 2,
+      packageVersion: packageVersion || "3.1.0",
+      productPackageVersion: 3,
       generatedAt: now,
       viewerCompatible: true,
       engine: {
@@ -2032,8 +2890,18 @@ function buildCurrentProductPackageJson() {
         supportsComponentVisibility: true,
         supportsAccessories: true,
         supportsRuntimeMetadataV2: true,
+        supportsAutoMappingEngineV2QualityGate: true,
         supportsStablePartIds: true,
         supportsComponentCategories: true,
+        supportsProductPackageV3: true,
+        supportsParametricEditData: true,
+        supportsManufacturingOverrideData: true,
+        supportsManufacturingMetadataV31: true,
+        supportsEdgeBandingData: true,
+        supportsHardwareAnalyzerV1: true,
+        supportsManufacturingConstraintsV1: true,
+        supportsDependencyGraphV1: true,
+        supportsParametricDrillingRules: true,
       },
       metadata: {
         id: packageId,
@@ -2044,8 +2912,10 @@ function buildCurrentProductPackageJson() {
         originalFormat: modelExtension,
         componentCount: components.length,
         componentCategories,
-        runtimeMetadataVersion: 2,
+        runtimeMetadataVersion: 3,
+        productPackageV3Summary,
         packageSource: space3DAnalyzerReport ? "space3d-analyzer" : "admin-model-importer",
+        productionReady: Boolean(csvCixMatcherReport?.matchedParts),
       },
       id: packageId,
       name: productName,
@@ -2082,9 +2952,48 @@ function buildCurrentProductPackageJson() {
         activeViewId: "iso",
       },
       runtimeMetadata,
+      productPackageV3: productPackageV3Summary,
       componentCategories,
       components,
       parts: components,
+      productionData: {
+        schema: "bagastudio-production-data",
+        version: 1,
+        source: "space3d-csv-cix",
+        csvFileName: space3DCsvFileName || null,
+        cixFileNames: space3DCixFileNames,
+        csvParts: space3DCsvParts.length,
+        cixParts: space3DCixParts.length,
+        matchedParts: csvCixMatcherReport?.matchedParts || 0,
+        unmatchedParts: csvCixMatcherReport?.unmatchedParts || 0,
+        averageConfidence: csvCixMatcherReport?.averageConfidence || 0,
+        matches: csvCixMatcherReport?.matches || [],
+        autoMappingEngineV2: autoMappingV2Report,
+        autoMappingClassificationV25: autoMappingV2Report?.classificationSummary || null,
+        autoMappingClassifiedComponents: autoMappingV2Report?.classifiedComponents || [],
+        productPackageV3: {
+          panelThicknessReady: components.some((component: any) => component.panelThickness !== null),
+          hardwareReady: components.some((component: any) => Array.isArray(component.hardware) && component.hardware.length > 0),
+          drillingsReady: components.some((component: any) => Array.isArray(component.drillings) && component.drillings.length > 0),
+          manufacturingDataReady: components.some((component: any) => component.manufacturingData && Object.keys(component.manufacturingData).length > 0),
+          manufacturingMetadataV31Ready: components.some((component: any) => Boolean(component.manufacturingMetadataV31)),
+          edgeBandingReady: components.some((component: any) => Boolean(component.edgeBanding)),
+          materialCodesReady: components.some((component: any) => Boolean(component.materialCode)),
+          hardwareAnalyzerV1Ready: components.some((component: any) => Boolean(component.hardwareAnalyzerV1)),
+          dependencyGraphReady: components.some((component: any) => Boolean(component.dependencyGraph)),
+          manufacturingConstraintsV1Ready: components.some((component: any) => Boolean(component.constraintRole)),
+        },
+        autoMappingQualityGate: autoMappingV2Report
+          ? {
+              score: autoMappingV2Report.qualityScore,
+              level: autoMappingV2Report.qualityLevel,
+              recommendedActions: autoMappingV2Report.recommendedActions,
+              riskyMatches: autoMappingV2Report.riskyMatches,
+              reviewSummary: getAutoMappingEngineV2ReviewSummary(),
+              reviewedLabels: autoMappingV2ReviewedLabels,
+            }
+          : null,
+      },
       materials: DEFAULT_PRODUCT_MATERIALS,
       options: [],
       accessories: [
@@ -2104,7 +3013,10 @@ function buildCurrentProductPackageJson() {
         meshNameField: "meshName",
         categoryField: "category",
         metadataField: "runtimeMetadata",
-        runtimeTargets: ["materials", "visibility", "led", "insert", "accessories", "pricing", "bom"],
+        runtimeTargets: ["materials", "visibility", "led", "insert", "accessories", "pricing", "bom", "technicalPoints", "manufacturingData", "hardwareAnalyzer", "constraints", "dependencyGraph"],
+        productPackageV3: true,
+        hardwareAnalyzerV1: true,
+        manufacturingConstraintsV1: true,
       },
       geometryRuntime: {
         status: isSpace3DSource ? "metadata-only-requires-geometry-conversion" : ["glb", "gltf"].includes(modelExtension) ? "ready" : "requires-conversion-to-glb",
@@ -2192,6 +3104,32 @@ function loadProductFromLibrary(item: ProductLibraryItem) {
         compatibleAccessories: Array.isArray(part.compatibleAccessories)
           ? part.compatibleAccessories.join(", ")
           : part.compatibleAccessories || "",
+        dimensions: part.productPackageV3?.dimensions ? JSON.stringify(part.productPackageV3.dimensions) : part.dimensions ? JSON.stringify(part.dimensions) : "",
+        technicalPoints: part.productPackageV3?.technicalPoints ? JSON.stringify(part.productPackageV3.technicalPoints) : part.technicalPoints ? JSON.stringify(part.technicalPoints) : "",
+        assemblyOrder: String(part.productPackageV3?.assemblyOrder ?? part.assemblyOrder ?? ""),
+        panelThickness: String(part.productPackageV3?.panelThickness ?? part.manufacturingMetadataV31?.panelThickness ?? part.panelThickness ?? ""),
+        materialCode: String(part.productPackageV3?.materialCode ?? part.manufacturingMetadataV31?.materialCode ?? part.materialCode ?? ""),
+        edgeBanding: part.productPackageV3?.edgeBanding ? JSON.stringify(part.productPackageV3.edgeBanding) : part.manufacturingMetadataV31?.edgeBanding ? JSON.stringify(part.manufacturingMetadataV31.edgeBanding) : part.edgeBanding ? JSON.stringify(part.edgeBanding) : "",
+        hardware: Array.isArray(part.productPackageV3?.hardware)
+          ? part.productPackageV3.hardware.join(", ")
+          : Array.isArray(part.hardware)
+          ? part.hardware.join(", ")
+          : part.hardware || "",
+        drillings: part.productPackageV3?.drillings ? JSON.stringify(part.productPackageV3.drillings) : part.drillings ? JSON.stringify(part.drillings) : "",
+        manufacturingData: part.productPackageV3?.manufacturingData ? JSON.stringify(part.productPackageV3.manufacturingData) : part.manufacturingData ? JSON.stringify(part.manufacturingData) : "",
+        constraintRole: String(part.constraintRole || part.hardwareAnalyzerV1?.constraintRole || ""),
+        hardwareLinks: part.hardwareAnalyzerV1?.hardwareLinks ? JSON.stringify(part.hardwareAnalyzerV1.hardwareLinks) : part.hardwareLinks ? JSON.stringify(part.hardwareLinks) : "",
+        drillingLinks: part.hardwareAnalyzerV1?.drillingLinks ? JSON.stringify(part.hardwareAnalyzerV1.drillingLinks) : part.drillingLinks ? JSON.stringify(part.drillingLinks) : "",
+        dependencyParents: Array.isArray(part.hardwareAnalyzerV1?.dependencyGraph?.parents)
+          ? part.hardwareAnalyzerV1.dependencyGraph.parents.join(", ")
+          : Array.isArray(part.dependencyGraph?.parents)
+          ? part.dependencyGraph.parents.join(", ")
+          : "",
+        dependencyChildren: Array.isArray(part.hardwareAnalyzerV1?.dependencyGraph?.children)
+          ? part.hardwareAnalyzerV1.dependencyGraph.children.join(", ")
+          : Array.isArray(part.dependencyGraph?.children)
+          ? part.dependencyGraph.children.join(", ")
+          : "",
         ledPosition: part.mountPoints?.led?.position || "front",
         ledFrontOffset: String(part.mountPoints?.led?.frontOffset ?? "4"),
         ledSideMargin: String(part.mountPoints?.led?.sideMargin ?? "5"),
@@ -2216,6 +3154,310 @@ function deleteProductFromLibrary(productIdToDelete: string) {
   persistProductLibrary(
     productLibrary.filter((product) => product.id !== productIdToDelete)
   );
+}
+
+function updateCsvCixMatcherReport(nextCsvParts = space3DCsvParts, nextCixParts = space3DCixParts) {
+  if (nextCsvParts.length === 0 || nextCixParts.length === 0) {
+    setCsvCixMatcherReport(null);
+    setCsvCixStatus(
+      nextCsvParts.length === 0
+        ? "Carica prima il CSV Space3D."
+        : "Carica almeno un file CIX."
+    );
+    return;
+  }
+
+  const matches = matchCsvPartsToCixParts(nextCsvParts, nextCixParts);
+  const report = buildCsvCixMatcherReport(matches);
+
+  setCsvCixMatcherReport(report);
+  setCsvCixStatus(
+    `Match CSV/CIX: ${report.matchedParts}/${report.totalCsvParts} pezzi collegati · confidenza media ${report.averageConfidence}%`
+  );
+}
+
+async function handleSpace3DCsvImport(file?: File | null) {
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const csvParts = parseSpazio3DCsv(text);
+
+    setSpace3DCsvFileName(file.name);
+    setSpace3DCsvParts(csvParts);
+    updateCsvCixMatcherReport(csvParts, space3DCixParts);
+  } catch (error) {
+    console.error("BagaStudio CSV import error:", error);
+    setCsvCixStatus(error instanceof Error ? `Errore CSV: ${error.message}` : "Errore CSV sconosciuto.");
+  }
+}
+
+async function handleSpace3DCixImport(files?: FileList | null) {
+  const fileList = Array.from(files || []);
+  if (fileList.length === 0) return;
+
+  try {
+    const cixFiles = await Promise.all(
+      fileList.map(async (file) => ({
+        fileName: file.name,
+        content: await file.text(),
+      }))
+    );
+
+    const cixParts = parseCixFiles(cixFiles);
+
+    setSpace3DCixFileNames(fileList.map((file) => file.name));
+    setSpace3DCixParts(cixParts);
+    updateCsvCixMatcherReport(space3DCsvParts, cixParts);
+  } catch (error) {
+    console.error("BagaStudio CIX import error:", error);
+    setCsvCixStatus(error instanceof Error ? `Errore CIX: ${error.message}` : "Errore CIX sconosciuto.");
+  }
+}
+
+function downloadCsvCixMatcherReport() {
+  if (!csvCixMatcherReport) return;
+
+  downloadJsonFile(`bagastudio-csv-cix-matcher-${Date.now()}.json`, {
+    schema: "bagastudio-csv-cix-matcher-report",
+    version: 1,
+    csvFileName: space3DCsvFileName,
+    cixFileNames: space3DCixFileNames,
+    report: csvCixMatcherReport,
+  });
+}
+
+function applyAutoMappingEngineV2() {
+  if (!csvCixMatcherReport || csvCixMatcherReport.matches.length === 0) {
+    setAutoMappingV2Report(null);
+    setAutoMappingV2Status("Carica CSV e CIX prima di eseguire Auto Mapping Engine V2.");
+    return;
+  }
+
+  const eligibleMatches = csvCixMatcherReport.matches.filter(
+    (match) => Boolean(match.cixPart) && Number(match.confidence || 0) >= AUTO_MAPPING_ENGINE_V2_MIN_CONFIDENCE
+  );
+
+  if (eligibleMatches.length === 0) {
+    setAutoMappingV2Report(null);
+    setAutoMappingV2Status("Auto Mapping V2 non applicato: nessun match sopra la soglia minima di confidenza.");
+    return;
+  }
+
+  setMeshList((current) => {
+    const usedMatchIndexes = new Set<number>();
+    const updatedComponents: string[] = [];
+    let appliedMatches = 0;
+
+    setAutoMappingV2LastSnapshot(current);
+
+    const nextMeshes = current.map((mesh) => {
+      const meshKeys = [mesh.meshName, mesh.displayName, mesh.partId || "", mesh.runtimeRole || ""]
+        .map(normalizeAutoMappingV2Key)
+        .filter(Boolean);
+
+      const matchIndex = eligibleMatches.findIndex((match, index) => {
+        if (usedMatchIndexes.has(index)) return false;
+
+        const matchKeys = [
+          match.csvPart?.name || "",
+          match.cixPart?.partName || "",
+          match.cixPart?.fileName || "",
+        ]
+          .map(normalizeAutoMappingV2Key)
+          .filter(Boolean);
+
+        return meshKeys.some((meshKey) =>
+          matchKeys.some((matchKey) =>
+            meshKey === matchKey ||
+            meshKey.includes(matchKey) ||
+            matchKey.includes(meshKey)
+          )
+        );
+      });
+
+      if (matchIndex === -1) return mesh;
+
+      usedMatchIndexes.add(matchIndex);
+      appliedMatches += 1;
+      updatedComponents.push(mesh.displayName || mesh.meshName || `Componente ${appliedMatches}`);
+      return mergeAutoMappingV2MatchIntoMesh(mesh, eligibleMatches[matchIndex], matchIndex);
+    });
+
+    const placeholders = eligibleMatches
+      .filter((_, index) => !usedMatchIndexes.has(index))
+      .map((match, index) => buildAutoMappingV2MeshFromMatch(match, current.length + index));
+
+    const finalMeshes = normalizeAdminMeshList([...nextMeshes, ...placeholders].map(classifyAutoMappingEngineV25Mesh));
+    const classificationV25 = buildAutoMappingEngineV25ClassificationReport(finalMeshes);
+    const placeholderComponents = placeholders.map((mesh) => mesh.displayName || mesh.meshName || "Placeholder metadata");
+    const riskyMatches = eligibleMatches
+      .filter((match) => Number(match.confidence || 0) < AUTO_MAPPING_ENGINE_V2_HIGH_CONFIDENCE)
+      .slice(0, 20)
+      .map((match) => `${match.csvPart?.name || "CSV senza nome"} → ${match.cixPart?.partName || match.cixPart?.fileName || "CIX senza nome"} (${match.confidence || 0}%)`);
+    const lowConfidenceMatches = csvCixMatcherReport.matches
+      .filter((match) => !match.cixPart || Number(match.confidence || 0) < AUTO_MAPPING_ENGINE_V2_MIN_CONFIDENCE)
+      .slice(0, 30)
+      .map((match) => `${match.csvPart?.name || "CSV senza nome"} → ${match.cixPart?.partName || match.cixPart?.fileName || "CIX non collegato"} (${match.confidence || 0}%)`);
+    const meshCountAfter = finalMeshes.length;
+    const quality = evaluateAutoMappingEngineV2Quality({
+      totalMatches: csvCixMatcherReport.matches.length,
+      eligibleMatches: eligibleMatches.length,
+      appliedMatches,
+      createdPlaceholders: placeholders.length,
+      skippedLowConfidence: csvCixMatcherReport.matches.length - eligibleMatches.length,
+      averageConfidence: csvCixMatcherReport.averageConfidence,
+      riskyMatches,
+    });
+    const reviewQueue = buildAutoMappingEngineV2ReviewQueue({
+      riskyMatches,
+      lowConfidenceMatches,
+      placeholderComponents,
+      qualityLevel: quality.qualityLevel,
+    });
+
+    setAutoMappingV2ReviewedLabels({});
+
+    const report: AutoMappingEngineV2ReportState = {
+      schema: "bagastudio-auto-mapping-engine-report",
+      version: 2.5,
+      totalMatches: csvCixMatcherReport.matches.length,
+      eligibleMatches: eligibleMatches.length,
+      appliedMatches,
+      createdPlaceholders: placeholders.length,
+      skippedLowConfidence: csvCixMatcherReport.matches.length - eligibleMatches.length,
+      averageConfidence: csvCixMatcherReport.averageConfidence,
+      confidenceThreshold: AUTO_MAPPING_ENGINE_V2_MIN_CONFIDENCE,
+      qualityScore: quality.qualityScore,
+      qualityLevel: quality.qualityLevel,
+      recommendedActions: quality.recommendedActions,
+      riskyMatches,
+      lowConfidenceMatches,
+      reviewQueue,
+      classificationSummary: classificationV25.summary,
+      classifiedComponents: classificationV25.classifiedComponents,
+      meshCountBefore: current.length,
+      meshCountAfter,
+      updatedComponents,
+      placeholderComponents,
+      generatedAt: new Date().toISOString(),
+      notes: [
+        "Auto Mapping Engine V2 applicato in modo conservativo: nessuna mesh esistente viene rimossa.",
+        `Soglia minima confidenza: ${AUTO_MAPPING_ENGINE_V2_MIN_CONFIDENCE}%.`,
+        "Snapshot locale creato prima dell'applicazione per ripristino rapido in sessione.",
+        placeholders.length > 0
+          ? "I match senza mesh geometrica corrispondente sono stati aggiunti come placeholder metadata."
+          : "Tutti i match eleggibili sono stati collegati a componenti esistenti.",
+        `Quality gate V2.2: ${quality.qualityLevel} (${quality.qualityScore}/100).`,
+        `Review Queue V2.3: ${reviewQueue.length} elementi generati per controllo tecnico.`,
+        `Component Classification V2.5: ${classificationV25.summary.classifiedComponents}/${classificationV25.summary.totalComponents} componenti classificati.`,
+        "Review Actions V2.4: coda revisionabile con stato verificato/non verificato ed export dedicato.",
+      ],
+    };
+
+    setAutoMappingV2Report(report);
+    setAutoMappingV2Status(
+      `Auto Mapping V2 completato: ${appliedMatches} componenti aggiornati, ${placeholders.length} placeholder creati · qualità ${quality.qualityScore}/100.`
+    );
+
+    return finalMeshes;
+  });
+}
+
+function restoreAutoMappingEngineV2Snapshot() {
+  if (!autoMappingV2LastSnapshot) {
+    setAutoMappingV2Status("Nessuno snapshot Auto Mapping V2 disponibile in questa sessione.");
+    return;
+  }
+
+  setMeshList(normalizeAdminMeshList(autoMappingV2LastSnapshot));
+  setAutoMappingV2Report(null);
+  setAutoMappingV2LastSnapshot(null);
+  setAutoMappingV2ReviewedLabels({});
+  setAutoMappingV2Status("Ripristino Auto Mapping V2 completato: mesh tornate allo stato precedente.");
+}
+
+function downloadAutoMappingEngineV2Report() {
+  if (!autoMappingV2Report) return;
+
+  downloadJsonFile(`bagastudio-auto-mapping-engine-v2-${Date.now()}.json`, {
+    schema: "bagastudio-auto-mapping-engine-export",
+    version: 2.4,
+    csvFileName: space3DCsvFileName,
+    cixFileNames: space3DCixFileNames,
+    productId,
+    productName,
+    reviewedLabels: autoMappingV2ReviewedLabels,
+    reviewSummary: getAutoMappingEngineV2ReviewSummary(),
+    report: autoMappingV2Report,
+  });
+}
+
+function buildAutoMappingEngineV2ReviewKey(item: AutoMappingEngineV2ReviewItem, index: number) {
+  return `${item.severity}|${item.label}|${index}`;
+}
+
+function getAutoMappingEngineV2ReviewSummary() {
+  if (!autoMappingV2Report) {
+    return { total: 0, reviewed: 0, pending: 0, criticalPending: 0, warningPending: 0 };
+  }
+
+  const total = autoMappingV2Report.reviewQueue.length;
+  const reviewed = autoMappingV2Report.reviewQueue.filter((item, index) =>
+    Boolean(autoMappingV2ReviewedLabels[buildAutoMappingEngineV2ReviewKey(item, index)])
+  ).length;
+  const pendingItems = autoMappingV2Report.reviewQueue.filter((item, index) =>
+    !autoMappingV2ReviewedLabels[buildAutoMappingEngineV2ReviewKey(item, index)]
+  );
+
+  return {
+    total,
+    reviewed,
+    pending: Math.max(0, total - reviewed),
+    criticalPending: pendingItems.filter((item) => item.severity === "critical").length,
+    warningPending: pendingItems.filter((item) => item.severity === "warning").length,
+  };
+}
+
+function toggleAutoMappingEngineV2ReviewItem(item: AutoMappingEngineV2ReviewItem, index: number) {
+  const key = buildAutoMappingEngineV2ReviewKey(item, index);
+  setAutoMappingV2ReviewedLabels((current) => ({
+    ...current,
+    [key]: !current[key],
+  }));
+}
+
+function markAllAutoMappingEngineV2ReviewItemsReviewed() {
+  if (!autoMappingV2Report) return;
+
+  const next: Record<string, boolean> = {};
+  autoMappingV2Report.reviewQueue.forEach((item, index) => {
+    next[buildAutoMappingEngineV2ReviewKey(item, index)] = true;
+  });
+  setAutoMappingV2ReviewedLabels(next);
+  setAutoMappingV2Status("Review Queue V2.4 marcata come verificata in sessione.");
+}
+
+function resetAutoMappingEngineV2ReviewActions() {
+  setAutoMappingV2ReviewedLabels({});
+  setAutoMappingV2Status("Review Queue V2.4 riportata a stato non verificato.");
+}
+
+function downloadAutoMappingEngineV2ReviewQueue() {
+  if (!autoMappingV2Report) return;
+
+  downloadJsonFile(`bagastudio-auto-mapping-review-queue-v2-${Date.now()}.json`, {
+    schema: "bagastudio-auto-mapping-review-queue",
+    version: 2.4,
+    productId,
+    productName,
+    summary: getAutoMappingEngineV2ReviewSummary(),
+    reviewedLabels: autoMappingV2ReviewedLabels,
+    items: autoMappingV2Report.reviewQueue.map((item, index) => ({
+      ...item,
+      reviewed: Boolean(autoMappingV2ReviewedLabels[buildAutoMappingEngineV2ReviewKey(item, index)]),
+    })),
+  });
 }
 
 async function handleSpace3DImport(file?: File | null) {
@@ -2307,8 +3549,8 @@ function detectMissingSpace3DParts() {
   }
 
   const daeMeshes = meshList.filter((mesh) => !mesh.meshName.startsWith("s3d_component_"));
-  const daeKeys = new Set(
-    daeMeshes.flatMap((mesh) => [
+  const daeKeys = new Set<string>(
+    daeMeshes.flatMap((mesh): string[] => [
       normalizeGeometryMatchKey(mesh.meshName),
       normalizeGeometryMatchKey(mesh.displayName),
       normalizeGeometryMatchKey(mesh.partId || ""),
@@ -2336,6 +3578,18 @@ function detectMissingSpace3DParts() {
       supportsAccessories: component.category !== "lighting",
       materialSlots: "main",
       compatibleAccessories: component.category === "hardware" ? "hardware" : "",
+      dimensions: "",
+      technicalPoints: "",
+      assemblyOrder: "",
+      panelThickness: "",
+      hardware: component.category === "hardware" ? component.name : "",
+      drillings: "",
+      manufacturingData: "",
+      constraintRole: "",
+      hardwareLinks: "",
+      drillingLinks: "",
+      dependencyParents: "",
+      dependencyChildren: "",
       ledPosition: "front",
       ledFrontOffset: "4",
       ledSideMargin: "5",
@@ -2581,7 +3835,17 @@ async function handleAdminModelImport(file?: File | null) {
           daeHierarchyWarnings.push(
             `Runtime GLB ready: ${runtimeGlb.fileName}`,
             `Runtime GLB meshes: ${runtimeGlb.meshCount}`,
-            `Runtime GLB objects: ${runtimeGlb.objectCount}`
+            `Runtime GLB objects: ${runtimeGlb.objectCount}`,
+            ...runtimeGlb.warnings
+          );
+
+          new GLTFLoader().load(
+            runtimeGlbObjectUrl,
+            (gltf) => {
+              applyMeshes(extractMeshesFromObject(gltf.scene), daeHierarchyWarnings);
+            },
+            undefined,
+            applyError
           );
 
           console.log("BagaStudio Runtime GLB V1:", {
@@ -2590,7 +3854,10 @@ async function handleAdminModelImport(file?: File | null) {
             meshCount: runtimeGlb.meshCount,
             objectUrl: runtimeGlbObjectUrl,
             warnings: runtimeGlb.warnings,
+            naming: runtimeGlb.naming,
           });
+
+          return;
         } catch (runtimeGlbError) {
           const message =
             runtimeGlbError instanceof Error
@@ -2836,6 +4103,36 @@ function downloadImporterDiagnosticJson() {
                 />
               </label>
             </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Ricerca Texture / Materiali</h2>
+              <p className="mt-1 text-sm text-slate-400">Filtro rapido per trovare texture interne BagaStudio e materiali rilevati dai file Space3D.</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/10 bg-black/30 px-4 py-3 text-sm text-slate-300">
+              {filteredDefaultProductMaterials.length} / {DEFAULT_PRODUCT_MATERIALS.length} texture interne
+            </div>
+          </div>
+
+          <input
+            value={textureSearch}
+            onChange={(event) => setTextureSearch(event.target.value)}
+            placeholder="Cerca texture, materiale, categoria, file..."
+            className="mt-4 w-full rounded-2xl border border-cyan-400/20 bg-black/30 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60"
+          />
+
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {filteredDefaultProductMaterials.slice(0, 18).map((material) => (
+              <div key={material.id} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-3">
+                <p className="text-sm font-black text-white">{material.name}</p>
+                <p className="mt-1 break-all text-[11px] text-slate-500">{material.category} · {material.textureUrl}</p>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -3138,6 +4435,33 @@ function downloadImporterDiagnosticJson() {
                   className="hidden"
                 />
               </label>
+
+              <label className="cursor-pointer rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400">
+                Importa CSV
+                <input
+                  type="file"
+                  accept={SPACE3D_CSV_SUPPORTED_FORMATS}
+                  onChange={(event) => {
+                    void handleSpace3DCsvImport(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              <label className="cursor-pointer rounded-xl bg-amber-500 px-4 py-2 text-xs font-black text-white shadow-lg shadow-amber-500/20 transition hover:bg-amber-400">
+                Importa CIX
+                <input
+                  type="file"
+                  accept={SPACE3D_CIX_SUPPORTED_FORMATS}
+                  multiple
+                  onChange={(event) => {
+                    void handleSpace3DCixImport(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
@@ -3165,8 +4489,14 @@ function downloadImporterDiagnosticJson() {
                 <div className="rounded-xl border border-violet-400/15 bg-black/25 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-black text-white">Componenti Space3D</p>
-                    <p className="text-xs text-slate-500">Prime 40 voci</p>
+                    <p className="text-xs text-slate-500">Prime 40 voci filtrate</p>
                   </div>
+                  <input
+                    value={textureSearch}
+                    onChange={(event) => setTextureSearch(event.target.value)}
+                    placeholder="Cerca texture/materiale..."
+                    className="mt-3 w-full rounded-xl border border-violet-400/20 bg-black/30 px-3 py-2 text-xs text-white outline-none placeholder:text-slate-500 focus:border-violet-300/60"
+                  />
                   <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
                     {space3DAnalyzerReport.components.slice(0, 40).map((component) => (
                       <button
@@ -3188,7 +4518,7 @@ function downloadImporterDiagnosticJson() {
                     <p className="text-xs text-slate-500">Prime 40 voci</p>
                   </div>
                   <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
-                    {space3DAnalyzerReport.materials.slice(0, 40).map((material) => (
+                    {filteredSpace3DAnalyzerMaterials.slice(0, 40).map((material) => (
                       <div key={material.id} className="rounded-lg border border-violet-400/10 bg-white/[0.03] px-3 py-2">
                         <p className="text-xs font-bold text-white">{material.name}</p>
                         <p className="text-[11px] text-slate-500">{material.category} · {material.id}</p>
@@ -3292,7 +4622,229 @@ function downloadImporterDiagnosticJson() {
     {adminT.rotation} 270°
   </button>
 </div>
-        </section>
+        
+            <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300">CSV ↔ CIX Matcher V1</p>
+                  <h3 className="mt-1 text-lg font-black text-white">Dati produzione Space3D</h3>
+                  <p className="mt-1 text-xs text-slate-400">{csvCixStatus}</p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={applyAutoMappingEngineV2}
+                    disabled={!csvCixMatcherReport}
+                    className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Applica Auto Mapping V2
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={restoreAutoMappingEngineV2Snapshot}
+                    disabled={!autoMappingV2LastSnapshot}
+                    className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Ripristina Auto Mapping
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={downloadAutoMappingEngineV2Report}
+                    disabled={!autoMappingV2Report}
+                    className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Scarica report Auto Mapping
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={downloadAutoMappingEngineV2ReviewQueue}
+                    disabled={!autoMappingV2Report}
+                    className="rounded-xl border border-violet-300/30 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Scarica Review Queue
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={downloadCsvCixMatcherReport}
+                    disabled={!csvCixMatcherReport}
+                    className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Scarica report CSV/CIX
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-emerald-400/15 bg-black/25 p-3">
+                  <p className="text-xs text-slate-500">CSV</p>
+                  <p className="mt-1 break-all text-sm font-bold text-white">{space3DCsvFileName || "Nessun CSV"}</p>
+                  <p className="mt-2 text-xs text-emerald-200">{space3DCsvParts.length} pezzi letti</p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-400/15 bg-black/25 p-3">
+                  <p className="text-xs text-slate-500">CIX</p>
+                  <p className="mt-1 text-sm font-bold text-white">{space3DCixFileNames.length} file caricati</p>
+                  <p className="mt-2 text-xs text-emerald-200">{space3DCixParts.length} pezzi CNC letti</p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-400/15 bg-black/25 p-3">
+                  <p className="text-xs text-slate-500">Match</p>
+                  <p className="mt-1 text-2xl font-black text-white">{csvCixMatcherReport?.matchedParts ?? 0}/{csvCixMatcherReport?.totalCsvParts ?? 0}</p>
+                  <p className="mt-2 text-xs text-emerald-200">CSV collegati a CIX</p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-400/15 bg-black/25 p-3">
+                  <p className="text-xs text-slate-500">Confidenza media</p>
+                  <p className="mt-1 text-2xl font-black text-white">{csvCixMatcherReport?.averageConfidence ?? 0}%</p>
+                  <p className="mt-2 text-xs text-emerald-200">Matching V1</p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-cyan-300/15 bg-cyan-400/[0.06] p-3">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-200">Auto Mapping Engine V2</p>
+                    <p className="mt-1 text-xs text-slate-300">{autoMappingV2Status}</p>
+                  </div>
+                  {autoMappingV2Report && (
+                    <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Applicati {autoMappingV2Report.appliedMatches}</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Placeholder {autoMappingV2Report.createdPlaceholders}</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Eleggibili {autoMappingV2Report.eligibleMatches}</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Saltati {autoMappingV2Report.skippedLowConfidence}</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Qualità {autoMappingV2Report.qualityScore}/100</span>
+                      <span className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-2 text-center text-cyan-100">Gate {autoMappingV2Report.qualityLevel}</span>
+                      <span className="rounded-full border border-violet-300/20 bg-black/20 px-3 py-2 text-center text-violet-100">Review {getAutoMappingEngineV2ReviewSummary().reviewed}/{getAutoMappingEngineV2ReviewSummary().total}</span>
+                      <span className="rounded-full border border-violet-300/20 bg-black/20 px-3 py-2 text-center text-violet-100">Pending {getAutoMappingEngineV2ReviewSummary().pending}</span>
+                    </div>
+                  )}
+                </div>
+
+                {autoMappingV2Report && (
+                  <div className="mt-3 grid gap-3 text-xs lg:grid-cols-2">
+                    <div className="rounded-xl border border-cyan-300/10 bg-black/20 p-3">
+                      <p className="font-black uppercase tracking-[0.14em] text-cyan-200">Componenti aggiornati</p>
+                      <p className="mt-2 text-slate-300">
+                        {autoMappingV2Report.updatedComponents.length > 0
+                          ? autoMappingV2Report.updatedComponents.slice(0, 10).join(", ")
+                          : "Nessun componente geometrico aggiornato direttamente."}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-cyan-300/10 bg-black/20 p-3">
+                      <p className="font-black uppercase tracking-[0.14em] text-cyan-200">Placeholder metadata</p>
+                      <p className="mt-2 text-slate-300">
+                        {autoMappingV2Report.placeholderComponents.length > 0
+                          ? autoMappingV2Report.placeholderComponents.slice(0, 10).join(", ")
+                          : "Nessun placeholder creato."}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-cyan-300/10 bg-black/20 p-3">
+                      <p className="font-black uppercase tracking-[0.14em] text-cyan-200">Azioni consigliate</p>
+                      <ul className="mt-2 space-y-1 text-slate-300">
+                        {autoMappingV2Report.recommendedActions.slice(0, 4).map((action) => (
+                          <li key={action}>• {action}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-cyan-300/10 bg-black/20 p-3">
+                      <p className="font-black uppercase tracking-[0.14em] text-cyan-200">Match da verificare</p>
+                      <p className="mt-2 text-slate-300">
+                        {autoMappingV2Report.riskyMatches.length > 0
+                          ? autoMappingV2Report.riskyMatches.slice(0, 6).join(", ")
+                          : "Nessun match ambiguo rilevato sopra soglia."}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-cyan-300/10 bg-black/20 p-3 lg:col-span-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-black uppercase tracking-[0.14em] text-cyan-200">Review Queue V2.4</p>
+                          <p className="mt-1 text-slate-400">
+                            Verificati {getAutoMappingEngineV2ReviewSummary().reviewed}/{getAutoMappingEngineV2ReviewSummary().total} · Critici pending {getAutoMappingEngineV2ReviewSummary().criticalPending} · Warning pending {getAutoMappingEngineV2ReviewSummary().warningPending}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={markAllAutoMappingEngineV2ReviewItemsReviewed}
+                            className="rounded-lg border border-violet-300/30 bg-violet-400/10 px-3 py-2 text-[11px] font-black text-violet-100 transition hover:bg-violet-400/20"
+                          >
+                            Segna tutto verificato
+                          </button>
+                          <button
+                            type="button"
+                            onClick={resetAutoMappingEngineV2ReviewActions}
+                            className="rounded-lg border border-slate-300/20 bg-white/[0.04] px-3 py-2 text-[11px] font-black text-slate-200 transition hover:bg-white/[0.08]"
+                          >
+                            Reset review
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="mt-2 space-y-2 text-slate-300">
+                        {autoMappingV2Report.reviewQueue.slice(0, 8).map((item, index) => {
+                          const reviewKey = buildAutoMappingEngineV2ReviewKey(item, index);
+                          const reviewed = Boolean(autoMappingV2ReviewedLabels[reviewKey]);
+
+                          return (
+                            <li key={reviewKey} className="rounded-lg border border-white/10 bg-black/20 p-2">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <span className="font-bold text-cyan-100">[{item.severity}] {item.label}</span>
+                                  <span className="block text-slate-400">{item.reason}</span>
+                                  <span className="block text-slate-300">{item.suggestedAction}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAutoMappingEngineV2ReviewItem(item, index)}
+                                  className={`shrink-0 rounded-lg border px-3 py-2 text-[11px] font-black transition ${
+                                    reviewed
+                                      ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20"
+                                      : "border-amber-300/30 bg-amber-400/10 text-amber-100 hover:bg-amber-400/20"
+                                  }`}
+                                >
+                                  {reviewed ? "Verificato" : "Da verificare"}
+                                </button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {csvCixMatcherReport && (
+                <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-emerald-400/10 bg-black/20">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-[#06111d] text-emerald-200">
+                      <tr>
+                        <th className="px-3 py-2">CSV</th>
+                        <th className="px-3 py-2">CIX</th>
+                        <th className="px-3 py-2">Conf.</th>
+                        <th className="px-3 py-2">Motivi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvCixMatcherReport.matches.slice(0, 30).map((match) => (
+                        <tr key={`${match.csvPart.rowIndex}-${match.csvPart.name}`} className="border-t border-white/5 text-slate-300">
+                          <td className="px-3 py-2">{match.csvPart.name}</td>
+                          <td className="px-3 py-2">{match.cixPart?.fileName || "—"}</td>
+                          <td className="px-3 py-2 font-bold text-white">{match.confidence}%</td>
+                          <td className="px-3 py-2">{match.reasons.join(", ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+</section>
 <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
   <h2 className="text-xl font-semibold mb-4">
     {adminT.preview3d}
@@ -3638,6 +5190,122 @@ function downloadImporterDiagnosticJson() {
       onClick={(e) => e.stopPropagation()}
       placeholder="led, inserto, maniglia"
       className="mt-1 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+  </div>
+</div>
+
+<div className="mt-3 rounded-xl border border-cyan-400/10 bg-black/20 p-3">
+  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-cyan-200">Product Package V3 / Produzione</p>
+  <div className="grid grid-cols-2 gap-3">
+    <input
+      value={mesh.panelThickness || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { panelThickness: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="Spessore pannello es. 18.3"
+      className="rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+    <input
+      value={mesh.assemblyOrder || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { assemblyOrder: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="Ordine montaggio"
+      className="rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+    <input
+      value={mesh.hardware || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { hardware: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="Ferramenta es. cerniera, vite, basetta"
+      className="rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+    <input
+      value={mesh.materialCode || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { materialCode: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder="Codice materiale es. BAROK / NERO / ANGEL_WHITE"
+      className="rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+    <input
+      value={mesh.dimensions || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { dimensions: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder='Dimensioni JSON es. {"width":600,"height":720,"depth":18.3}'
+      className="rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+    />
+  </div>
+  <textarea
+    value={mesh.edgeBanding || ""}
+    onChange={(e) => updateMeshConfig(mesh.meshName, { edgeBanding: e.target.value })}
+    onClick={(e) => e.stopPropagation()}
+    placeholder='Bordatura JSON es. {"top":"ABS 1mm","bottom":"ABS 1mm","left":"ABS 1mm","right":"ABS 1mm"}'
+    className="mt-3 min-h-20 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+  />
+  <textarea
+    value={mesh.technicalPoints || ""}
+    onChange={(e) => updateMeshConfig(mesh.meshName, { technicalPoints: e.target.value })}
+    onClick={(e) => e.stopPropagation()}
+    placeholder='Punti tecnici JSON: prese, scarichi, fori, passacavi'
+    className="mt-3 min-h-20 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+  />
+  <textarea
+    value={mesh.drillings || ""}
+    onChange={(e) => updateMeshConfig(mesh.meshName, { drillings: e.target.value })}
+    onClick={(e) => e.stopPropagation()}
+    placeholder='Forature JSON future da CSV/CIX'
+    className="mt-3 min-h-20 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+  />
+  <textarea
+    value={mesh.manufacturingData || ""}
+    onChange={(e) => updateMeshConfig(mesh.meshName, { manufacturingData: e.target.value })}
+    onClick={(e) => e.stopPropagation()}
+    placeholder='Manufacturing data JSON per Parametric Edit / CSV regeneration'
+    className="mt-3 min-h-20 w-full rounded-lg bg-[#02070d] border border-cyan-400/20 px-3 py-2 text-white text-sm"
+  />
+
+  <div className="mt-3 rounded-xl border border-amber-400/10 bg-amber-400/5 p-3">
+    <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-amber-200">Hardware Analyzer V1 / Constraints</p>
+    <div className="grid grid-cols-2 gap-3">
+      <select
+        value={mesh.constraintRole || ""}
+        onChange={(e) => updateMeshConfig(mesh.meshName, { constraintRole: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg bg-[#02070d] border border-amber-400/20 px-3 py-2 text-white text-sm"
+      >
+        <option value="">Auto constraint role</option>
+        <option value="STRUCTURAL">STRUCTURAL</option>
+        <option value="DERIVED">DERIVED</option>
+        <option value="ACCESSORY">ACCESSORY</option>
+        <option value="HARDWARE">HARDWARE</option>
+        <option value="UNKNOWN">UNKNOWN</option>
+      </select>
+      <input
+        value={mesh.dependencyParents || ""}
+        onChange={(e) => updateMeshConfig(mesh.meshName, { dependencyParents: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        placeholder="Parents dependencyGraph es. fianco_sx"
+        className="rounded-lg bg-[#02070d] border border-amber-400/20 px-3 py-2 text-white text-sm"
+      />
+      <input
+        value={mesh.dependencyChildren || ""}
+        onChange={(e) => updateMeshConfig(mesh.meshName, { dependencyChildren: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        placeholder="Children dependencyGraph es. ripiano_1, cassetto_1"
+        className="rounded-lg bg-[#02070d] border border-amber-400/20 px-3 py-2 text-white text-sm"
+      />
+      <input
+        value={mesh.hardwareLinks || ""}
+        onChange={(e) => updateMeshConfig(mesh.meshName, { hardwareLinks: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        placeholder='Hardware links JSON o vuoto'
+        className="rounded-lg bg-[#02070d] border border-amber-400/20 px-3 py-2 text-white text-sm"
+      />
+    </div>
+    <textarea
+      value={mesh.drillingLinks || ""}
+      onChange={(e) => updateMeshConfig(mesh.meshName, { drillingLinks: e.target.value })}
+      onClick={(e) => e.stopPropagation()}
+      placeholder='Drilling links JSON parametrico: x=leftEdge+32, z=thickness/2'
+      className="mt-3 min-h-20 w-full rounded-lg bg-[#02070d] border border-amber-400/20 px-3 py-2 text-white text-sm"
     />
   </div>
 </div>

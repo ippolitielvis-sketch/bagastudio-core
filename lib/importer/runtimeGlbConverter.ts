@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+import { applyUniqueRuntimeMeshNames } from "@/lib/importer/importerNamingEngine";
 
 export type RuntimeGlbConverterInput = {
   daeText: string;
@@ -19,6 +20,11 @@ export type RuntimeGlbConverterResult = {
   fileName: string;
   generatedAt: string;
   warnings: string[];
+  naming: {
+    renamedCount: number;
+    duplicateBaseNames: string[];
+    meshNames: string[];
+  };
 };
 
 function arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType = "model/gltf-binary"): string {
@@ -202,12 +208,26 @@ export async function convertDaeToRuntimeGlb(
   const scene = collada.scene;
   scene.name = input.fileName || "BagaStudio_DAE_Runtime";
 
+  const naming = applyUniqueRuntimeMeshNames(scene);
+
   const warnings = prepareSceneForRuntime(scene, {
     bakeTransforms: input.bakeTransforms,
     centerModel: input.centerModel,
     normalizeScale: input.normalizeScale,
     stripMaterials: input.stripMaterials,
   });
+
+  if (naming.renamedCount > 0) {
+    warnings.push(
+      `Importer Naming Engine: rinominate ${naming.renamedCount} mesh duplicate/univoche.`
+    );
+  }
+
+  if (naming.duplicateBaseNames.length > 0) {
+    warnings.push(
+      `Mesh duplicate normalizzate: ${naming.duplicateBaseNames.join(", ")}.`
+    );
+  }
 
   const { objectCount, meshCount } = countSceneObjects(scene);
 
@@ -249,6 +269,7 @@ export async function convertDaeToRuntimeGlb(
     fileName: (input.fileName || "bagastudio-runtime-model").replace(/\.[^.]+$/, "") + ".glb",
     generatedAt: new Date().toISOString(),
     warnings,
+    naming,
   };
 }
 

@@ -34,12 +34,24 @@ export type DaeInstanceNodeLink = {
   depth: number;
 };
 
+export type DaeInstanceTargetUsage = {
+  targetId: string;
+  targetName?: string;
+  usageCount: number;
+  parentIds: string[];
+  parentNames: string[];
+  instanceNames: string[];
+};
+
 export type DaeHierarchyDiagnostics = {
   nodeMap: DaeNodeMapEntry[];
   libraryNodeMap: DaeNodeMapEntry[];
   visualSceneNodeMap: DaeNodeMapEntry[];
   resolvedInstanceLinks: DaeInstanceNodeLink[];
   unresolvedInstanceLinks: DaeInstanceNodeLink[];
+  instanceTargetUsage: DaeInstanceTargetUsage[];
+  duplicateTargetIds: string[];
+  multiUseTargetIds: string[];
   duplicateNodeIds: string[];
   nodesWithMatrixCount: number;
   libraryNodesCount: number;
@@ -253,6 +265,53 @@ function resolveNode(
   return result;
 }
 
+function buildInstanceTargetUsage(links: DaeInstanceNodeLink[]): DaeInstanceTargetUsage[] {
+  const usageByTarget = new Map<string, DaeInstanceTargetUsage>();
+
+  links.forEach((link) => {
+    if (!link.targetId) return;
+
+    const current = usageByTarget.get(link.targetId) || {
+      targetId: link.targetId,
+      targetName: link.targetName,
+      usageCount: 0,
+      parentIds: [],
+      parentNames: [],
+      instanceNames: [],
+    };
+
+    current.usageCount += 1;
+
+    if (!current.parentIds.includes(link.parentId)) {
+      current.parentIds.push(link.parentId);
+    }
+
+    if (!current.parentNames.includes(link.parentName)) {
+      current.parentNames.push(link.parentName);
+    }
+
+    if (!current.instanceNames.includes(link.instanceName)) {
+      current.instanceNames.push(link.instanceName);
+    }
+
+    usageByTarget.set(link.targetId, current);
+  });
+
+  return Array.from(usageByTarget.values()).sort((a, b) => b.usageCount - a.usageCount);
+}
+
+function getDuplicateTargetIds(targetUsage: DaeInstanceTargetUsage[]) {
+  return targetUsage
+    .filter((usage) => usage.usageCount > 1)
+    .map((usage) => usage.targetId);
+}
+
+function getMultiUseTargetIds(targetUsage: DaeInstanceTargetUsage[]) {
+  return targetUsage
+    .filter((usage) => usage.parentIds.length > 1 || usage.usageCount > 1)
+    .map((usage) => usage.targetId);
+}
+
 function getMaxDepth(nodes: DaeResolvedNode[]): number {
   let maxDepth = 0;
 
@@ -308,6 +367,9 @@ export function resolveDaeHierarchy(daeText: string): DaeHierarchyResult {
 
   const resolvedInstanceLinks = uniqueLinks.filter((link) => link.targetFound);
   const unresolvedInstanceLinks = uniqueLinks.filter((link) => !link.targetFound);
+  const instanceTargetUsage = buildInstanceTargetUsage(uniqueLinks);
+  const duplicateTargetIds = getDuplicateTargetIds(instanceTargetUsage);
+  const multiUseTargetIds = getMultiUseTargetIds(instanceTargetUsage);
   const nodeMap = Array.from(entryById.values());
   const warnings: string[] = [];
 
@@ -327,6 +389,14 @@ export function resolveDaeHierarchy(daeText: string): DaeHierarchyResult {
     warnings.push(`DAE contiene ID nodo duplicati: ${duplicateNodeIds.length}.`);
   }
 
+  if (duplicateTargetIds.length > 0) {
+    warnings.push(`DAE target instance_node riutilizzati: ${duplicateTargetIds.length}.`);
+  }
+
+  if (multiUseTargetIds.length > 0) {
+    warnings.push(`DAE target multi-uso da ricostruire: ${multiUseTargetIds.length}.`);
+  }
+
   if (!visualScene) {
     warnings.push("Nessuna visual_scene trovata nel DAE.");
   }
@@ -344,6 +414,9 @@ export function resolveDaeHierarchy(daeText: string): DaeHierarchyResult {
       visualSceneNodeMap: nodeMap.filter((entry) => entry.source === "visual_scene"),
       resolvedInstanceLinks,
       unresolvedInstanceLinks,
+      instanceTargetUsage,
+      duplicateTargetIds,
+      multiUseTargetIds,
       duplicateNodeIds,
       nodesWithMatrixCount: allNodes.filter((node) => Boolean(readMatrix(node))).length,
       libraryNodesCount: libraryNodes.length,
