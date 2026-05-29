@@ -2597,6 +2597,25 @@ function downloadImporterDiagnosticJson() {
           </nav>
         </header>
 
+        {/* bagastudio-admin-sticky-toolbar-v1 */}
+        <div className="sticky top-0 z-[80] mb-4 rounded-2xl border border-cyan-400/20 bg-slate-950/90 p-3 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => window.scrollTo({top:0,behavior:"smooth"})} className="rounded-xl border px-3 py-2 text-xs font-black">
+              ↑ Torna su
+            </button>
+            <button type="button" onClick={() => document.querySelector('[data-bagastudio-action="detect-missing-parts"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true}))} className="rounded-xl border px-3 py-2 text-xs font-black">
+              Rileva mancanti
+            </button>
+            <button type="button" onClick={() => document.querySelector('[data-bagastudio-action="apply-placeholder-metadata"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true}))} className="rounded-xl border px-3 py-2 text-xs font-black">
+              Placeholder
+            </button>
+            <button type="button" onClick={() => document.querySelector('[data-bagastudio-action="generate-product-package"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true}))} className="rounded-xl border px-3 py-2 text-xs font-black">
+              Genera Package
+            </button>
+          </div>
+        </div>
+
+
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Prodotti</p>
@@ -3068,6 +3087,7 @@ function downloadImporterDiagnosticJson() {
               <button
                 type="button"
                 disabled={!space3DAnalyzerReport}
+                data-bagastudio-action="generate-product-package"
                 onClick={buildSpace3DProductPackageDraft}
                 className="rounded-xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-xs font-black text-violet-100 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -3076,6 +3096,7 @@ function downloadImporterDiagnosticJson() {
               <button
                 type="button"
                 disabled={!space3DAnalyzerReport}
+                data-bagastudio-action="detect-missing-parts"
                 onClick={detectMissingSpace3DParts}
                 className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-xs font-black text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -3084,6 +3105,7 @@ function downloadImporterDiagnosticJson() {
               <button
                 type="button"
                 disabled={geometryCompletionReport.missingParts.length === 0}
+                data-bagastudio-action="apply-placeholder-metadata"
                 onClick={applyMissingPartsAsPlaceholders}
                 className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -3667,6 +3689,20 @@ function downloadImporterDiagnosticJson() {
           </div>
         </div>
       </div>
-    </main>
+    
+      {/* bagastudio-admin-back-to-top-safe-v2 */}
+      <button
+        type="button"
+        onClick={() => {
+          if (typeof window !== "undefined") {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+        }}
+        className="fixed bottom-5 right-5 z-[9999] rounded-full border border-cyan-300/30 bg-slate-950/95 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-cyan-100 shadow-2xl shadow-black/50 backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-cyan-400/20"
+        aria-label="Torna su"
+      >
+        ↑ Su
+      </button>
+</main>
 );
 }

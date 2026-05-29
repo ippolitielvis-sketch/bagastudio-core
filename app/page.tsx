@@ -98,88 +98,6 @@ function createImportedModelProduct(file: File, objectUrl: string, format: strin
 }
 
 
-function normalizeBagaStudioPackageRuntimeComponent(component: any, index: number, source: "geometry" | "reconstructed" = "geometry") {
-  const id = String(component?.id || component?.partId || component?.meshName || `${source}_${index + 1}`);
-  const meshName = String(component?.meshName || component?.name || id);
-  const displayName = String(component?.displayName || component?.name || component?.originalName || meshName);
-
-  return {
-    ...component,
-    id,
-    partId: String(component?.partId || id),
-    meshName,
-    name: displayName,
-    displayName,
-    originalName: String(component?.originalName || component?.name || displayName),
-    index: Number.isFinite(Number(component?.index)) ? Number(component.index) : index,
-    source,
-    isRuntimeOnly: source === "reconstructed" || component?.componentType === "reconstructed-placeholder",
-    runtimeMetadata: component?.runtimeMetadata || {
-      source,
-      stablePartId: String(component?.partId || id),
-      category: String(component?.category || component?.componentCategory || "component"),
-    },
-  };
-}
-
-function extractBagaStudioRuntimeComponentsFromPackage(packageJson: any) {
-  const baseComponents = Array.isArray(packageJson?.components)
-    ? packageJson.components
-    : Array.isArray(packageJson?.parts)
-    ? packageJson.parts
-    : [];
-
-  const reconstructedParts = [
-    ...(Array.isArray(packageJson?.reconstructedParts) ? packageJson.reconstructedParts : []),
-    ...(Array.isArray(packageJson?.geometryCompletion?.reconstructedParts) ? packageJson.geometryCompletion.reconstructedParts : []),
-    ...(Array.isArray(packageJson?.geometryCompletion?.missingParts) ? packageJson.geometryCompletion.missingParts : []),
-  ];
-
-  const merged = [
-    ...baseComponents.map((component: any, index: number) =>
-      normalizeBagaStudioPackageRuntimeComponent(component, index, "geometry")
-    ),
-    ...reconstructedParts.map((component: any, index: number) =>
-      normalizeBagaStudioPackageRuntimeComponent(component, baseComponents.length + index, "reconstructed")
-    ),
-  ];
-
-  const seen = new Set<string>();
-  return merged.filter((component: any) => {
-    const key = String(component?.id || component?.partId || component?.meshName || "").trim();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function publishBagaStudioRuntimeComponentsFromPackage(packageJson: any) {
-  if (typeof window === "undefined") return [];
-
-  const runtimeComponents = extractBagaStudioRuntimeComponentsFromPackage(packageJson);
-  if (!runtimeComponents.length) return runtimeComponents;
-
-  const current = Array.isArray((window as any).__bagastudioViewerRuntimeComponents)
-    ? (window as any).__bagastudioViewerRuntimeComponents
-    : [];
-
-  if (runtimeComponents.length >= current.length) {
-    (window as any).__bagastudioViewerRuntimeComponents = runtimeComponents;
-  }
-
-  const detail = {
-    productPackage: packageJson,
-    components: runtimeComponents,
-    count: runtimeComponents.length,
-    source: "product-package-json-import",
-  };
-
-  window.dispatchEvent(new CustomEvent("bagastudio:runtime-components-merged", { detail }));
-  window.dispatchEvent(new CustomEvent("bagastudio:viewer-components-ready", { detail }));
-
-  return runtimeComponents;
-}
-
 const DICTIONARY = {
   it: {
     language: "Lingua",
@@ -671,6 +589,23 @@ const [isImporterDragging, setIsImporterDragging] = useState(false);
 const [importerUiState, setImporterUiState] = useState<any>(null);
 const [lastImporterEvent, setLastImporterEvent] = useState("");
 const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
+const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+useEffect(() => {
+  if (!selectedPartId) return;
+
+  const target =
+    componentRowRefs.current[selectedPartId] ||
+    componentRowRefs.current[String(selectedPartId)];
+
+  if (!target) return;
+
+  target.scrollIntoView({
+    block: "nearest",
+    behavior: "smooth",
+  });
+}, [selectedPartId, viewerRuntimeComponents]);
+
 const [viewerRuntimeMetadata, setViewerRuntimeMetadata] = useState<any>(null);
 const [viewerRuntimeProduct, setViewerRuntimeProduct] = useState<any>(null);
 
@@ -724,7 +659,10 @@ useEffect(() => {
 
     if (eventType === "bagastudio:runtime-product-ready" && detail?.parts) {
       setViewerRuntimeProduct(detail);
-      setViewerRuntimeComponents(detail.parts);
+      setViewerRuntimeComponents((current: any[]) => {
+        if (!Array.isArray(current) || current.length === 0) return detail.parts;
+        return detail.parts.length >= current.length ? detail.parts : current;
+      });
     }
 
     setLastImporterEvent(eventType.replace("bagastudio:", ""));
@@ -996,20 +934,9 @@ const availableAccessories = useMemo(() => {
     try {
       const text = await file.text();
       const rawProduct = JSON.parse(text);
-      const importedRuntimeComponents = publishBagaStudioRuntimeComponentsFromPackage(rawProduct);
       const nextProduct = normalizeProduct(rawProduct);
 
       setRuntimeProduct(nextProduct);
-      if (importedRuntimeComponents.length > 0) {
-        setViewerRuntimeComponents((current: any[]) => {
-          if (!Array.isArray(current) || current.length === 0) return importedRuntimeComponents;
-          return importedRuntimeComponents.length >= current.length ? importedRuntimeComponents : current;
-        });
-
-        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 250);
-        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 900);
-        window.setTimeout(() => publishBagaStudioRuntimeComponentsFromPackage(rawProduct), 1800);
-      }
 
       setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
       setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
@@ -1931,55 +1858,50 @@ const availableAccessories = useMemo(() => {
     </div>
   )}
 
-  <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 gap-1 rounded-xl border border-white/10 bg-[#07111c]/90 p-1 shadow-2xl backdrop-blur-xl">
+  <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-2xl border border-white/10 bg-[#07111c]/92 p-1.5 shadow-2xl backdrop-blur-xl">
     {[
-      ["↖", t.toolSelect, "select"],
-["✥", t.toolPan, "pan"],
-["↻", t.toolReset, "reset"],
-["□", t.toolOrbit, "orbit"],
-["⌁", t.toolFocus, "focus"],
-["↕", t.toolTop, "top"],
-["◎", t.toolScreenshot, "shot"],
-["↗", t.toolFullscreen, "fullscreen"],
-    ].map(([icon, title, action]: any, index) => (
-      <button
-        key={`${icon}-${index}`}
-        type="button"
-        title={title}
-        onClick={() => {
-          if (action === "select") {
-            setActiveViewerTool("select");
-            window.dispatchEvent(new Event("bagastudio:tool-select"));
-          } else if (action === "pan") {
-            setActiveViewerTool("pan");
-            window.dispatchEvent(new Event("bagastudio:tool-pan"));
-          } else if (action === "orbit") {
-            setActiveViewerTool("orbit");
-            window.dispatchEvent(new Event("bagastudio:tool-orbit"));
-            setActiveView("iso");
-          } else if (action === "reset") {
-            window.dispatchEvent(new Event("bagastudio:reset-camera"));
-          } else if (action === "focus") {
-            window.dispatchEvent(new Event("bagastudio:focus-selection"));
-          } else if (action === "shot") {
-            window.dispatchEvent(new Event("bagastudio:screenshot"));
-          } else if (action === "fullscreen") {
-            requestViewerFullscreen();
-          } else if (action === "next") {
-            goNextView();
-          } else if (action) {
-            setActiveView(action);
-          }
-        }}
-        className={`flex h-10 w-11 items-center justify-center rounded-lg text-lg transition ${
-          activeViewerTool === action
-            ? "bg-sky-500 text-white"
-            : "text-neutral-200 hover:bg-sky-500/20"
-        }`}
-      >
-        {icon}
-      </button>
-    ))}
+      ["3D", t.viewIso, "iso"],
+      ["FR", t.viewFront, "front"],
+      ["SX", t.viewLeft, "left"],
+      ["DX", t.viewRight, "right"],
+      ["TOP", t.viewTop, "top"],
+      ["⌁", t.toolFocus, "focus"],
+      ["↻", t.toolReset, "reset"],
+      ["◎", t.toolScreenshot, "shot"],
+      ["↗", t.toolFullscreen, "fullscreen"],
+    ].map(([label, title, action]: any, index) => {
+      const isViewAction = ["iso", "front", "left", "right", "top"].includes(action);
+      const isActiveView = isViewAction && activeViewId === action;
+
+      return (
+        <button
+          key={`${label}-${index}`}
+          type="button"
+          title={title}
+          onClick={() => {
+            if (action === "reset") {
+              setActiveView("iso");
+              window.dispatchEvent(new Event("bagastudio:reset-camera"));
+            } else if (action === "focus") {
+              window.dispatchEvent(new Event("bagastudio:focus-selection"));
+            } else if (action === "shot") {
+              window.dispatchEvent(new Event("bagastudio:screenshot"));
+            } else if (action === "fullscreen") {
+              requestViewerFullscreen();
+            } else if (action) {
+              setActiveView(action);
+            }
+          }}
+          className={`flex h-9 min-w-11 items-center justify-center rounded-xl px-2 text-[11px] font-black uppercase tracking-[0.08em] transition ${
+            isActiveView
+              ? "bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
+              : "text-neutral-200 hover:bg-sky-500/20 hover:text-white"
+          }`}
+        >
+          {label}
+        </button>
+      );
+    })}
   </div>
 
   {runtimeProduct ? (
@@ -2010,44 +1932,93 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.projectSummary}</h2>
-              <span className="text-neutral-400">⌃</span>
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          {/* bagastudio-sidebar-components-right-final-v1 */}
+          <section className="max-h-[300px] shrink-0 overflow-hidden rounded-2xl border border-cyan-400/15 bg-white/[0.03] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
+                  Componenti modello
+                </h2>
+                <p className="text-xs font-semibold text-white">
+                  {viewerRuntimeComponents.length} pezzi rilevati
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
+                onClick={() => {
+                  setSelectedPart(null);
+                  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+                }}
+              >
+                Pulisci
+              </button>
             </div>
 
-            <div className="space-y-4 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold text-sky-400">⌂ {runtimeProduct?.name || t.product}</span>
-                <span>€ {Number(runtimeProduct?.pricing?.basePrice ?? displayPricing.total ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>✦ {t.accessories}</span>
-                <span>{t.included}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>◉ {t.materials}</span>
-                <span>{t.configured}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-neutral-300">
-                <span>▤ {t.backup}</span>
-                <span>{autosaveLabel ? `${t.autosave} ${autosaveLabel}` : t.ready}</span>
-              </div>
-            </div>
+            {viewerRuntimeComponents.length > 0 ? (
+              <div className="max-h-[195px] space-y-1 overflow-auto pr-1">
+                {viewerRuntimeComponents.map((component: any) => {
+                  const componentId = component.id || component.partId || component.meshName;
+                  const isSelected =
+                    selectedPartId === component.id ||
+                    selectedPartId === component.partId ||
+                    selectedPartId === component.meshName;
 
-            <div className="mt-5 border-t border-white/10 pt-5">
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-wide text-white">{t.projectTotal}</p>
-                  <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
-                </div>
-                <p className="text-3xl font-black text-sky-400">€ {displayPricing.total.toFixed(2)}</p>
+                  return (
+                    <button
+                      key={`${componentId}-${component.index}`}
+                      ref={(node) => {
+                        if (!componentId) return;
+                        componentRowRefs.current[componentId] = node;
+                        if (component.id) componentRowRefs.current[component.id] = node;
+                        if (component.partId) componentRowRefs.current[component.partId] = node;
+                        if (component.meshName) componentRowRefs.current[component.meshName] = node;
+                      }}
+                      type="button"
+                      className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                        isSelected
+                          ? "border-sky-400 bg-sky-500/20 text-white"
+                          : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
+                      }`}
+                      onClick={() => {
+                        if (!componentId) return;
+
+                        setSelectedPart(componentId);
+                        window.dispatchEvent(
+                          new CustomEvent("bagastudio:viewer-select-component", {
+                            detail: {
+                              ...component,
+                              partId: componentId,
+                            },
+                          })
+                        );
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-semibold">
+                          {component.displayName || component.name || componentId}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-neutral-300">
+                          #{component.index}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-[11px] text-neutral-400">
+                        {component.meshName || component.partId || component.id}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-neutral-400">
+                Nessun componente runtime rilevato.
+              </div>
+            )}
           </section>
 
-          <section className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.objectProperties}</h2>
               <span className="text-neutral-400">⌃</span>
@@ -2060,13 +2031,51 @@ const availableAccessories = useMemo(() => {
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.product}</span><span className="text-right text-white">{viewerRuntimeProduct?.schema ? "Runtime importato" : runtimeProduct?.name || "-"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.dimensions}</span><span className="text-right text-white">{Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × {Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × {Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.view}</span><span className="text-right text-white">{translateViewName({ id: activeViewId }, t)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.led}</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] || 4000}K` : t.off}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.led}</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] ?? 4500}K` : t.off}</span></div>
             </div>
           </section>
 
-          <button onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())} className="w-full rounded-2xl bg-sky-500 px-5 py-5 text-base font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.35)] hover:bg-sky-400">
-            {t.addToQuote}
-          </button>
+          <div className="mt-auto space-y-3">
+            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.projectSummary}</h2>
+                <span className="text-neutral-400">⌃</span>
+              </div>
+
+              <div className="space-y-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-sky-400">⌂ {runtimeProduct?.name || t.product}</span>
+                  <span>€ {Number(runtimeProduct?.pricing?.basePrice ?? displayPricing.total ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-neutral-300">
+                  <span>✦ {t.accessories}</span>
+                  <span>{t.included}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-neutral-300">
+                  <span>◉ {t.materials}</span>
+                  <span>{t.configured}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-neutral-300">
+                  <span>▤ {t.backup}</span>
+                  <span>{autosaveLabel ? `${t.autosave} ${autosaveLabel}` : t.ready}</span>
+                </div>
+              </div>
+
+              <div className="mt-5 border-t border-white/10 pt-5">
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-wide text-white">{t.projectTotal}</p>
+                    <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
+                  </div>
+                  <p className="text-3xl font-black text-sky-400">€ {displayPricing.total.toFixed(2)}</p>
+                </div>
+              </div>
+            </section>
+
+            <button onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())} className="w-full rounded-2xl bg-sky-500 px-5 py-5 text-base font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.35)] hover:bg-sky-400">
+              {t.addToQuote}
+            </button>
+          </div>
         </aside>
     </div>
   </div>

@@ -2566,6 +2566,17 @@ function ProductModel({
 
   const useImportedSafeLed = isImportedModelFormat(runtimeModelFormat);
 
+  const materialRefreshKey = useMemo(
+    () =>
+      JSON.stringify({
+        materials,
+        insertMaterials,
+        inserts,
+        woodDirection,
+      }),
+    [materials, insertMaterials, inserts, woodDirection]
+  );
+
   useEffect(() => {
     let cancelled = false;
     setLoadedRoot(null);
@@ -2711,6 +2722,30 @@ const highlightedRef = useRef<{
   mesh: THREE.Mesh;
   material: THREE.Material | THREE.Material[];
 } | null>(null);
+
+const cloneMaterialForRestore = (material: THREE.Material | THREE.Material[]) => {
+  return Array.isArray(material)
+    ? material.map((mat) => mat.clone())
+    : material.clone();
+};
+
+const restoreHighlightedMesh = () => {
+  if (!highlightedRef.current) return;
+
+  highlightedRef.current.mesh.material = highlightedRef.current.material;
+  highlightedRef.current.mesh.renderOrder = 0;
+
+  const materials = Array.isArray(highlightedRef.current.mesh.material)
+    ? highlightedRef.current.mesh.material
+    : [highlightedRef.current.mesh.material];
+
+  materials.forEach((mat: any) => {
+    if (!mat) return;
+    mat.needsUpdate = true;
+  });
+
+  highlightedRef.current = null;
+};
   const scene = useMemo(() => {
     if (!loadedRoot) return null;
 
@@ -2915,6 +2950,8 @@ const configureTexture = (loadedTexture: THREE.Texture) => {
 };
 
 const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
+  configureTexture(loadedTexture);
+
   const currentMaterial = mesh.material as THREE.MeshStandardMaterial;
 
   if (
@@ -2924,6 +2961,9 @@ const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
     currentMaterial.map = loadedTexture;
     currentMaterial.color.set("#ffffff");
     currentMaterial.needsUpdate = true;
+    mesh.material = currentMaterial;
+    mesh.visible = mesh.visible;
+    mesh.updateMatrixWorld(true);
   }
 };
 
@@ -3016,6 +3056,8 @@ if (texture) {
         }
 
         mesh.material = material;
+        mesh.material.needsUpdate = true;
+        mesh.updateMatrixWorld(true);
         mesh.castShadow = false;
 mesh.receiveShadow = false;
         console.log("INSERT CHECK", {
@@ -3245,6 +3287,7 @@ return clonedScene;
   ledIntensity,
   visibility,
   woodDirection,
+  materialRefreshKey,
 ]);
 
 const importedModelDisplayScale = useMemo(
@@ -3324,10 +3367,7 @@ if (position === "top") {
   useEffect(() => {
     if (!scene) return;
 
-    if (highlightedRef.current) {
-      highlightedRef.current.mesh.material = highlightedRef.current.material;
-      highlightedRef.current = null;
-    }
+    restoreHighlightedMesh();
 
     if (!selectedPartId) return;
 
@@ -3356,20 +3396,30 @@ const mesh = targetMesh as THREE.Mesh;
 
    highlightedRef.current = {
   mesh,
-  material: mesh.material,
+  material: cloneMaterialForRestore(mesh.material),
 };
 
-mesh.material = new THREE.MeshStandardMaterial({
-  color: "#38bdf8",
-  emissive: "#0ea5e9",
-  emissiveIntensity: 0.22,
-  roughness: 0.35,
-  metalness: 0.05,
-  transparent: true,
-  opacity: 0.92,
-  side: THREE.DoubleSide,
-});
+const applySoftSelectionHighlight = (material: THREE.Material | THREE.Material[]) => {
+  const materials = Array.isArray(material) ? material : [material];
 
+  materials.forEach((mat: any) => {
+    if (!mat) return;
+
+    mat.userData = {
+      ...(mat.userData || {}),
+      bagastudioSoftSelected: true,
+    };
+
+    if ("emissive" in mat && mat.emissive?.set) {
+      mat.emissive.set("#0ea5e9");
+      mat.emissiveIntensity = 0.08;
+    }
+
+    mat.needsUpdate = true;
+  });
+};
+
+applySoftSelectionHighlight(mesh.material);
 mesh.renderOrder = 30;
   }, [scene, selectedPartId]);
 
@@ -3379,11 +3429,7 @@ mesh.renderOrder = 30;
     <Center>
 <group
   onPointerMissed={() => {
-    if (highlightedRef.current) {
-      highlightedRef.current.mesh.material =
-        highlightedRef.current.material;
-      highlightedRef.current = null;
-    }
+    restoreHighlightedMesh();
 
     setSelectedPartId(null);
   }}
@@ -3426,14 +3472,11 @@ const realPartKey = clickedPart?.id || clickedName;
   scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
   (e.object as THREE.Mesh);
 
-      if (highlightedRef.current) {
-        highlightedRef.current.mesh.material =
-          highlightedRef.current.material;
-      }
+      restoreHighlightedMesh();
 
       highlightedRef.current = {
         mesh: clickedMesh,
-        material: clickedMesh.material,
+        material: cloneMaterialForRestore(clickedMesh.material),
       };
 
       setSelectedPartId(realPartKey);
@@ -3695,6 +3738,130 @@ function ViewerRuntimeControls({
   }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
 
   return null;
+}
+
+
+function getRuntimePlaceholderBucket(component: any) {
+  const source = [
+    component?.category,
+    component?.componentCategory,
+    component?.runtimeRole,
+    component?.partId,
+    component?.displayName,
+    component?.name,
+    component?.meshName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (source.includes("top") || source.includes("cielo") || source.includes("piano")) return "TOP";
+  if (source.includes("side") || source.includes("fianco") || source.includes("lato")) return "SIDE";
+  if (source.includes("back") || source.includes("retro") || source.includes("schiena")) return "BACK";
+  if (source.includes("shelf") || source.includes("ripiano") || source.includes("mensola")) return "SHELF";
+  if (source.includes("front") || source.includes("frontale") || source.includes("anta")) return "FRONT";
+  if (source.includes("base") || source.includes("fondo") || source.includes("zoccolo") || source.includes("plinth")) return "BASE";
+  if (source.includes("hardware") || source.includes("ferramenta") || source.includes("cerniera") || source.includes("guida")) return "HARDWARE";
+
+  return "OTHER";
+}
+
+function getRuntimePlaceholderBucketConfig(bucket: string) {
+  const configs: Record<
+    string,
+    {
+      origin: [number, number, number];
+      color: string;
+      width: number;
+      height: number;
+      depth: number;
+    }
+  > = {
+    TOP: {
+      origin: [-520, 115, -420],
+      color: "#38bdf8",
+      width: 70,
+      height: 5,
+      depth: 38,
+    },
+    SIDE: {
+      origin: [-520, 72, -520],
+      color: "#22c55e",
+      width: 8,
+      height: 58,
+      depth: 40,
+    },
+    BACK: {
+      origin: [-520, 48, -620],
+      color: "#f59e0b",
+      width: 72,
+      height: 45,
+      depth: 5,
+    },
+    SHELF: {
+      origin: [-520, 28, -720],
+      color: "#a78bfa",
+      width: 66,
+      height: 4,
+      depth: 32,
+    },
+    FRONT: {
+      origin: [460, 58, -420],
+      color: "#ef4444",
+      width: 62,
+      height: 42,
+      depth: 5,
+    },
+    BASE: {
+      origin: [460, 12, -520],
+      color: "#eab308",
+      width: 68,
+      height: 8,
+      depth: 36,
+    },
+    HARDWARE: {
+      origin: [460, 88, -620],
+      color: "#f97316",
+      width: 14,
+      height: 14,
+      depth: 14,
+    },
+    OTHER: {
+      origin: [460, 32, -720],
+      color: "#94a3b8",
+      width: 42,
+      height: 12,
+      depth: 24,
+    },
+  };
+
+  return configs[bucket] || configs.OTHER;
+}
+
+function buildRuntimePlaceholderGeometry(component: any, index: number, bucketIndex = index) {
+  const bucket = getRuntimePlaceholderBucket(component);
+  const config = getRuntimePlaceholderBucketConfig(bucket);
+
+  const columns = 6;
+  const column = bucketIndex % columns;
+  const row = Math.floor(bucketIndex / columns);
+
+  const spacingX = 82;
+  const spacingY = 18;
+  const spacingZ = 42;
+
+  return {
+    bucket,
+    width: config.width,
+    height: config.height,
+    depth: config.depth,
+    color: config.color,
+    position: [
+      config.origin[0] + column * spacingX,
+      config.origin[1] + row * spacingY,
+      config.origin[2] - row * spacingZ,
+    ] as [number, number, number],
+  };
 }
 
 export default function Viewer3D({
@@ -3979,96 +4146,7 @@ productMaterials?.length
         </div>
       )}
 
-      {viewerRuntimeComponents.length > 0 && (
-        <div className="absolute right-3 top-3 z-20 flex max-h-[72%] w-[320px] flex-col overflow-hidden rounded-2xl border border-sky-500/25 bg-black/75 text-xs text-neutral-100 shadow-2xl backdrop-blur">
-          <div className="border-b border-white/10 px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.18em] text-sky-300">
-                  Componenti modello
-                </div>
-                <div className="text-sm font-semibold text-white">
-                  {viewerRuntimeComponents.length} pezzi rilevati
-                </div>
-              </div>
-              <button
-                type="button"
-                className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
-                onClick={() => {
-                  setRuntimeSelectedPartId(null);
-                  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
-                }}
-              >
-                Pulisci
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-[330px] overflow-auto p-2">
-            {viewerRuntimeComponents.map((component) => {
-              const isSelected =
-                selectedRuntimePartId === component.id ||
-                selectedRuntimePartId === component.meshName;
-
-              return (
-                <button
-                  key={`${component.id}-${component.index}`}
-                  ref={(node) => {
-                    componentRowRefs.current[component.id] = node;
-                    componentRowRefs.current[component.meshName] = node;
-                  }}
-                  type="button"
-                  className={`mb-1 w-full rounded-xl border px-3 py-2 text-left transition ${
-                    isSelected
-                      ? "border-sky-400 bg-sky-500/20 text-white"
-                      : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
-                  }`}
-                  onClick={() => {
-                    setRuntimeSelectedPartId(component.id);
-                    window.dispatchEvent(
-                      new CustomEvent("bagastudio:viewer-component-selected", {
-                        detail: component,
-                      })
-                    );
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium">
-                      {component.displayName || component.id}
-                    </span>
-                    <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-neutral-300">
-                      #{component.index}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate text-[11px] text-neutral-400">
-                    {component.meshName}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {selectedViewerRuntimeComponent && (
-            <div className="border-t border-white/10 bg-white/5 px-3 py-2">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-sky-300">
-                Inspector pezzo
-              </div>
-              <div className="mt-1 font-semibold text-white">
-                {selectedViewerRuntimeComponent.displayName}
-              </div>
-              <div className="mt-1 space-y-0.5 text-[11px] text-neutral-300">
-                <div>Part ID: {selectedViewerRuntimeComponent.id}</div>
-                <div>Mesh: {selectedViewerRuntimeComponent.meshName}</div>
-                <div>
-                  Dimensioni: {selectedViewerRuntimeComponent.bounds.width} ×{" "}
-                  {selectedViewerRuntimeComponent.bounds.height} ×{" "}
-                  {selectedViewerRuntimeComponent.bounds.depth}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
 
       <Canvas
         shadows
@@ -4079,6 +4157,8 @@ productMaterials?.length
           powerPreference: "high-performance",
           preserveDrawingBuffer: true,
         }}
+        onContextMenu={(event) => event.preventDefault()}
+        style={{ touchAction: "none" }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 0.9;
@@ -4131,23 +4211,89 @@ productMaterials?.length
   woodDirection={woodDirection}
 />
 
-        <OrbitControls
-          makeDefault
-          enableRotate={viewerMode === "orbit"}
-          enablePan={viewerMode === "pan"}
-          enableZoom={true}
-          mouseButtons={{
-            LEFT:
-              viewerMode === "pan"
-                ? THREE.MOUSE.PAN
-                : viewerMode === "orbit"
-                ? THREE.MOUSE.ROTATE
-                : undefined,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.PAN,
-          }}
-        />
-      </Canvas>
+      <OrbitControls
+  makeDefault
+  enableRotate={true}
+  enablePan={true}
+  enableZoom={true}
+  enableDamping={true}
+  dampingFactor={0.08}
+  mouseButtons={{
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  }}
+/>
+      
+      {/* Runtime Placeholder Geometry V2 */}
+      {(() => {
+        if (!Array.isArray(viewerRuntimeComponents)) return null;
+
+        const runtimePlaceholders = viewerRuntimeComponents.filter(
+          (component: any) =>
+            component?.componentType === "reconstructed-placeholder" ||
+            component?.isRuntimeOnly
+        );
+
+        const bucketCounters: Record<string, number> = {};
+
+        return runtimePlaceholders.map((component: any, index: number) => {
+          const bucket = getRuntimePlaceholderBucket(component);
+          const bucketIndex = bucketCounters[bucket] || 0;
+          bucketCounters[bucket] = bucketIndex + 1;
+
+          const geometryData = buildRuntimePlaceholderGeometry(
+            component,
+            index,
+            bucketIndex
+          );
+
+          return (
+            <group
+              key={`runtime-placeholder-v2-${component.partId || index}`}
+              userData={{
+                bagastudioPlaceholder: true,
+                runtimeOnly: true,
+                component,
+                partId: component?.partId,
+                category: component?.category,
+                bucket: geometryData.bucket,
+                runtimeMetadata: component?.runtimeMetadata,
+              }}
+            >
+              <mesh
+                position={geometryData.position}
+                userData={{
+                  bagastudioPlaceholder: true,
+                  runtimeOnly: true,
+                  component,
+                  partId: component?.partId,
+                  category: component?.category,
+                  bucket: geometryData.bucket,
+                  runtimeMetadata: component?.runtimeMetadata,
+                }}
+              >
+                <boxGeometry
+                  args={[
+                    geometryData.width,
+                    geometryData.height,
+                    geometryData.depth,
+                  ]}
+                />
+                <meshStandardMaterial
+                  color={geometryData.color}
+                  transparent
+                  opacity={0.42}
+                  emissive={geometryData.color}
+                  emissiveIntensity={0.18}
+                />
+              </mesh>
+            </group>
+          );
+        });
+      })()}
+
+</Canvas>
     </div>
   );
 }
