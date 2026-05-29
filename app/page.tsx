@@ -934,6 +934,35 @@ const availableAccessories = useMemo(() => {
     try {
       const text = await file.text();
       const rawProduct = JSON.parse(text);
+
+      const isProductPackage =
+        rawProduct?.schema === "bagastudio-product-package" ||
+        rawProduct?.productPackageVersion === 2;
+
+      if (isProductPackage) {
+        const packageLoader = (window as any).bagastudioLoadProductPackageJson;
+
+        if (typeof packageLoader === "function") {
+          const result = packageLoader(rawProduct);
+
+          if (result?.productPackage) {
+            setImporterUiState((current: any) => ({
+              ...(current || {}),
+              productPackage: result.productPackage,
+              componentCount: result.componentCount || result.components?.length || 0,
+            }));
+          }
+
+          setImportName(file.name);
+          console.info("BagaStudio Product Package V2 imported");
+          return;
+        }
+
+        console.error("bagastudioLoadProductPackageJson not available");
+        alert("Viewer runtime loader non disponibile.");
+        return;
+      }
+
       const nextProduct = normalizeProduct(rawProduct);
 
       setRuntimeProduct(nextProduct);

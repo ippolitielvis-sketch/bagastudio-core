@@ -4012,7 +4012,44 @@ productMaterials?.length
       return payload;
     };
 
-    (window as any).bagastudioGetRuntimeImportedModel = () => runtimeImportedModelRef.current;
+    
+    (window as any).bagastudioLoadProductPackageJson = (productPackage: any) => {
+      try {
+        const components = Array.isArray(productPackage?.components)
+          ? productPackage.components
+          : [];
+
+        (window as any).__bagastudioProductPackage = productPackage;
+        (window as any).__bagastudioViewerRuntimeComponents = components;
+        (window as any).__bagastudioViewerRuntimeMergeReport = {
+          runtimeComponentCount: components.length,
+          source: "product-package"
+        };
+
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:runtime-components-merged", {
+            detail: {
+              productPackage,
+              components,
+              mergeReport: {
+                runtimeComponentCount: components.length,
+              },
+            },
+          })
+        );
+
+        return {
+          productPackage,
+          components,
+          componentCount: components.length,
+        };
+      } catch (error) {
+        console.error("Product package load error", error);
+        return null;
+      }
+    };
+
+(window as any).bagastudioGetRuntimeImportedModel = () => runtimeImportedModelRef.current;
     (window as any).bagastudioClearRuntimeImportedModel = () => {
       const previous = runtimeImportedModelRef.current;
       if (previous?.url && previous.url.startsWith("blob:")) {
