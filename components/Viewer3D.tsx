@@ -192,6 +192,70 @@ function forcePreviewMaterials(root: THREE.Object3D, format?: string | null) {
 }
 
 
+function buildBagastudioColladaRuntimeRoot(colladaScene: THREE.Object3D) {
+  colladaScene.visible = true;
+  colladaScene.updateMatrixWorld(true);
+
+  const daeGroup = new THREE.Group();
+  daeGroup.name = colladaScene.name || "Imported_DAE";
+  daeGroup.userData = {
+    ...colladaScene.userData,
+    bagastudioImportedFormat: "dae",
+    bagastudioSourceType: "collada",
+    bagastudioTransformMode: "world-matrix-baked",
+  };
+
+  const bakedMeshes: THREE.Mesh[] = [];
+
+  colladaScene.traverse((child) => {
+    const sourceMesh = child as THREE.Mesh;
+    if (!sourceMesh.isMesh || !sourceMesh.geometry) return;
+
+    sourceMesh.updateMatrixWorld(true);
+
+    const bakedGeometry = sourceMesh.geometry.clone();
+    bakedGeometry.applyMatrix4(sourceMesh.matrixWorld);
+    bakedGeometry.computeBoundingBox();
+    bakedGeometry.computeBoundingSphere();
+
+    if (!bakedGeometry.attributes.normal) {
+      bakedGeometry.computeVertexNormals();
+    }
+
+    const bakedMaterial = Array.isArray(sourceMesh.material)
+      ? sourceMesh.material.map((mat) => mat.clone())
+      : sourceMesh.material?.clone?.() || createBagastudioNeutralImportMaterial();
+
+    const bakedMesh = new THREE.Mesh(bakedGeometry, bakedMaterial);
+    bakedMesh.name = sourceMesh.name || sourceMesh.parent?.name || `dae_part_${sourceMesh.id}`;
+    bakedMesh.visible = true;
+    bakedMesh.castShadow = true;
+    bakedMesh.receiveShadow = true;
+    bakedMesh.frustumCulled = false;
+    bakedMesh.userData = {
+      ...sourceMesh.userData,
+      bagastudioImportedFormat: "dae",
+      bagastudioSelectable: true,
+      bagastudioRuntimeComponent: true,
+      bagastudioOriginalName: sourceMesh.name || "",
+      bagastudioParentName: sourceMesh.parent?.name || "",
+    };
+
+    bakedMesh.position.set(0, 0, 0);
+    bakedMesh.rotation.set(0, 0, 0);
+    bakedMesh.scale.set(1, 1, 1);
+    bakedMesh.updateMatrixWorld(true);
+
+    bakedMeshes.push(bakedMesh);
+  });
+
+  bakedMeshes.forEach((mesh) => daeGroup.add(mesh));
+  daeGroup.updateMatrixWorld(true);
+
+  return daeGroup;
+}
+
+
 function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?: string | null) {
   if (!root) return 0.01;
 
@@ -2640,25 +2704,7 @@ function ProductModel({
               return;
             }
 
-            daeScene.visible = true;
-            daeScene.updateMatrixWorld(true);
-
-            const daeGroup = new THREE.Group();
-            daeGroup.name = daeScene.name || "Imported_DAE";
-            daeGroup.position.copy(daeScene.position);
-            daeGroup.rotation.copy(daeScene.rotation);
-            daeGroup.scale.copy(daeScene.scale);
-            daeGroup.userData = {
-              ...daeScene.userData,
-              bagastudioImportedFormat: "dae",
-              bagastudioSourceType: "collada",
-            };
-
-            const daeChildren = [...daeScene.children];
-            daeChildren.forEach((child) => {
-              child.visible = true;
-              daeGroup.add(child);
-            });
+            const daeGroup = buildBagastudioColladaRuntimeRoot(daeScene);
 
             prepareBagastudioImportedObject(daeGroup, "dae");
 

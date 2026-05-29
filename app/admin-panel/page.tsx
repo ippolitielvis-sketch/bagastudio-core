@@ -10,6 +10,9 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
+import { resolveDaeHierarchy } from "@/lib/importer/daeHierarchyResolver";
+import { buildImporterReport } from "@/lib/importer/importerReportBuilder";
+import { convertDaeToRuntimeGlb } from "@/lib/importer/runtimeGlbConverter";
 
 type MeshConfig = {
   meshName: string;
@@ -800,6 +803,34 @@ function AdminGLBModel({
         const maxDim = Math.max(size.x, size.y, size.z);
         const scale = Number.isFinite(maxDim) && maxDim > 0 ? 3 / maxDim : 1;
 
+        if (meshIndex > 0 && !box.isEmpty()) {
+          const debugBoxGeometry = new THREE.BoxGeometry(size.x || 0.01, size.y || 0.01, size.z || 0.01);
+          const debugBoxMaterial = new THREE.MeshBasicMaterial({
+            color: "#00e5ff",
+            wireframe: true,
+            transparent: true,
+            opacity: 0.75,
+          });
+          const debugBox = new THREE.Mesh(debugBoxGeometry, debugBoxMaterial);
+          debugBox.name = "BagaStudio_Runtime_GLB_Debug_Bounds";
+          debugBox.position.copy(center);
+          debugBox.userData.bagastudioDebugBounds = true;
+          previewGroup.add(debugBox);
+
+          const centerMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(Math.max(maxDim * 0.015, 0.01), 12, 12),
+            new THREE.MeshBasicMaterial({ color: "#ff3b30" })
+          );
+          centerMarker.name = "BagaStudio_Runtime_GLB_Debug_Center";
+          centerMarker.position.copy(center);
+          centerMarker.userData.bagastudioDebugBounds = true;
+          previewGroup.add(centerMarker);
+        }
+
+        if (meshIndex === 0) {
+          console.warn("BagaStudio Admin GLB preview loaded without visible meshes", { url });
+        }
+
         // Admin preview alignment: center X/Z and place the model bottom on the grid (Y=0).
         // This avoids imported FBX/OBJ/GLB models floating above or sinking below the grid
         // when their original pivot/origin comes from external 3D software.
@@ -1224,7 +1255,15 @@ function AdminModelRouter({
   onSelectMesh: (meshName: string) => void;
   modelRotationY: number;
 }) {
-  const ext = fileName.split(".").pop()?.toLowerCase();
+  const runtimeGlbObjectUrl =
+    typeof window !== "undefined"
+      ? (window as any)?.bagastudioLastRuntimeGlb?.objectUrl
+      : null;
+
+  const ext =
+    runtimeGlbObjectUrl && runtimeGlbObjectUrl === url
+      ? "glb"
+      : fileName.split(".").pop()?.toLowerCase();
 
  if (ext === "glb" || ext === "gltf") {
   return (
@@ -1485,8 +1524,15 @@ const [geometryCompletionReport, setGeometryCompletionReport] = useState<Geometr
 const autosaveHydratedRef = useRef(false);
 const meshCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 const meshInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+const suppressNextMeshAutoScrollRef = useRef(false);
+
 useEffect(() => {
   if (!selectedMeshName) return;
+
+  if (suppressNextMeshAutoScrollRef.current) {
+    suppressNextMeshAutoScrollRef.current = false;
+    return;
+  }
 
   meshCardRefs.current[selectedMeshName]?.scrollIntoView({
     behavior: "smooth",
@@ -2214,6 +2260,7 @@ async function handleSpace3DImport(file?: File | null) {
 
     if (mappedMeshes.length > 0) {
       setMeshList(mappedMeshes);
+      suppressNextMeshAutoScrollRef.current = true;
       setSelectedMeshName(mappedMeshes[0]?.meshName || "");
     }
 
@@ -2424,6 +2471,7 @@ async function handleAdminModelImport(file?: File | null) {
       setImporterDiagnostic(buildAdminImporterDiagnostic(file.name, ext, normalizedMeshes, warnings));
 
       if (normalizedMeshes[0]?.meshName) {
+        suppressNextMeshAutoScrollRef.current = true;
         setSelectedMeshName(normalizedMeshes[0].meshName);
       }
     };
@@ -2485,6 +2533,82 @@ async function handleAdminModelImport(file?: File | null) {
     }
 
     if (ext === "dae") {
+      let daeHierarchyWarnings: string[] = [];
+
+      try {
+        const daeText = await file.text();
+        const daeHierarchyReport = resolveDaeHierarchy(daeText);
+        const importerReport = buildImporterReport({
+          fileName: file.name,
+          sourceFormat: daeHierarchyReport.sourceFormat,
+          nodeCount: daeHierarchyReport.nodeCount,
+          instanceNodeCount: daeHierarchyReport.instanceNodeCount,
+          geometryCount: daeHierarchyReport.geometryCount,
+          warnings: daeHierarchyReport.warnings,
+        });
+
+        daeHierarchyWarnings = [
+          ...daeHierarchyReport.warnings,
+          `Importer Report: ${importerReport.status}`,
+          `DAE nodes: ${importerReport.statistics.nodes}`,
+          `DAE instance nodes: ${importerReport.statistics.instanceNodes}`,
+          `DAE geometries: ${importerReport.statistics.geometries}`,
+        ];
+
+        console.log("BagaStudio DAE Hierarchy Report:", daeHierarchyReport);
+        console.log("BagaStudio Importer Report:", importerReport);
+
+        try {
+          const runtimeGlb = await convertDaeToRuntimeGlb({
+            daeText,
+            fileName: file.name,
+            bakeTransforms: true,
+            centerModel: true,
+            normalizeScale: false,
+          });
+
+          const runtimeGlbObjectUrl = URL.createObjectURL(runtimeGlb.glbBlob);
+
+          (window as any).bagastudioLastRuntimeGlb = {
+            ...runtimeGlb,
+            objectUrl: runtimeGlbObjectUrl,
+            sourceFileName: file.name,
+          };
+
+          setModelFileName(runtimeGlb.fileName);
+          setModelPreviewUrl(runtimeGlbObjectUrl);
+
+          daeHierarchyWarnings.push(
+            `Runtime GLB ready: ${runtimeGlb.fileName}`,
+            `Runtime GLB meshes: ${runtimeGlb.meshCount}`,
+            `Runtime GLB objects: ${runtimeGlb.objectCount}`
+          );
+
+          console.log("BagaStudio Runtime GLB V1:", {
+            fileName: runtimeGlb.fileName,
+            objectCount: runtimeGlb.objectCount,
+            meshCount: runtimeGlb.meshCount,
+            objectUrl: runtimeGlbObjectUrl,
+            warnings: runtimeGlb.warnings,
+          });
+        } catch (runtimeGlbError) {
+          const message =
+            runtimeGlbError instanceof Error
+              ? runtimeGlbError.message
+              : "errore sconosciuto conversione GLB runtime.";
+
+          daeHierarchyWarnings.push(`Runtime GLB V1 skipped: ${message}`);
+          console.warn("BagaStudio Runtime GLB V1 skipped:", runtimeGlbError);
+        }
+      } catch (error) {
+        console.warn("BagaStudio DAE Hierarchy Report skipped:", error);
+        daeHierarchyWarnings = [
+          error instanceof Error
+            ? `DAE hierarchy analyzer: ${error.message}`
+            : "DAE hierarchy analyzer: errore sconosciuto durante analisi.",
+        ];
+      }
+
       new ColladaLoader().load(
         url,
         (collada) => {
@@ -2493,7 +2617,7 @@ async function handleAdminModelImport(file?: File | null) {
             applyError(new Error("DAE scene not found"));
             return;
           }
-          applyMeshes(extractMeshesFromObject(daeScene));
+          applyMeshes(extractMeshesFromObject(daeScene), daeHierarchyWarnings);
         },
         undefined,
         applyError
