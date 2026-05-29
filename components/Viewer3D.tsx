@@ -4026,6 +4026,26 @@ productMaterials?.length
           source: "product-package"
         };
 
+        const modelUrl =
+          productPackage?.assets?.convertedModelUrl ||
+          productPackage?.assets?.embeddedModelDataUrl ||
+          productPackage?.assets?.modelUrl;
+
+        if (modelUrl) {
+          applyRuntimeModel({
+            url: modelUrl,
+            format:
+              productPackage?.assets?.conversionTargetFormat ||
+              productPackage?.assets?.originalFormat ||
+              "dae",
+            name:
+              productPackage?.assets?.sourceFileName ||
+              productPackage?.name ||
+              "Product Package Model",
+            importedAt: new Date().toISOString(),
+          });
+        }
+
         window.dispatchEvent(
           new CustomEvent("bagastudio:runtime-components-merged", {
             detail: {
@@ -4042,6 +4062,7 @@ productMaterials?.length
           productPackage,
           components,
           componentCount: components.length,
+          modelLoaded: Boolean(modelUrl),
         };
       } catch (error) {
         console.error("Product package load error", error);
