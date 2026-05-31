@@ -1142,6 +1142,25 @@ function incrementInspectorCounterV1(counter: Record<string, number>, label: unk
   counter[key] = (counter[key] || 0) + 1;
 }
 
+function readThicknessFromCsvRegenerationBridgeV1(
+  displayName: string,
+  csvReport?: CsvRegenerationV1Report
+): number | null {
+  if (!csvReport?.rows?.length) return null;
+
+  const targetKey = normalizeCsvRegenerationKey(displayName);
+  const exactRow = csvReport.rows.find((row) => normalizeCsvRegenerationKey(row.name) === targetKey);
+  const looseRow = exactRow || csvReport.rows.find((row) => {
+    const rowKey = normalizeCsvRegenerationKey(row.name);
+    return Boolean(rowKey && targetKey && (rowKey.includes(targetKey) || targetKey.includes(rowKey)));
+  });
+
+  return readCollisionNumberV1(
+    looseRow?.regeneratedThickness,
+    looseRow?.originalThickness
+  );
+}
+
 function buildManufacturingDataInspectorV1Report(meshes: MeshConfig[]): ManufacturingDataInspectorV1Report {
   const hardwareCounter: Record<string, number> = {};
   const drillingCounter: Record<string, number> = {};
@@ -4008,12 +4027,727 @@ function downloadDrillingInspectorV1Report() {
 }
 
 
+
+type HardwareCollisionV23Issue = {
+  componentId: string;
+  displayName: string;
+  firstIndex: number;
+  secondIndex: number;
+  status: "warning" | "error";
+  code: string;
+  message: string;
+  distance: number;
+  safeDistance: number;
+};
+
+type HardwareCollisionV23Report = {
+  schema: "bagastudio-hardware-analyzer-v2-3-collision-check";
+  version: 23;
+  generatedAt: string;
+  collisionStatus: "COLLISION_READY" | "COLLISION_WARNING" | "COLLISION_BLOCKED";
+  totals: {
+    components: number;
+    drillings: number;
+    checkedPairs: number;
+    warnings: number;
+    errors: number;
+  };
+  issues: HardwareCollisionV23Issue[];
+};
+
+function buildHardwareCollisionV23Report(meshes: MeshConfig[]): HardwareCollisionV23Report {
+  const issues: HardwareCollisionV23Issue[] = [];
+  let drillings = 0;
+  let checkedPairs = 0;
+
+  meshes.forEach((mesh, meshIndex) => {
+    const componentId = buildStablePartId(mesh, meshIndex);
+    const displayName = mesh.displayName || mesh.meshName || `Componente ${meshIndex + 1}`;
+    const drillingItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    ).map((item, drillingIndex) => ({
+      drillingIndex,
+      x: readCollisionNumberV1(item?.x, item?.X),
+      y: readCollisionNumberV1(item?.y, item?.Y),
+      diameter: readCollisionNumberV1(item?.diameter, item?.dia, item?.DIA),
+    })).filter((item) => item.x !== null && item.y !== null);
+
+    drillings += drillingItems.length;
+
+    for (let firstIndex = 0; firstIndex < drillingItems.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < drillingItems.length; secondIndex += 1) {
+        const first = drillingItems[firstIndex];
+        const second = drillingItems[secondIndex];
+        const dx = Number(first.x) - Number(second.x);
+        const dy = Number(first.y) - Number(second.y);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const firstRadius = (first.diameter || 0) / 2;
+        const secondRadius = (second.diameter || 0) / 2;
+        const collisionDistance = firstRadius + secondRadius;
+        const warningDistance = Math.max(collisionDistance + 3, Math.max(first.diameter || 0, second.diameter || 0));
+
+        checkedPairs += 1;
+
+        if (distance <= 0.01) {
+          issues.push({
+            componentId,
+            displayName,
+            firstIndex: first.drillingIndex,
+            secondIndex: second.drillingIndex,
+            status: "error",
+            code: "DUPLICATE_DRILLING",
+            message: "Fori duplicati o sovrapposti sulle stesse coordinate.",
+            distance: Number(distance.toFixed(3)),
+            safeDistance: Number(collisionDistance.toFixed(3)),
+          });
+          continue;
+        }
+
+        if (distance < collisionDistance) {
+          issues.push({
+            componentId,
+            displayName,
+            firstIndex: first.drillingIndex,
+            secondIndex: second.drillingIndex,
+            status: "error",
+            code: "DRILLING_COLLISION",
+            message: "Collisione geometrica tra due forature.",
+            distance: Number(distance.toFixed(3)),
+            safeDistance: Number(collisionDistance.toFixed(3)),
+          });
+          continue;
+        }
+
+        if (distance < warningDistance) {
+          issues.push({
+            componentId,
+            displayName,
+            firstIndex: first.drillingIndex,
+            secondIndex: second.drillingIndex,
+            status: "warning",
+            code: "DRILLING_DISTANCE_WARNING",
+            message: "Distanza ridotta tra due forature: controllare compatibilità ferramenta.",
+            distance: Number(distance.toFixed(3)),
+            safeDistance: Number(warningDistance.toFixed(3)),
+          });
+        }
+      }
+    }
+  });
+
+  const errors = issues.filter((issue) => issue.status === "error").length;
+  const warnings = issues.filter((issue) => issue.status === "warning").length;
+  const collisionStatus =
+    errors > 0 ? "COLLISION_BLOCKED" : warnings > 0 ? "COLLISION_WARNING" : "COLLISION_READY";
+
+  return {
+    schema: "bagastudio-hardware-analyzer-v2-3-collision-check",
+    version: 23,
+    generatedAt: new Date().toISOString(),
+    collisionStatus,
+    totals: {
+      components: meshes.length,
+      drillings,
+      checkedPairs,
+      warnings,
+      errors,
+    },
+    issues,
+  };
+}
+
+
 const drillingValidationV22Report = useMemo(() => {
   return buildDrillingValidationV22Report(meshList);
 }, [meshList]);
 
 function downloadDrillingValidationV22Report() {
   downloadJsonFile(`bagastudio-drilling-validation-v2-2-${Date.now()}.json`, drillingValidationV22Report);
+}
+
+
+
+type HardwarePatternRecognitionV1Type = "hinge" | "minifix" | "shelfPin" | "unknown";
+
+type HardwarePatternRecognitionV1Item = {
+  componentId: string;
+  displayName: string;
+  patternType: HardwarePatternRecognitionV1Type;
+  label: string;
+  confidence: number;
+  drillingIndexes: number[];
+  reason: string;
+};
+
+type HardwarePatternRecognitionV1Report = {
+  schema: "bagastudio-hardware-pattern-recognition-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    components: number;
+    patterns: number;
+    hinges: number;
+    minifix: number;
+    shelfPins: number;
+    unknown: number;
+  };
+  items: HardwarePatternRecognitionV1Item[];
+};
+
+function buildHardwarePatternRecognitionV1Report(meshes: MeshConfig[]): HardwarePatternRecognitionV1Report {
+  const items: HardwarePatternRecognitionV1Item[] = [];
+
+  meshes.forEach((mesh, meshIndex) => {
+    const componentId = buildStablePartId(mesh, meshIndex);
+    const displayName = mesh.displayName || mesh.meshName || `Componente ${meshIndex + 1}`;
+    const drillingItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    ).map((item, drillingIndex) => ({
+      drillingIndex,
+      x: readCollisionNumberV1(item?.x, item?.X),
+      y: readCollisionNumberV1(item?.y, item?.Y),
+      diameter: readCollisionNumberV1(item?.diameter, item?.dia, item?.DIA),
+      depth: readCollisionNumberV1(item?.depth, item?.dp, item?.DP, item?.drillingDepth),
+    })).filter((item) => item.x !== null && item.y !== null && item.diameter !== null);
+
+    const usedIndexes = new Set<number>();
+
+    drillingItems.filter((item) => Number(item.diameter) === 35).forEach((mainHole) => {
+      const nearSmallHoles = drillingItems.filter((item) => {
+        if (item.drillingIndex === mainHole.drillingIndex || usedIndexes.has(item.drillingIndex)) return false;
+        if (![5, 8, 10].includes(Number(item.diameter))) return false;
+        const distance = Math.sqrt(Math.pow(Number(item.x) - Number(mainHole.x), 2) + Math.pow(Number(item.y) - Number(mainHole.y), 2));
+        return distance >= 15 && distance <= 60;
+      });
+
+      if (nearSmallHoles.length >= 1) {
+        const drillingIndexes = [mainHole.drillingIndex, ...nearSmallHoles.slice(0, 2).map((item) => item.drillingIndex)];
+        drillingIndexes.forEach((index) => usedIndexes.add(index));
+        items.push({
+          componentId,
+          displayName,
+          patternType: "hinge",
+          label: "Cerniera",
+          confidence: nearSmallHoles.length >= 2 ? 90 : 78,
+          drillingIndexes,
+          reason: "Foro Ø35 con fori ausiliari vicini: probabile cerniera.",
+        });
+      }
+    });
+
+    drillingItems.filter((item) => Number(item.diameter) === 15 && !usedIndexes.has(item.drillingIndex)).forEach((mainHole) => {
+      const linkedHole = drillingItems.find((item) => {
+        if (item.drillingIndex === mainHole.drillingIndex || usedIndexes.has(item.drillingIndex)) return false;
+        if (![8, 10].includes(Number(item.diameter))) return false;
+        const distance = Math.sqrt(Math.pow(Number(item.x) - Number(mainHole.x), 2) + Math.pow(Number(item.y) - Number(mainHole.y), 2));
+        return distance >= 20 && distance <= 45;
+      });
+
+      if (linkedHole) {
+        const drillingIndexes = [mainHole.drillingIndex, linkedHole.drillingIndex];
+        drillingIndexes.forEach((index) => usedIndexes.add(index));
+        items.push({
+          componentId,
+          displayName,
+          patternType: "minifix",
+          label: "Minifix / giunzione",
+          confidence: 82,
+          drillingIndexes,
+          reason: "Foro Ø15 con foro collegato vicino: probabile minifix o giunzione pannello.",
+        });
+      }
+    });
+
+    const diameter5 = drillingItems.filter((item) => Number(item.diameter) === 5 && !usedIndexes.has(item.drillingIndex));
+    for (let firstIndex = 0; firstIndex < diameter5.length; firstIndex += 1) {
+      const first = diameter5[firstIndex];
+      if (usedIndexes.has(first.drillingIndex)) continue;
+
+      const aligned = diameter5.filter((item) => {
+        if (item.drillingIndex === first.drillingIndex || usedIndexes.has(item.drillingIndex)) return false;
+        const sameX = Math.abs(Number(item.x) - Number(first.x)) <= 1.5;
+        const sameY = Math.abs(Number(item.y) - Number(first.y)) <= 1.5;
+        const distance = Math.sqrt(Math.pow(Number(item.x) - Number(first.x), 2) + Math.pow(Number(item.y) - Number(first.y), 2));
+        return (sameX || sameY) && distance >= 16 && distance <= 96;
+      });
+
+      if (aligned.length >= 1) {
+        const drillingIndexes = [first.drillingIndex, ...aligned.slice(0, 3).map((item) => item.drillingIndex)];
+        drillingIndexes.forEach((index) => usedIndexes.add(index));
+        items.push({
+          componentId,
+          displayName,
+          patternType: "shelfPin",
+          label: "Reggipiano / foro serie",
+          confidence: aligned.length >= 2 ? 86 : 72,
+          drillingIndexes,
+          reason: "Fori Ø5 allineati: probabile reggipiano o serie tecnica.",
+        });
+      }
+    }
+
+    const remaining = drillingItems.filter((item) => !usedIndexes.has(item.drillingIndex));
+    if (remaining.length > 0) {
+      items.push({
+        componentId,
+        displayName,
+        patternType: "unknown",
+        label: "Forature non classificate",
+        confidence: 0,
+        drillingIndexes: remaining.map((item) => item.drillingIndex),
+        reason: "Forature presenti ma non riconosciute da Hardware Pattern Recognition V1.",
+      });
+    }
+  });
+
+  return {
+    schema: "bagastudio-hardware-pattern-recognition-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      components: meshes.length,
+      patterns: items.filter((item) => item.patternType !== "unknown").length,
+      hinges: items.filter((item) => item.patternType === "hinge").length,
+      minifix: items.filter((item) => item.patternType === "minifix").length,
+      shelfPins: items.filter((item) => item.patternType === "shelfPin").length,
+      unknown: items.filter((item) => item.patternType === "unknown").length,
+    },
+    items,
+  };
+}
+
+
+const hardwareCollisionV23Report = useMemo(() => {
+  return buildHardwareCollisionV23Report(meshList);
+}, [meshList]);
+
+function downloadHardwareCollisionV23Report() {
+  downloadJsonFile(`bagastudio-hardware-collision-v2-3-${Date.now()}.json`, hardwareCollisionV23Report);
+}
+
+
+
+type HardwareCompatibilityV1Status = "compatible" | "warning" | "incompatible" | "unknown";
+
+type HardwareCompatibilityV1Item = {
+  componentId: string;
+  displayName: string;
+  hardwareLabel: string;
+  patternType: HardwarePatternRecognitionV1Type;
+  status: HardwareCompatibilityV1Status;
+  currentThickness: number | null;
+  trustedProfile: string | null;
+  note: string;
+};
+
+type HardwareCompatibilityMatrixV1Report = {
+  schema: "bagastudio-hardware-compatibility-matrix-v1";
+  version: 1;
+  generatedAt: string;
+  trustedProfiles: string[];
+  totals: {
+    components: number;
+    items: number;
+    compatible: number;
+    warning: number;
+    incompatible: number;
+    unknown: number;
+  };
+  items: HardwareCompatibilityV1Item[];
+};
+
+const TRUSTED_HARDWARE_PROFILES_V1 = [
+  "Ferramenta_17.8",
+  "Ferramenta_18.3",
+  "Cabineo_Singolo",
+  "divario_elvis",
+];
+
+function chooseTrustedHardwareProfileV1(pattern: HardwarePatternRecognitionV1Item, thickness: number | null): string | null {
+  if (pattern.patternType === "hinge") return "Ferramenta_18.3";
+  if (pattern.patternType === "shelfPin") return thickness !== null && thickness <= 18 ? "Ferramenta_17.8" : "Ferramenta_18.3";
+  if (pattern.patternType === "minifix") return "Cabineo_Singolo";
+  return null;
+}
+
+function buildHardwareCompatibilityMatrixV1Report(
+  patternReport: HardwarePatternRecognitionV1Report,
+  meshes: MeshConfig[]
+): HardwareCompatibilityMatrixV1Report {
+  const meshByComponentId = new Map<string, MeshConfig>();
+  meshes.forEach((mesh, index) => {
+    meshByComponentId.set(buildStablePartId(mesh, index), mesh);
+  });
+
+  const items: HardwareCompatibilityV1Item[] = patternReport.items.map((pattern) => {
+    const mesh = meshByComponentId.get(pattern.componentId);
+    const thickness = mesh ? readCollisionDimensionsV1(mesh).panelThickness : null;
+    const trustedProfile = chooseTrustedHardwareProfileV1(pattern, thickness);
+
+    if (pattern.patternType === "unknown") {
+      return {
+        componentId: pattern.componentId,
+        displayName: pattern.displayName,
+        hardwareLabel: pattern.label,
+        patternType: pattern.patternType,
+        status: "unknown",
+        currentThickness: thickness,
+        trustedProfile,
+        note: "Pattern non classificato: servirà Knowledge Base V1.1/V2 o profilo custom.",
+      };
+    }
+
+    if (thickness === null) {
+      return {
+        componentId: pattern.componentId,
+        displayName: pattern.displayName,
+        hardwareLabel: pattern.label,
+        patternType: pattern.patternType,
+        status: "warning",
+        currentThickness: null,
+        trustedProfile,
+        note: "Spessore componente non disponibile: compatibilità da confermare.",
+      };
+    }
+
+    if (trustedProfile === "Cabineo_Singolo") {
+      const compatible = thickness >= 17.8 && thickness <= 19;
+      return {
+        componentId: pattern.componentId,
+        displayName: pattern.displayName,
+        hardwareLabel: pattern.label,
+        patternType: pattern.patternType,
+        status: compatible ? "compatible" : "warning",
+        currentThickness: thickness,
+        trustedProfile,
+        note: compatible ? "Cabineo_Singolo compatibile con range operativo 17.8-19 mm." : "Cabineo_Singolo fuori range base: verificare profilo o alternativa.",
+      };
+    }
+
+    if (trustedProfile === "Ferramenta_17.8") {
+      const compatible = Math.abs(thickness - 17.8) <= 0.25;
+      return {
+        componentId: pattern.componentId,
+        displayName: pattern.displayName,
+        hardwareLabel: pattern.label,
+        patternType: pattern.patternType,
+        status: compatible ? "compatible" : "warning",
+        currentThickness: thickness,
+        trustedProfile,
+        note: compatible ? "Profilo Ferramenta_17.8 allineato allo spessore componente." : "Profilo Ferramenta_17.8 non perfettamente allineato: verificare prima di produzione.",
+      };
+    }
+
+    if (trustedProfile === "Ferramenta_18.3") {
+      const compatible = Math.abs(thickness - 18.3) <= 0.35 || Math.abs(thickness - 17.8) <= 0.35;
+      return {
+        componentId: pattern.componentId,
+        displayName: pattern.displayName,
+        hardwareLabel: pattern.label,
+        patternType: pattern.patternType,
+        status: compatible ? "compatible" : "warning",
+        currentThickness: thickness,
+        trustedProfile,
+        note: compatible ? "Profilo Ferramenta_18.3 compatibile con il comportamento attuale 17.8/18.3." : "Profilo Ferramenta_18.3 fuori range previsto: verificare.",
+      };
+    }
+
+    return {
+      componentId: pattern.componentId,
+      displayName: pattern.displayName,
+      hardwareLabel: pattern.label,
+      patternType: pattern.patternType,
+      status: "unknown",
+      currentThickness: thickness,
+      trustedProfile,
+      note: "Nessun profilo affidabile associato in Matrix V1.",
+    };
+  });
+
+  return {
+    schema: "bagastudio-hardware-compatibility-matrix-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    trustedProfiles: TRUSTED_HARDWARE_PROFILES_V1,
+    totals: {
+      components: meshes.length,
+      items: items.length,
+      compatible: items.filter((item) => item.status === "compatible").length,
+      warning: items.filter((item) => item.status === "warning").length,
+      incompatible: items.filter((item) => item.status === "incompatible").length,
+      unknown: items.filter((item) => item.status === "unknown").length,
+    },
+    items,
+  };
+}
+
+
+const hardwarePatternRecognitionV1Report = useMemo(() => {
+  return buildHardwarePatternRecognitionV1Report(meshList);
+}, [meshList]);
+
+function downloadHardwarePatternRecognitionV1Report() {
+  downloadJsonFile(`bagastudio-hardware-pattern-recognition-v1-${Date.now()}.json`, hardwarePatternRecognitionV1Report);
+}
+
+
+
+type HardwareLinkV1Item = {
+  componentId: string;
+  displayName: string;
+  hardwareType: HardwarePatternRecognitionV1Type;
+  hardwareLabel: string;
+  trustedProfile: string | null;
+  drillingIndexes: number[];
+  confidence: number;
+  compatibilityStatus: HardwareCompatibilityV1Status;
+  status: "linked" | "ignored";
+  note: string;
+};
+
+type HardwareLinksEngineV1Report = {
+  schema: "bagastudio-hardware-links-engine-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    components: number;
+    links: number;
+    linkedComponents: number;
+    validPatterns: number;
+    ignoredPatterns: number;
+  };
+  items: HardwareLinkV1Item[];
+};
+
+function buildHardwareLinksEngineV1Report(
+  patternReport: HardwarePatternRecognitionV1Report,
+  compatibilityReport: HardwareCompatibilityMatrixV1Report
+): HardwareLinksEngineV1Report {
+  const compatibilityByKey = new Map<string, HardwareCompatibilityV1Item>();
+  compatibilityReport.items.forEach((item) => {
+    compatibilityByKey.set(`${item.componentId}__${item.hardwareLabel}`, item);
+  });
+
+  const items: HardwareLinkV1Item[] = patternReport.items.map((pattern) => {
+    const compatibility = compatibilityByKey.get(`${pattern.componentId}__${pattern.label}`) || null;
+    const isRecognized = pattern.patternType !== "unknown";
+    const canLink = isRecognized && pattern.confidence > 0;
+
+    return {
+      componentId: pattern.componentId,
+      displayName: pattern.displayName,
+      hardwareType: pattern.patternType,
+      hardwareLabel: pattern.label,
+      trustedProfile: compatibility?.trustedProfile || null,
+      drillingIndexes: pattern.drillingIndexes,
+      confidence: pattern.confidence,
+      compatibilityStatus: compatibility?.status || "unknown",
+      status: canLink ? "linked" : "ignored",
+      note: canLink
+        ? "Link componente-ferramenta-forature creato da Pattern Recognition V1."
+        : "Pattern non classificato: link non creato in Hardware Links Engine V1.",
+    };
+  });
+
+  const linkedItems = items.filter((item) => item.status === "linked");
+  const linkedComponents = new Set(linkedItems.map((item) => item.componentId)).size;
+
+  return {
+    schema: "bagastudio-hardware-links-engine-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      components: patternReport.totals.components,
+      links: linkedItems.length,
+      linkedComponents,
+      validPatterns: linkedItems.length,
+      ignoredPatterns: items.filter((item) => item.status === "ignored").length,
+    },
+    items,
+  };
+}
+
+
+const hardwareCompatibilityMatrixV1Report = useMemo(() => {
+  return buildHardwareCompatibilityMatrixV1Report(hardwarePatternRecognitionV1Report, meshList);
+}, [hardwarePatternRecognitionV1Report, meshList]);
+
+function downloadHardwareCompatibilityMatrixV1Report() {
+  downloadJsonFile(`bagastudio-hardware-compatibility-matrix-v1-${Date.now()}.json`, hardwareCompatibilityMatrixV1Report);
+}
+
+
+
+type ConstraintEngineV1Status = "ok" | "warning" | "error";
+
+type ConstraintEngineV1Item = {
+  componentId: string;
+  displayName: string;
+  hardwareLabel: string;
+  drillingIndex: number;
+  status: ConstraintEngineV1Status;
+  rule: "blind_depth_margin" | "through_depth_max" | "missing_data";
+  thickness: number | null;
+  depth: number | null;
+  requiredThickness: number | null;
+  maxThroughDepth: number | null;
+  message: string;
+};
+
+type ConstraintEngineV1Report = {
+  schema: "bagastudio-constraint-engine-v1";
+  version: 1;
+  generatedAt: string;
+  safetyMarginMm: number;
+  throughToleranceMm: number;
+  totals: {
+    links: number;
+    drillingsChecked: number;
+    ok: number;
+    warnings: number;
+    errors: number;
+    missingData: number;
+  };
+  items: ConstraintEngineV1Item[];
+};
+
+const CONSTRAINT_ENGINE_V1_SAFETY_MARGIN_MM = 2;
+const CONSTRAINT_ENGINE_V1_THROUGH_TOLERANCE_MM = 0.1;
+
+function readConstraintEngineV1DrillingItems(mesh: MeshConfig) {
+  return normalizeCollisionArrayV1(
+    parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+  ).map((item, drillingIndex) => ({
+    drillingIndex,
+    depth: readCollisionNumberV1(item?.depth, item?.dp, item?.DP, item?.drillingDepth),
+    type: String(item?.type || item?.drillingType || item?.operation || "").toLowerCase(),
+    isThrough: Boolean(item?.through || item?.passante || item?.isThrough) ||
+      String(item?.type || item?.drillingType || item?.operation || "").toLowerCase().includes("through") ||
+      String(item?.type || item?.drillingType || item?.operation || "").toLowerCase().includes("pass"),
+  }));
+}
+
+function buildConstraintEngineV1Report(
+  linksReport: HardwareLinksEngineV1Report,
+  meshes: MeshConfig[],
+  csvReport?: CsvRegenerationV1Report
+): ConstraintEngineV1Report {
+  const meshByComponentId = new Map<string, MeshConfig>();
+  meshes.forEach((mesh, index) => {
+    meshByComponentId.set(buildStablePartId(mesh, index), mesh);
+  });
+
+  const items: ConstraintEngineV1Item[] = [];
+
+  linksReport.items
+    .filter((link) => link.status === "linked")
+    .forEach((link) => {
+      const mesh = meshByComponentId.get(link.componentId);
+      const meshThickness = mesh ? readCollisionDimensionsV1(mesh).panelThickness : null;
+      const csvBridgeThickness = readThicknessFromCsvRegenerationBridgeV1(link.displayName, csvReport);
+      const thickness = meshThickness !== null ? meshThickness : csvBridgeThickness;
+      const drillings = mesh ? readConstraintEngineV1DrillingItems(mesh) : [];
+
+      link.drillingIndexes.forEach((drillingIndex) => {
+        const drilling = drillings.find((item) => item.drillingIndex === drillingIndex);
+        const depth = drilling?.depth ?? null;
+
+        if (thickness === null || depth === null) {
+          items.push({
+            componentId: link.componentId,
+            displayName: link.displayName,
+            hardwareLabel: link.hardwareLabel,
+            drillingIndex,
+            status: "warning",
+            rule: "missing_data",
+            thickness,
+            depth,
+            requiredThickness: null,
+            maxThroughDepth: null,
+            message: "Dati insufficienti: spessore o profondità foro mancanti.",
+          });
+          return;
+        }
+
+        const maxThroughDepth = Number((thickness + CONSTRAINT_ENGINE_V1_THROUGH_TOLERANCE_MM).toFixed(3));
+        if (drilling?.isThrough) {
+          const isOk = depth <= maxThroughDepth;
+          items.push({
+            componentId: link.componentId,
+            displayName: link.displayName,
+            hardwareLabel: link.hardwareLabel,
+            drillingIndex,
+            status: isOk ? "ok" : "error",
+            rule: "through_depth_max",
+            thickness,
+            depth,
+            requiredThickness: null,
+            maxThroughDepth,
+            message: isOk
+              ? `Lavorazione passante OK: ${depth} mm <= ${maxThroughDepth} mm.`
+              : `ERRORE: lavorazione passante ${depth} mm oltre massimo ${maxThroughDepth} mm.`,
+          });
+          return;
+        }
+
+        const requiredThickness = Number((depth + CONSTRAINT_ENGINE_V1_SAFETY_MARGIN_MM).toFixed(3));
+        const isOk = requiredThickness <= thickness;
+        const isNear = !isOk && requiredThickness <= thickness + 0.5;
+
+        items.push({
+          componentId: link.componentId,
+          displayName: link.displayName,
+          hardwareLabel: link.hardwareLabel,
+          drillingIndex,
+          status: isOk ? "ok" : isNear ? "warning" : "error",
+          rule: "blind_depth_margin",
+          thickness,
+          depth,
+          requiredThickness,
+          maxThroughDepth,
+          message: isOk
+            ? `Foro cieco OK: profondità ${depth} mm + margine 2 mm = ${requiredThickness} mm <= pannello ${thickness} mm.`
+            : isNear
+              ? `WARNING: foro quasi al limite. Richiesti ${requiredThickness} mm, pannello ${thickness} mm.`
+              : `ERRORE: foro non producibile. Richiesti ${requiredThickness} mm, pannello ${thickness} mm.`,
+        });
+      });
+    });
+
+  return {
+    schema: "bagastudio-constraint-engine-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    safetyMarginMm: CONSTRAINT_ENGINE_V1_SAFETY_MARGIN_MM,
+    throughToleranceMm: CONSTRAINT_ENGINE_V1_THROUGH_TOLERANCE_MM,
+    totals: {
+      links: linksReport.totals.links,
+      drillingsChecked: items.length,
+      ok: items.filter((item) => item.status === "ok").length,
+      warnings: items.filter((item) => item.status === "warning").length,
+      errors: items.filter((item) => item.status === "error").length,
+      missingData: items.filter((item) => item.rule === "missing_data").length,
+    },
+    items,
+  };
+}
+
+
+const hardwareLinksEngineV1Report = useMemo(() => {
+  return buildHardwareLinksEngineV1Report(hardwarePatternRecognitionV1Report, hardwareCompatibilityMatrixV1Report);
+}, [hardwarePatternRecognitionV1Report, hardwareCompatibilityMatrixV1Report]);
+
+function downloadHardwareLinksEngineV1Report() {
+  downloadJsonFile(`bagastudio-hardware-links-engine-v1-${Date.now()}.json`, hardwareLinksEngineV1Report);
+}
+
+
+const constraintEngineV1Report = useMemo(() => {
+  return buildConstraintEngineV1Report(hardwareLinksEngineV1Report, meshList, csvRegenerationV1Report);
+}, [hardwareLinksEngineV1Report, meshList, csvRegenerationV1Report]);
+
+function downloadConstraintEngineV1Report() {
+  downloadJsonFile(`bagastudio-constraint-engine-v1-${Date.now()}.json`, constraintEngineV1Report);
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -6484,37 +7218,37 @@ function downloadImporterDiagnosticJson() {
         </section>
 
 
-        <section className="rounded-[28px] border border-blue-400/15 bg-[#07101a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+        <section className="rounded-[28px] border border-orange-400/15 bg-[#1a1007]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-200">Hardware Analyzer V2.2</p>
-              <h2 className="mt-1 text-xl font-semibold text-white">Drilling Validation</h2>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Hardware Analyzer V2.3</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Hardware Collision Check</h2>
               <p className="mt-1 max-w-3xl text-sm text-slate-400">
-                Valida le forature estratte dai CIX: coordinate, diametri, profondità e distanza minima dai bordi.
+                Controlla sovrapposizioni, duplicazioni e distanze critiche tra forature sullo stesso componente.
               </p>
             </div>
 
             <div className="flex flex-col gap-2 sm:items-end">
               <span className={
-                drillingValidationV22Report.validationStatus === "DRILLING_READY"
+                hardwareCollisionV23Report.collisionStatus === "COLLISION_READY"
                   ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
-                  : drillingValidationV22Report.validationStatus === "DRILLING_WARNING"
+                  : hardwareCollisionV23Report.collisionStatus === "COLLISION_WARNING"
                     ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
                     : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
               }>
-                {drillingValidationV22Report.validationStatus === "DRILLING_READY"
-                  ? "Drilling Ready"
-                  : drillingValidationV22Report.validationStatus === "DRILLING_WARNING"
-                    ? "Drilling Warning"
-                    : "Drilling Blocked"}
+                {hardwareCollisionV23Report.collisionStatus === "COLLISION_READY"
+                  ? "Collision Ready"
+                  : hardwareCollisionV23Report.collisionStatus === "COLLISION_WARNING"
+                    ? "Collision Warning"
+                    : "Collision Blocked"}
               </span>
 
               <button
                 type="button"
-                onClick={downloadDrillingValidationV22Report}
-                className="rounded-2xl border border-blue-400/25 bg-blue-400/10 px-5 py-3 text-sm font-black text-blue-100 transition hover:bg-blue-400/20"
+                onClick={downloadHardwareCollisionV23Report}
+                className="rounded-2xl border border-orange-400/25 bg-orange-400/10 px-5 py-3 text-sm font-black text-orange-100 transition hover:bg-orange-400/20"
               >
-                Esporta validation
+                Esporta collision
               </button>
             </div>
           </div>
@@ -6522,52 +7256,351 @@ function downloadImporterDiagnosticJson() {
           <div className="mt-5 grid gap-3 sm:grid-cols-4">
             <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
               <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Forature</p>
-              <p className="mt-1 text-2xl font-black text-white">{drillingValidationV22Report.totals.drillings}</p>
+              <p className="mt-1 text-2xl font-black text-white">{hardwareCollisionV23Report.totals.drillings}</p>
             </div>
-            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Valide</p>
-              <p className="mt-1 text-2xl font-black text-emerald-100">{drillingValidationV22Report.totals.valid}</p>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Coppie controllate</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{hardwareCollisionV23Report.totals.checkedPairs}</p>
             </div>
             <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
               <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
-              <p className="mt-1 text-2xl font-black text-yellow-100">{drillingValidationV22Report.totals.warnings}</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{hardwareCollisionV23Report.totals.warnings}</p>
             </div>
             <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
               <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
-              <p className="mt-1 text-2xl font-black text-red-100">{drillingValidationV22Report.totals.errors}</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{hardwareCollisionV23Report.totals.errors}</p>
             </div>
           </div>
 
           <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
-            <div className="grid grid-cols-[1fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <div className="grid grid-cols-[1fr_0.65fr_0.6fr_1.1fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
               <span>Componente</span>
+              <span>Fori</span>
+              <span>Stato</span>
+              <span>Messaggio</span>
+            </div>
+
+            {hardwareCollisionV23Report.issues.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">
+                Nessuna collisione rilevata tra le forature disponibili.
+              </div>
+            ) : (
+              hardwareCollisionV23Report.issues.slice(0, 80).map((issue, index) => (
+                <div key={`${issue.componentId}-${issue.code}-${index}`} className="grid grid-cols-[1fr_0.65fr_0.6fr_1.1fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{issue.displayName}</p>
+                    <p className="mt-1 text-slate-500">Distanza {issue.distance} mm · soglia {issue.safeDistance} mm</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">#{issue.firstIndex + 1} ↔ #{issue.secondIndex + 1}</span>
+                  <span className={
+                    issue.status === "error"
+                      ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                      : "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                  }>
+                    {issue.status}
+                  </span>
+                  <span className="text-slate-300">{issue.message}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-lime-400/15 bg-[#101a07]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-lime-200">Hardware Pattern Recognition V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Riconoscimento pattern ferramenta</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prima classificazione automatica delle forature: cerniere, minifix/giunzioni, reggipiani e pattern non riconosciuti.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadHardwarePatternRecognitionV1Report}
+              className="rounded-2xl border border-lime-400/25 bg-lime-400/10 px-5 py-3 text-sm font-black text-lime-100 transition hover:bg-lime-400/20"
+            >
+              Esporta pattern
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pattern</p>
+              <p className="mt-1 text-2xl font-black text-white">{hardwarePatternRecognitionV1Report.totals.patterns}</p>
+            </div>
+            <div className="rounded-2xl border border-lime-400/15 bg-lime-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-lime-200">Cerniere</p>
+              <p className="mt-1 text-2xl font-black text-lime-100">{hardwarePatternRecognitionV1Report.totals.hinges}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Minifix</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{hardwarePatternRecognitionV1Report.totals.minifix}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Reggipiani</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{hardwarePatternRecognitionV1Report.totals.shelfPins}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-400/15 bg-slate-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Sconosciuti</p>
+              <p className="mt-1 text-2xl font-black text-slate-100">{hardwarePatternRecognitionV1Report.totals.unknown}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.75fr_0.55fr_1.1fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Pattern</span>
+              <span>Conf.</span>
+              <span>Motivo</span>
+            </div>
+
+            {hardwarePatternRecognitionV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">
+                Nessuna foratura disponibile per il riconoscimento pattern.
+              </div>
+            ) : (
+              hardwarePatternRecognitionV1Report.items.slice(0, 80).map((item, index) => (
+                <div key={`${item.componentId}-${item.patternType}-${index}`} className="grid grid-cols-[1fr_0.75fr_0.55fr_1.1fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">Fori: {item.drillingIndexes.map((idx) => `#${idx + 1}`).join(", ")}</p>
+                  </div>
+                  <span className={item.patternType === "unknown" ? "h-fit rounded-full bg-slate-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-slate-100" : "h-fit rounded-full bg-lime-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-lime-100"}>
+                    {item.label}
+                  </span>
+                  <span className="font-black text-slate-200">{item.confidence}%</span>
+                  <span className="text-slate-300">{item.reason}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-teal-400/15 bg-[#071a16]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-teal-200">Hardware Compatibility Matrix V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Matrice compatibilità ferramenta</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Incrocia Pattern Recognition V1 con gli spessori e usa solo profili affidabili: Ferramenta_17.8, Ferramenta_18.3, Cabineo_Singolo e divario_elvis.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadHardwareCompatibilityMatrixV1Report}
+              className="rounded-2xl border border-teal-400/25 bg-teal-400/10 px-5 py-3 text-sm font-black text-teal-100 transition hover:bg-teal-400/20"
+            >
+              Esporta matrix
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Compatibili</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{hardwareCompatibilityMatrixV1Report.totals.compatible}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{hardwareCompatibilityMatrixV1Report.totals.warning}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Non compatibili</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{hardwareCompatibilityMatrixV1Report.totals.incompatible}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-400/15 bg-slate-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Sconosciuti</p>
+              <p className="mt-1 text-2xl font-black text-slate-100">{hardwareCompatibilityMatrixV1Report.totals.unknown}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.6fr_1.1fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Ferramenta</span>
+              <span>Profilo</span>
+              <span>Stato</span>
+              <span>Nota</span>
+            </div>
+
+            {hardwareCompatibilityMatrixV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">Nessun pattern disponibile per la matrice compatibilità.</div>
+            ) : (
+              hardwareCompatibilityMatrixV1Report.items.slice(0, 80).map((item, index) => (
+                <div key={`${item.componentId}-${item.hardwareLabel}-${index}`} className="grid grid-cols-[1fr_0.7fr_0.7fr_0.6fr_1.1fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">Spessore: {item.currentThickness ?? "-"} mm</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">{item.hardwareLabel}</span>
+                  <span className="font-semibold text-teal-100">{item.trustedProfile || "-"}</span>
+                  <span className={
+                    item.status === "compatible"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "warning"
+                        ? "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                        : item.status === "incompatible"
+                          ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                          : "h-fit rounded-full bg-slate-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-slate-100"
+                  }>
+                    {item.status}
+                  </span>
+                  <span className="text-slate-300">{item.note}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#17071a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Hardware Links Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Collegamenti ferramenta-forature</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Crea il primo collegamento strutturato tra componente, ferramenta riconosciuta e fori usati dal pattern.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadHardwareLinksEngineV1Report}
+              className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+            >
+              Esporta links
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Link creati</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{hardwareLinksEngineV1Report.totals.links}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Componenti collegati</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{hardwareLinksEngineV1Report.totals.linkedComponents}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Pattern validi</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{hardwareLinksEngineV1Report.totals.validPatterns}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-400/15 bg-slate-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Ignorati</p>
+              <p className="mt-1 text-2xl font-black text-slate-100">{hardwareLinksEngineV1Report.totals.ignoredPatterns}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.75fr_0.65fr_0.55fr_1.05fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Ferramenta</span>
+              <span>Fori</span>
+              <span>Conf.</span>
+              <span>Stato</span>
+            </div>
+
+            {hardwareLinksEngineV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">Nessun pattern disponibile per creare hardware links.</div>
+            ) : (
+              hardwareLinksEngineV1Report.items.slice(0, 80).map((item, index) => (
+                <div key={`${item.componentId}-${item.hardwareLabel}-${index}`} className="grid grid-cols-[1fr_0.75fr_0.65fr_0.55fr_1.05fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">Profilo: {item.trustedProfile || "-"}</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">{item.hardwareLabel}</span>
+                  <span className="font-semibold text-fuchsia-100">{item.drillingIndexes.map((idx) => `#${idx + 1}`).join(", ")}</span>
+                  <span className="font-black text-slate-200">{item.confidence}%</span>
+                  <div>
+                    <span className={item.status === "linked" ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100" : "h-fit rounded-full bg-slate-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-slate-100"}>
+                      {item.status}
+                    </span>
+                    <p className="mt-2 text-slate-400">{item.note}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-rose-400/15 bg-[#1a0710]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-200">Constraint Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Controlli geometrici produttivi</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Verifica profondità foro, margine sicurezza 2 mm e limite lavorazioni passanti pari a spessore + 0.1 mm.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadConstraintEngineV1Report}
+              className="rounded-2xl border border-rose-400/25 bg-rose-400/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-400/20"
+            >
+              Esporta constraints
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Fori controllati</p>
+              <p className="mt-1 text-2xl font-black text-white">{constraintEngineV1Report.totals.drillingsChecked}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">OK</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{constraintEngineV1Report.totals.ok}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{constraintEngineV1Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{constraintEngineV1Report.totals.errors}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-400/15 bg-slate-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-300">Dati mancanti</p>
+              <p className="mt-1 text-2xl font-black text-slate-100">{constraintEngineV1Report.totals.missingData}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.7fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Ferramenta</span>
               <span>Foro</span>
               <span>Stato</span>
               <span>Messaggio</span>
             </div>
 
-            {drillingValidationV22Report.issues.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-slate-400">
-                Nessun problema rilevato sulle forature disponibili.
-              </div>
+            {constraintEngineV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">Nessun hardware link disponibile per i controlli constraint.</div>
             ) : (
-              drillingValidationV22Report.issues.slice(0, 80).map((issue, index) => (
-                <div key={`${issue.componentId}-${issue.code}-${index}`} className="grid grid-cols-[1fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+              constraintEngineV1Report.items.slice(0, 100).map((item, index) => (
+                <div key={`${item.componentId}-${item.hardwareLabel}-${item.drillingIndex}-${index}`} className="grid grid-cols-[1fr_0.7fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
                   <div>
-                    <p className="font-black text-white">{issue.displayName}</p>
-                    <p className="mt-1 text-slate-500">X {issue.x ?? "-"} · Y {issue.y ?? "-"} · Ø {issue.diameter ?? "-"}</p>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">Spessore {item.thickness ?? "-"} mm · profondità {item.depth ?? "-"} mm</p>
                   </div>
-                  <span className="font-semibold text-slate-200">#{issue.drillingIndex + 1}</span>
+                  <span className="font-semibold text-slate-200">{item.hardwareLabel}</span>
+                  <span className="font-semibold text-rose-100">#{item.drillingIndex + 1}</span>
                   <span className={
-                    issue.status === "error"
-                      ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
-                      : issue.status === "warning"
+                    item.status === "ok"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "warning"
                         ? "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
-                        : "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                        : "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
                   }>
-                    {issue.status}
+                    {item.status}
                   </span>
-                  <span className="text-slate-300">{issue.message}</span>
+                  <span className="text-slate-300">{item.message}</span>
                 </div>
               ))
             )}
