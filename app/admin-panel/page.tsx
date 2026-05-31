@@ -731,25 +731,9 @@ function normalizeCollisionArrayV1(value: unknown): any[] {
   return [];
 }
 
-type CollisionDimensionSourceV1 = {
-  width?: unknown;
-  w?: unknown;
-  x?: unknown;
-  length?: unknown;
-  height?: unknown;
-  h?: unknown;
-  y?: unknown;
-  depth?: unknown;
-  d?: unknown;
-  z?: unknown;
-  panelThickness?: unknown;
-  thickness?: unknown;
-  t?: unknown;
-};
-
 function readCollisionDimensionsV1(mesh: MeshConfig) {
-  const dimensions = parseBagaStudioJsonField<CollisionDimensionSourceV1>(mesh.dimensions, {});
-  const manufacturingData = parseBagaStudioJsonField<CollisionDimensionSourceV1>(mesh.manufacturingData, {});
+  const dimensions = parseBagaStudioJsonField(mesh.dimensions, {}) as Record<string, unknown>;
+  const manufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {}) as Record<string, unknown>;
 
   const width = readCollisionNumberV1(
     dimensions.width,
@@ -3155,12 +3139,14 @@ function buildCurrentProductPackageJson() {
 
     return {
       ...runtimeComponent,
+
       productionReady: Boolean(productionMatch?.cixPart),
       csvSource: productionMatch?.csvPart?.name || null,
       cixSource: productionMatch?.cixPart?.fileName || null,
       productionMaterial: productionMatch?.csvPart?.material || null,
       productionQuantity: productionMatch?.csvPart?.quantity || null,
       productionConfidence: productionMatch?.confidence || 0,
+
       productionDimensions: productionMatch
         ? {
             width: productionMatch.csvPart.width,
@@ -3168,6 +3154,21 @@ function buildCurrentProductPackageJson() {
             thickness: productionMatch.csvPart.thickness,
           }
         : null,
+
+      parametricData: {
+        originalWidth: productionMatch?.csvPart?.width ?? null,
+        originalHeight: null,
+        originalDepth: productionMatch?.csvPart?.depth ?? null,
+        originalThickness: productionMatch?.csvPart?.thickness ?? null,
+
+        currentWidth: productionMatch?.csvPart?.width ?? null,
+        currentHeight: null,
+        currentDepth: productionMatch?.csvPart?.depth ?? null,
+        currentThickness: productionMatch?.csvPart?.thickness ?? null,
+
+        lockExternalDimensions: true,
+        parametricVersion: 1,
+      },
     };
   });
 
