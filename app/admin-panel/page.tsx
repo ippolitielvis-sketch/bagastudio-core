@@ -4328,6 +4328,7 @@ function downloadHardwareCollisionV23Report() {
 
 
 type HardwareCompatibilityV1Status = "compatible" | "warning" | "incompatible" | "unknown";
+type HardwareProductionGateV12 = "pass" | "review" | "blocked";
 
 type HardwareCompatibilityV1Item = {
   componentId: string;
@@ -4337,14 +4338,24 @@ type HardwareCompatibilityV1Item = {
   status: HardwareCompatibilityV1Status;
   currentThickness: number | null;
   trustedProfile: string | null;
+  verifiedProfile: boolean;
+  reliabilityScore: number;
+  profilePriority: number;
+  supportedThicknesses: number[];
+  thicknessToleranceMm?: number;
+  thicknessSupported?: boolean;
+  productionGate?: HardwareProductionGateV12;
+  matchReason?: string;
+  excludedProfiles?: string[];
   note: string;
 };
 
 type HardwareCompatibilityMatrixV1Report = {
-  schema: "bagastudio-hardware-compatibility-matrix-v1";
-  version: 1;
+  schema: "bagastudio-hardware-compatibility-matrix-v1-2";
+  version: 1.2;
   generatedAt: string;
   trustedProfiles: string[];
+  knowledgeBase: HardwareKnowledgeProfileV11[];
   totals: {
     components: number;
     items: number;
@@ -4356,12 +4367,78 @@ type HardwareCompatibilityMatrixV1Report = {
   items: HardwareCompatibilityV1Item[];
 };
 
-const TRUSTED_HARDWARE_PROFILES_V1 = [
-  "Ferramenta_17.8",
-  "Ferramenta_18.3",
-  "Cabineo_Singolo",
-  "divario_elvis",
+type HardwareKnowledgeProfileV11 = {
+  id: string;
+  displayName: string;
+  verified: boolean;
+  reliabilityScore: number;
+  profilePriority: number;
+  supportedThicknesses: number[];
+  preferredPatternTypes: HardwarePatternRecognitionV1Type[];
+  notes: string;
+};
+
+const HARDWARE_KNOWLEDGE_BASE_V11: HardwareKnowledgeProfileV11[] = [
+  {
+    id: "Ferramenta_17.8",
+    displayName: "Ferramenta 17.8",
+    verified: true,
+    reliabilityScore: 100,
+    profilePriority: 1,
+    supportedThicknesses: [17.8, 18.3],
+    preferredPatternTypes: ["shelfPin"],
+    notes: "Profilo verificato: priorità alta per pannelli 17.8/18.3 mm.",
+  },
+  {
+    id: "Ferramenta_18.3",
+    displayName: "Ferramenta 18.3",
+    verified: true,
+    reliabilityScore: 100,
+    profilePriority: 1,
+    supportedThicknesses: [17.8, 18.3],
+    preferredPatternTypes: ["hinge", "shelfPin"],
+    notes: "Profilo verificato: comportamento stabile su 17.8/18.3 mm.",
+  },
+  {
+    id: "Cabineo_Singolo",
+    displayName: "Cabineo Singolo",
+    verified: true,
+    reliabilityScore: 95,
+    profilePriority: 2,
+    supportedThicknesses: [17.8, 18.3, 19],
+    preferredPatternTypes: ["minifix"],
+    notes: "Profilo verificato per collegamento singolo tipo minifix/cabineo.",
+  },
+  {
+    id: "divario_elvis",
+    displayName: "Divario Elvis",
+    verified: true,
+    reliabilityScore: 90,
+    profilePriority: 2,
+    supportedThicknesses: [17.8, 18.3],
+    preferredPatternTypes: ["hinge", "minifix"],
+    notes: "Unico profilo Divario approvato: evitare profili Divario generici non verificati.",
+  },
 ];
+
+const TRUSTED_HARDWARE_PROFILES_V1 = HARDWARE_KNOWLEDGE_BASE_V11.map((profile) => profile.id);
+const HARDWARE_KNOWLEDGE_BY_ID_V11 = new Map(HARDWARE_KNOWLEDGE_BASE_V11.map((profile) => [profile.id, profile]));
+const EXCLUDED_HARDWARE_PROFILES_V12 = ["Divario", "Divario_Generico", "divario_generic", "divario_standard"];
+
+function resolveHardwareProductionGateV12(item: HardwareCompatibilityV1Item): HardwareProductionGateV12 {
+  if (item.status === "incompatible") return "blocked";
+  if (item.status === "compatible" && item.thicknessSupported && item.verifiedProfile) return "pass";
+  return "review";
+}
+
+function getHardwareKnowledgeProfileV11(profileId: string | null): HardwareKnowledgeProfileV11 | null {
+  if (!profileId) return null;
+  return HARDWARE_KNOWLEDGE_BY_ID_V11.get(profileId) || null;
+}
+
+function isThicknessSupportedByKnowledgeProfileV11(profile: HardwareKnowledgeProfileV11, thickness: number, tolerance = 0.35): boolean {
+  return profile.supportedThicknesses.some((supportedThickness) => Math.abs(thickness - supportedThickness) <= tolerance);
+}
 
 function chooseTrustedHardwareProfileV1(pattern: HardwarePatternRecognitionV1Item, thickness: number | null): string | null {
   if (pattern.patternType === "hinge") return "Ferramenta_18.3";
@@ -4393,6 +4470,10 @@ function buildHardwareCompatibilityMatrixV1Report(
         status: "unknown",
         currentThickness: thickness,
         trustedProfile,
+        verifiedProfile: false,
+        reliabilityScore: 0,
+        profilePriority: 99,
+        supportedThicknesses: [],
         note: "Pattern non classificato: servirà Knowledge Base V1.1/V2 o profilo custom.",
       };
     }
@@ -4406,6 +4487,10 @@ function buildHardwareCompatibilityMatrixV1Report(
         status: "warning",
         currentThickness: null,
         trustedProfile,
+        verifiedProfile: Boolean(getHardwareKnowledgeProfileV11(trustedProfile)?.verified),
+        reliabilityScore: getHardwareKnowledgeProfileV11(trustedProfile)?.reliabilityScore || 0,
+        profilePriority: getHardwareKnowledgeProfileV11(trustedProfile)?.profilePriority || 99,
+        supportedThicknesses: getHardwareKnowledgeProfileV11(trustedProfile)?.supportedThicknesses || [],
         note: "Spessore componente non disponibile: compatibilità da confermare.",
       };
     }
@@ -4420,6 +4505,10 @@ function buildHardwareCompatibilityMatrixV1Report(
         status: compatible ? "compatible" : "warning",
         currentThickness: thickness,
         trustedProfile,
+        verifiedProfile: true,
+        reliabilityScore: 95,
+        profilePriority: 2,
+        supportedThicknesses: [17.8, 18.3, 19],
         note: compatible ? "Cabineo_Singolo compatibile con range operativo 17.8-19 mm." : "Cabineo_Singolo fuori range base: verificare profilo o alternativa.",
       };
     }
@@ -4434,6 +4523,10 @@ function buildHardwareCompatibilityMatrixV1Report(
         status: compatible ? "compatible" : "warning",
         currentThickness: thickness,
         trustedProfile,
+        verifiedProfile: true,
+        reliabilityScore: 100,
+        profilePriority: 1,
+        supportedThicknesses: [17.8, 18.3],
         note: compatible ? "Profilo Ferramenta_17.8 allineato allo spessore componente." : "Profilo Ferramenta_17.8 non perfettamente allineato: verificare prima di produzione.",
       };
     }
@@ -4448,6 +4541,10 @@ function buildHardwareCompatibilityMatrixV1Report(
         status: compatible ? "compatible" : "warning",
         currentThickness: thickness,
         trustedProfile,
+        verifiedProfile: true,
+        reliabilityScore: 100,
+        profilePriority: 1,
+        supportedThicknesses: [17.8, 18.3],
         note: compatible ? "Profilo Ferramenta_18.3 compatibile con il comportamento attuale 17.8/18.3." : "Profilo Ferramenta_18.3 fuori range previsto: verificare.",
       };
     }
@@ -4460,24 +4557,55 @@ function buildHardwareCompatibilityMatrixV1Report(
       status: "unknown",
       currentThickness: thickness,
       trustedProfile,
-      note: "Nessun profilo affidabile associato in Matrix V1.",
+      verifiedProfile: Boolean(getHardwareKnowledgeProfileV11(trustedProfile)?.verified),
+      reliabilityScore: getHardwareKnowledgeProfileV11(trustedProfile)?.reliabilityScore || 0,
+      profilePriority: getHardwareKnowledgeProfileV11(trustedProfile)?.profilePriority || 99,
+      supportedThicknesses: getHardwareKnowledgeProfileV11(trustedProfile)?.supportedThicknesses || [],
+      note: "Nessun profilo affidabile associato in Matrix V1. Profili Divario generici esclusi: usare solo divario_elvis se verificato.",
+    };
+  });
+
+  const enrichedItems: HardwareCompatibilityV1Item[] = items.map((item) => {
+    const profile = getHardwareKnowledgeProfileV11(item.trustedProfile);
+    const tolerance = profile?.id === "Ferramenta_17.8" ? 0.25 : 0.35;
+    const thicknessSupported = Boolean(
+      profile &&
+      item.currentThickness !== null &&
+      isThicknessSupportedByKnowledgeProfileV11(profile, item.currentThickness, tolerance)
+    );
+    const enrichedItem: HardwareCompatibilityV1Item = {
+      ...item,
+      thicknessToleranceMm: tolerance,
+      thicknessSupported,
+      matchReason: profile
+        ? thicknessSupported
+          ? "Spessore entro tolleranza Knowledge Base V1.1 / Matrix V1.2."
+          : "Spessore fuori tolleranza Knowledge Base V1.1 / Matrix V1.2: richiede review."
+        : "Profilo non presente nella Knowledge Base V1.1: richiede review.",
+      excludedProfiles: EXCLUDED_HARDWARE_PROFILES_V12,
+    };
+
+    return {
+      ...enrichedItem,
+      productionGate: resolveHardwareProductionGateV12(enrichedItem),
     };
   });
 
   return {
-    schema: "bagastudio-hardware-compatibility-matrix-v1",
-    version: 1,
+    schema: "bagastudio-hardware-compatibility-matrix-v1-2",
+    version: 1.2,
     generatedAt: new Date().toISOString(),
     trustedProfiles: TRUSTED_HARDWARE_PROFILES_V1,
+    knowledgeBase: HARDWARE_KNOWLEDGE_BASE_V11,
     totals: {
       components: meshes.length,
-      items: items.length,
-      compatible: items.filter((item) => item.status === "compatible").length,
-      warning: items.filter((item) => item.status === "warning").length,
-      incompatible: items.filter((item) => item.status === "incompatible").length,
-      unknown: items.filter((item) => item.status === "unknown").length,
+      items: enrichedItems.length,
+      compatible: enrichedItems.filter((item) => item.status === "compatible").length,
+      warning: enrichedItems.filter((item) => item.status === "warning").length,
+      incompatible: enrichedItems.filter((item) => item.status === "incompatible").length,
+      unknown: enrichedItems.filter((item) => item.status === "unknown").length,
     },
-    items,
+    items: enrichedItems,
   };
 }
 
@@ -4573,7 +4701,7 @@ const hardwareCompatibilityMatrixV1Report = useMemo(() => {
 }, [hardwarePatternRecognitionV1Report, meshList]);
 
 function downloadHardwareCompatibilityMatrixV1Report() {
-  downloadJsonFile(`bagastudio-hardware-compatibility-matrix-v1-${Date.now()}.json`, hardwareCompatibilityMatrixV1Report);
+  downloadJsonFile(`bagastudio-hardware-compatibility-matrix-v1-2-${Date.now()}.json`, hardwareCompatibilityMatrixV1Report);
 }
 
 
@@ -4748,6 +4876,568 @@ const constraintEngineV1Report = useMemo(() => {
 
 function downloadConstraintEngineV1Report() {
   downloadJsonFile(`bagastudio-constraint-engine-v1-${Date.now()}.json`, constraintEngineV1Report);
+}
+
+
+type ProductionReadinessGateV1Status = "pass" | "review" | "blocked";
+
+type ProductionReadinessGateV1Item = {
+  componentId: string;
+  displayName: string;
+  status: ProductionReadinessGateV1Status;
+  compatibilityGate: HardwareProductionGateV12 | null;
+  compatibilityStatus: HardwareCompatibilityV1Status | null;
+  constraintErrors: number;
+  constraintWarnings: number;
+  collisionCritical: number;
+  collisionWarnings: number;
+  reasons: string[];
+};
+
+type ProductionReadinessGateV1Report = {
+  schema: "bagastudio-production-readiness-gate-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    components: number;
+    pass: number;
+    review: number;
+    blocked: number;
+    compatibilityBlocked: number;
+    constraintErrors: number;
+    collisionCritical: number;
+  };
+  items: ProductionReadinessGateV1Item[];
+};
+
+function resolveProductionReadinessGateV1Status(
+  compatibilityGate: HardwareProductionGateV12 | null,
+  constraintErrors: number,
+  constraintWarnings: number,
+  collisionCritical: number,
+  collisionWarnings: number
+): ProductionReadinessGateV1Status {
+  if (compatibilityGate === "blocked" || constraintErrors > 0 || collisionCritical > 0) return "blocked";
+  if (compatibilityGate === "review" || constraintWarnings > 0 || collisionWarnings > 0) return "review";
+  return "pass";
+}
+
+function buildProductionReadinessGateV1Report(
+  compatibilityReport: HardwareCompatibilityMatrixV1Report,
+  constraintReport: ConstraintEngineV1Report,
+  collisionReport: CollisionEngineV1Report,
+  meshes: MeshConfig[]
+): ProductionReadinessGateV1Report {
+  const compatibilityByComponent = new Map<string, HardwareCompatibilityV1Item[]>();
+  compatibilityReport.items.forEach((item) => {
+    const list = compatibilityByComponent.get(item.componentId) || [];
+    list.push(item);
+    compatibilityByComponent.set(item.componentId, list);
+  });
+
+  const constraintsByComponent = new Map<string, ConstraintEngineV1Item[]>();
+  constraintReport.items.forEach((item) => {
+    const list = constraintsByComponent.get(item.componentId) || [];
+    list.push(item);
+    constraintsByComponent.set(item.componentId, list);
+  });
+
+  const collisionsByComponent = new Map<string, CollisionEngineV1Issue[]>();
+  collisionReport.issues.forEach((issue) => {
+    const list = collisionsByComponent.get(issue.componentId) || [];
+    list.push(issue);
+    collisionsByComponent.set(issue.componentId, list);
+  });
+
+  const items: ProductionReadinessGateV1Item[] = meshes.map((mesh, index) => {
+    const componentId = buildStablePartId(mesh, index);
+    const displayName = mesh.displayName || mesh.meshName || componentId;
+    const compatibilityItems = compatibilityByComponent.get(componentId) || [];
+    const constraintItems = constraintsByComponent.get(componentId) || [];
+    const collisionItems = collisionsByComponent.get(componentId) || [];
+
+    const compatibilityGate: HardwareProductionGateV12 | null = compatibilityItems.some((item) => item.productionGate === "blocked")
+      ? "blocked"
+      : compatibilityItems.some((item) => item.productionGate === "review")
+        ? "review"
+        : compatibilityItems.some((item) => item.productionGate === "pass")
+          ? "pass"
+          : null;
+
+    const compatibilityStatus: HardwareCompatibilityV1Status | null = compatibilityItems.some((item) => item.status === "incompatible")
+      ? "incompatible"
+      : compatibilityItems.some((item) => item.status === "warning")
+        ? "warning"
+        : compatibilityItems.some((item) => item.status === "unknown")
+          ? "unknown"
+          : compatibilityItems.some((item) => item.status === "compatible")
+            ? "compatible"
+            : null;
+
+    const constraintErrors = constraintItems.filter((item) => item.status === "error").length;
+    const constraintWarnings = constraintItems.filter((item) => item.status === "warning").length;
+    const collisionCritical = collisionItems.filter((item) => item.severity === "critical").length;
+    const collisionWarnings = collisionItems.filter((item) => item.severity === "warning").length;
+    const status = resolveProductionReadinessGateV1Status(
+      compatibilityGate,
+      constraintErrors,
+      constraintWarnings,
+      collisionCritical,
+      collisionWarnings
+    );
+
+    const reasons: string[] = [];
+    if (compatibilityGate === "blocked") reasons.push("Compatibility Matrix V1.2: profilo o spessore bloccante.");
+    if (compatibilityGate === "review") reasons.push("Compatibility Matrix V1.2: richiesta revisione manuale.");
+    if (constraintErrors > 0) reasons.push(`Constraint Engine V1: ${constraintErrors} errore/i non producibili.`);
+    if (constraintWarnings > 0) reasons.push(`Constraint Engine V1: ${constraintWarnings} warning da verificare.`);
+    if (collisionCritical > 0) reasons.push(`Collision Engine V1.5: ${collisionCritical} criticità.`);
+    if (collisionWarnings > 0) reasons.push(`Collision Engine V1.5: ${collisionWarnings} warning.`);
+    if (reasons.length === 0) reasons.push("Componente senza blocchi rilevati dal Production Readiness Gate V1.");
+
+    return {
+      componentId,
+      displayName,
+      status,
+      compatibilityGate,
+      compatibilityStatus,
+      constraintErrors,
+      constraintWarnings,
+      collisionCritical,
+      collisionWarnings,
+      reasons,
+    };
+  });
+
+  return {
+    schema: "bagastudio-production-readiness-gate-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      components: items.length,
+      pass: items.filter((item) => item.status === "pass").length,
+      review: items.filter((item) => item.status === "review").length,
+      blocked: items.filter((item) => item.status === "blocked").length,
+      compatibilityBlocked: items.filter((item) => item.compatibilityGate === "blocked").length,
+      constraintErrors: constraintReport.totals.errors,
+      collisionCritical: collisionReport.totals.critical,
+    },
+    items,
+  };
+}
+
+const productionReadinessGateV1Report = useMemo(() => {
+  return buildProductionReadinessGateV1Report(
+    hardwareCompatibilityMatrixV1Report,
+    constraintEngineV1Report,
+    collisionEngineV1Report,
+    meshList
+  );
+}, [hardwareCompatibilityMatrixV1Report, constraintEngineV1Report, collisionEngineV1Report, meshList]);
+
+function downloadProductionReadinessGateV1Report() {
+  downloadJsonFile(`bagastudio-production-readiness-gate-v1-${Date.now()}.json`, productionReadinessGateV1Report);
+}
+
+
+type ParametricEditV1Status = "ready" | "review" | "blocked" | "skipped";
+
+type ParametricEditV1Item = {
+  componentId: string;
+  displayName: string;
+  status: ParametricEditV1Status;
+  productionGate: ProductionReadinessGateV1Status | null;
+  csvStatus: "updated" | "unchanged" | "skipped" | null;
+  originalThickness: number | null;
+  targetThickness: number | null;
+  externalDimensionsLocked: boolean;
+  needsInternalRecalculation: boolean;
+  note: string;
+};
+
+type ParametricEditV1Report = {
+  schema: "bagastudio-parametric-edit-v1";
+  version: 1;
+  generatedAt: string;
+  targetThickness: number | null;
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    skipped: number;
+    externalDimensionsLocked: number;
+    internalRecalculationRequired: number;
+  };
+  items: ParametricEditV1Item[];
+};
+
+function buildParametricEditV1Report(
+  productionGateReport: ProductionReadinessGateV1Report,
+  csvReport: CsvRegenerationV1Report,
+  meshes: MeshConfig[],
+  targetThicknessValue: string
+): ParametricEditV1Report {
+  const productionByComponent = new Map<string, ProductionReadinessGateV1Item>();
+  productionGateReport.items.forEach((item) => productionByComponent.set(item.componentId, item));
+
+  const csvByName = new Map<string, CsvRegenerationV1Report["rows"][number]>();
+  csvReport.rows.forEach((row) => csvByName.set(normalizeCsvRegenerationKey(row.name), row));
+
+  const targetThickness = readCollisionNumberV1(targetThicknessValue);
+
+  const items: ParametricEditV1Item[] = meshes.map((mesh, index) => {
+    const componentId = buildStablePartId(mesh, index);
+    const displayName = mesh.displayName || mesh.meshName || componentId;
+    const production = productionByComponent.get(componentId) || null;
+    const meshAny = mesh as any;
+    const csvRow = csvByName.get(normalizeCsvRegenerationKey(meshAny.csvSource || displayName || mesh.meshName)) || null;
+    const parametricData = parseBagaStudioJsonField(meshAny.parametricData, {}) as Record<string, unknown>;
+    const manufacturingOverrideData = parseBagaStudioJsonField(meshAny.manufacturingOverrideData, {}) as Record<string, unknown>;
+
+    const originalThickness = readCollisionNumberV1(parametricData.originalThickness, csvRow?.originalThickness, mesh.panelThickness);
+    const effectiveTargetThickness = readCollisionNumberV1(
+      parametricData.currentThickness,
+      manufacturingOverrideData.targetThickness,
+      csvRow?.regeneratedThickness,
+      targetThickness
+    );
+
+    const externalDimensionsLocked = Boolean(
+      parametricData.externalDimensionsLocked ||
+      manufacturingOverrideData.externalDimensionsLocked ||
+      readCollisionNumberV1(parametricData.originalWidth, csvRow?.originalWidth) !== null
+    );
+
+    const changedThickness = Boolean(
+      originalThickness !== null &&
+      effectiveTargetThickness !== null &&
+      Math.abs(originalThickness - effectiveTargetThickness) > 0.001
+    );
+
+    const needsInternalRecalculation = changedThickness && externalDimensionsLocked;
+
+    let status: ParametricEditV1Status = "ready";
+    let note = "Componente pronto per Parametric Edit V1 con ingombro esterno bloccato.";
+
+    if (production?.status === "blocked") {
+      status = "blocked";
+      note = "Bloccato dal Production Readiness Gate V1: correggere errori prima dell'edit parametrico.";
+    } else if (production?.status === "review") {
+      status = "review";
+      note = "Richiede review dal Production Readiness Gate V1 prima dell'edit parametrico.";
+    } else if (!externalDimensionsLocked) {
+      status = "review";
+      note = "Ingombro esterno non ancora bloccato: controllare dimensioni prima del ricalcolo interno.";
+    } else if (csvRow?.status === "skipped") {
+      status = "skipped";
+      note = "Riga CSV esclusa o non modificabile dalle regole produttive attuali.";
+    } else if (needsInternalRecalculation) {
+      status = "ready";
+      note = "Pronto: cambio spessore rilevato, ingombro esterno bloccato e ricalcolo interno richiesto.";
+    }
+
+    return {
+      componentId,
+      displayName,
+      status,
+      productionGate: production?.status || null,
+      csvStatus: csvRow?.status || null,
+      originalThickness,
+      targetThickness: effectiveTargetThickness,
+      externalDimensionsLocked,
+      needsInternalRecalculation,
+      note,
+    };
+  });
+
+  return {
+    schema: "bagastudio-parametric-edit-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    targetThickness,
+    totals: {
+      components: items.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review: items.filter((item) => item.status === "review").length,
+      blocked: items.filter((item) => item.status === "blocked").length,
+      skipped: items.filter((item) => item.status === "skipped").length,
+      externalDimensionsLocked: items.filter((item) => item.externalDimensionsLocked).length,
+      internalRecalculationRequired: items.filter((item) => item.needsInternalRecalculation).length,
+    },
+    items,
+  };
+}
+
+const parametricEditV1Report = useMemo(() => {
+  return buildParametricEditV1Report(
+    productionReadinessGateV1Report,
+    csvRegenerationV1Report,
+    meshList,
+    manufacturingOverrideThickness
+  );
+}, [productionReadinessGateV1Report, csvRegenerationV1Report, meshList, manufacturingOverrideThickness]);
+
+function downloadParametricEditV1Report() {
+  downloadJsonFile(`bagastudio-parametric-edit-v1-${Date.now()}.json`, parametricEditV1Report);
+}
+
+
+type CsvRegenerationGuardV1Status = "ready" | "review" | "blocked";
+
+type CsvRegenerationGuardV1Item = {
+  rowIndex: number;
+  name: string;
+  status: CsvRegenerationGuardV1Status;
+  csvStatus: "updated" | "unchanged" | "skipped";
+  productionGate: ProductionReadinessGateV1Status | null;
+  parametricStatus: ParametricEditV1Status | null;
+  originalThickness: number | null;
+  regeneratedThickness: number | null;
+  externalDimensionsLocked: boolean;
+  note: string;
+};
+
+type CsvRegenerationGuardV1Report = {
+  schema: "bagastudio-csv-regeneration-guard-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: "CSV_READY" | "CSV_REVIEW_REQUIRED" | "CSV_BLOCKED";
+  totals: {
+    rows: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    updatedRows: number;
+    skippedRows: number;
+    externalDimensionsLocked: number;
+  };
+  items: CsvRegenerationGuardV1Item[];
+};
+
+function buildCsvRegenerationGuardV1Report(
+  csvReport: CsvRegenerationV1Report,
+  parametricReport: ParametricEditV1Report,
+  productionGateReport: ProductionReadinessGateV1Report
+): CsvRegenerationGuardV1Report {
+  const parametricByName = new Map<string, ParametricEditV1Item>();
+  parametricReport.items.forEach((item) => {
+    parametricByName.set(normalizeCsvRegenerationKey(item.displayName), item);
+  });
+
+  const productionByName = new Map<string, ProductionReadinessGateV1Item>();
+  productionGateReport.items.forEach((item) => {
+    productionByName.set(normalizeCsvRegenerationKey(item.displayName), item);
+  });
+
+  const items = csvReport.rows.map((row) => {
+    const rowKey = normalizeCsvRegenerationKey(row.name);
+    const parametric = parametricByName.get(rowKey) || null;
+    const production = productionByName.get(rowKey) || null;
+
+    let status: CsvRegenerationGuardV1Status = "ready";
+    let note = "CSV rigenerabile: riga collegata e controlli produttivi senza blocchi.";
+
+    if (production?.status === "blocked" || parametric?.status === "blocked") {
+      status = "blocked";
+      note = "Bloccato: Production Readiness Gate o Parametric Edit segnala errori da correggere prima della rigenerazione CSV.";
+    } else if (row.status === "skipped") {
+      status = "review";
+      note = "Review richiesta: riga CSV saltata o non modificabile dalle regole correnti.";
+    } else if (production?.status === "review" || parametric?.status === "review") {
+      status = "review";
+      note = "Review richiesta: controllare warning produttivi prima dell'export CSV definitivo.";
+    } else if (!parametric?.externalDimensionsLocked) {
+      status = "review";
+      note = "Review richiesta: ingombro esterno non confermato/bloccato sul componente collegato.";
+    }
+
+    return {
+      rowIndex: row.rowIndex,
+      name: row.name,
+      status,
+      csvStatus: row.status,
+      productionGate: production?.status || null,
+      parametricStatus: parametric?.status || null,
+      originalThickness: row.originalThickness,
+      regeneratedThickness: row.regeneratedThickness,
+      externalDimensionsLocked: Boolean(parametric?.externalDimensionsLocked),
+      note,
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+
+  return {
+    schema: "bagastudio-csv-regeneration-guard-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness: blocked > 0 ? "CSV_BLOCKED" : review > 0 ? "CSV_REVIEW_REQUIRED" : "CSV_READY",
+    totals: {
+      rows: items.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      updatedRows: csvReport.totals.updatedRows,
+      skippedRows: csvReport.totals.skippedRows,
+      externalDimensionsLocked: items.filter((item) => item.externalDimensionsLocked).length,
+    },
+    items,
+  };
+}
+
+const csvRegenerationGuardV1Report = useMemo(() => {
+  return buildCsvRegenerationGuardV1Report(
+    csvRegenerationV1Report,
+    parametricEditV1Report,
+    productionReadinessGateV1Report
+  );
+}, [csvRegenerationV1Report, parametricEditV1Report, productionReadinessGateV1Report]);
+
+function downloadCsvRegenerationGuardV1Report() {
+  downloadJsonFile(`bagastudio-csv-regeneration-guard-v1-${Date.now()}.json`, csvRegenerationGuardV1Report);
+}
+
+type FactoryExportPackageV1Readiness = "FACTORY_READY" | "FACTORY_REVIEW_REQUIRED" | "FACTORY_BLOCKED";
+
+type FactoryExportPackageV1Report = {
+  schema: "bagastudio-factory-export-package-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: FactoryExportPackageV1Readiness;
+  product: {
+    id: string;
+    name: string;
+    category: string;
+    brand: string;
+    packageVersion: string;
+  };
+  sources: {
+    csvFileName: string | null;
+    targetThickness: number | null;
+    componentCount: number;
+  };
+  gates: {
+    compatibilityMatrix: typeof hardwareCompatibilityMatrixV1Report;
+    productionReadiness: ProductionReadinessGateV1Report;
+    parametricEdit: ParametricEditV1Report;
+    csvRegeneration: CsvRegenerationV1Report;
+    csvGuard: CsvRegenerationGuardV1Report;
+  };
+  exports: {
+    regeneratedCsv: string;
+  };
+  summary: {
+    csvRows: number;
+    csvUpdatedRows: number;
+    csvBlockedRows: number;
+    csvReviewRows: number;
+    productionBlockedComponents: number;
+    parametricBlockedComponents: number;
+  };
+  notes: string[];
+};
+
+function buildFactoryExportPackageV1Report(params: {
+  productId: string;
+  productName: string;
+  productCategory: string;
+  productBrand: string;
+  packageVersion: string;
+  componentCount: number;
+  compatibilityMatrix: typeof hardwareCompatibilityMatrixV1Report;
+  productionReadiness: ProductionReadinessGateV1Report;
+  parametricEdit: ParametricEditV1Report;
+  csvRegeneration: CsvRegenerationV1Report;
+  csvGuard: CsvRegenerationGuardV1Report;
+}): FactoryExportPackageV1Report {
+  const readiness: FactoryExportPackageV1Readiness =
+    params.csvGuard.readiness === "CSV_BLOCKED" || params.productionReadiness.totals.blocked > 0
+      ? "FACTORY_BLOCKED"
+      : params.csvGuard.readiness === "CSV_REVIEW_REQUIRED" || params.productionReadiness.totals.review > 0
+        ? "FACTORY_REVIEW_REQUIRED"
+        : "FACTORY_READY";
+
+  const notes = [
+    readiness === "FACTORY_READY"
+      ? "Pacchetto pronto per export factory diagnostico."
+      : readiness === "FACTORY_BLOCKED"
+        ? "Export factory bloccato: correggere gli errori segnalati prima della produzione."
+        : "Export factory richiede revisione tecnica prima della produzione.",
+    "Il CSV rigenerato mantiene gli ingombri esterni e segnala righe saltate o non collegate.",
+    "Questo pacchetto V1 è diagnostico: prima dell'uso in produzione serve validazione manuale su casi reali.",
+  ];
+
+  return {
+    schema: "bagastudio-factory-export-package-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness,
+    product: {
+      id: params.productId,
+      name: params.productName,
+      category: params.productCategory,
+      brand: params.productBrand,
+      packageVersion: params.packageVersion,
+    },
+    sources: {
+      csvFileName: params.csvRegeneration.sourceCsvFileName,
+      targetThickness: params.csvRegeneration.targetThickness,
+      componentCount: params.componentCount,
+    },
+    gates: {
+      compatibilityMatrix: params.compatibilityMatrix,
+      productionReadiness: params.productionReadiness,
+      parametricEdit: params.parametricEdit,
+      csvRegeneration: params.csvRegeneration,
+      csvGuard: params.csvGuard,
+    },
+    exports: {
+      regeneratedCsv: buildCsvRegenerationV1Csv(params.csvRegeneration),
+    },
+    summary: {
+      csvRows: params.csvRegeneration.totals.csvRows,
+      csvUpdatedRows: params.csvRegeneration.totals.updatedRows,
+      csvBlockedRows: params.csvGuard.totals.blocked,
+      csvReviewRows: params.csvGuard.totals.review,
+      productionBlockedComponents: params.productionReadiness.totals.blocked,
+      parametricBlockedComponents: params.parametricEdit.totals.blocked,
+    },
+    notes,
+  };
+}
+
+const factoryExportPackageV1Report = useMemo(() => {
+  return buildFactoryExportPackageV1Report({
+    productId,
+    productName,
+    productCategory,
+    productBrand,
+    packageVersion,
+    componentCount: meshList.length,
+    compatibilityMatrix: hardwareCompatibilityMatrixV1Report,
+    productionReadiness: productionReadinessGateV1Report,
+    parametricEdit: parametricEditV1Report,
+    csvRegeneration: csvRegenerationV1Report,
+    csvGuard: csvRegenerationGuardV1Report,
+  });
+}, [
+  productId,
+  productName,
+  productCategory,
+  productBrand,
+  packageVersion,
+  meshList.length,
+  hardwareCompatibilityMatrixV1Report,
+  productionReadinessGateV1Report,
+  parametricEditV1Report,
+  csvRegenerationV1Report,
+  csvRegenerationGuardV1Report,
+]);
+
+function downloadFactoryExportPackageV1Report() {
+  downloadJsonFile(`bagastudio-factory-export-package-v1-${Date.now()}.json`, factoryExportPackageV1Report);
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -6877,6 +7567,166 @@ function downloadImporterDiagnosticJson() {
           </div>
         </section>
 
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06141a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">CSV Regeneration Guard V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Controllo finale rigenerazione CSV</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Verifica che le righe CSV rigenerate siano coerenti con Production Readiness Gate e Parametric Edit prima dell'export produttivo definitivo.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                csvRegenerationGuardV1Report.readiness === "CSV_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : csvRegenerationGuardV1Report.readiness === "CSV_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {csvRegenerationGuardV1Report.readiness.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadCsvRegenerationGuardV1Report}
+                disabled={csvRegenerationGuardV1Report.totals.rows === 0}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta guard
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Righe</p>
+              <p className="mt-1 text-2xl font-black text-white">{csvRegenerationGuardV1Report.totals.rows}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{csvRegenerationGuardV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{csvRegenerationGuardV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{csvRegenerationGuardV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Ingombri bloccati</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{csvRegenerationGuardV1Report.totals.externalDimensionsLocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-[#07161a] text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Riga</th>
+                  <th className="px-3 py-3">Pezzo</th>
+                  <th className="px-3 py-3">Spessore</th>
+                  <th className="px-3 py-3">Gate</th>
+                  <th className="px-3 py-3">Nota</th>
+                </tr>
+              </thead>
+              <tbody>
+                {csvRegenerationGuardV1Report.items.slice(0, 30).map((item) => (
+                  <tr key={`${item.rowIndex}-${item.name}`} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 text-slate-500">{item.rowIndex}</td>
+                    <td className="px-3 py-2 font-semibold text-white">{item.name}</td>
+                    <td className="px-3 py-2">{item.originalThickness ?? "n/d"} → {item.regeneratedThickness ?? "n/d"}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-500">{item.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#1a0617]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Factory Export Package V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Pacchetto export factory</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Consolida Matrix, Production Readiness, Parametric Edit, CSV rigenerato e Guard in un unico pacchetto JSON diagnostico per il flusso Factory.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                factoryExportPackageV1Report.readiness === "FACTORY_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : factoryExportPackageV1Report.readiness === "FACTORY_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {factoryExportPackageV1Report.readiness.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadFactoryExportPackageV1Report}
+                disabled={factoryExportPackageV1Report.summary.csvRows === 0}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta factory package
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryExportPackageV1Report.sources.componentCount}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Righe CSV</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryExportPackageV1Report.summary.csvRows}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Aggiornate</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{factoryExportPackageV1Report.summary.csvUpdatedRows}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review CSV</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{factoryExportPackageV1Report.summary.csvReviewRows}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked CSV</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{factoryExportPackageV1Report.summary.csvBlockedRows}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Spessore target</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{factoryExportPackageV1Report.sources.targetThickness ?? "n/d"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Note export</p>
+            <ul className="mt-3 space-y-2 text-xs text-slate-400">
+              {factoryExportPackageV1Report.notes.map((note) => (
+                <li key={note}>• {note}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
 
         <section className="rounded-[28px] border border-emerald-400/15 bg-[#071a13]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -7383,10 +8233,10 @@ function downloadImporterDiagnosticJson() {
         <section className="rounded-[28px] border border-teal-400/15 bg-[#071a16]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-teal-200">Hardware Compatibility Matrix V1</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-teal-200">Hardware Compatibility Matrix V1.2</p>
               <h2 className="mt-1 text-xl font-semibold text-white">Matrice compatibilità ferramenta</h2>
               <p className="mt-1 max-w-3xl text-sm text-slate-400">
-                Incrocia Pattern Recognition V1 con gli spessori e usa solo profili affidabili: Ferramenta_17.8, Ferramenta_18.3, Cabineo_Singolo e divario_elvis.
+                Incrocia Pattern Recognition V1 con la Knowledge Base V1.1: profili verificati, priorità, reliability score, production gate e blocco dei Divario generici non affidabili.
               </p>
             </div>
 
@@ -7419,11 +8269,13 @@ function downloadImporterDiagnosticJson() {
           </div>
 
           <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
-            <div className="grid grid-cols-[1fr_0.7fr_0.7fr_0.6fr_1.1fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <div className="grid grid-cols-[1fr_0.65fr_0.65fr_0.4fr_0.55fr_0.5fr_1.1fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
               <span>Componente</span>
               <span>Ferramenta</span>
               <span>Profilo</span>
+              <span>Score</span>
               <span>Stato</span>
+              <span>Gate</span>
               <span>Nota</span>
             </div>
 
@@ -7431,13 +8283,14 @@ function downloadImporterDiagnosticJson() {
               <div className="px-4 py-8 text-sm text-slate-400">Nessun pattern disponibile per la matrice compatibilità.</div>
             ) : (
               hardwareCompatibilityMatrixV1Report.items.slice(0, 80).map((item, index) => (
-                <div key={`${item.componentId}-${item.hardwareLabel}-${index}`} className="grid grid-cols-[1fr_0.7fr_0.7fr_0.6fr_1.1fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                <div key={`${item.componentId}-${item.hardwareLabel}-${index}`} className="grid grid-cols-[1fr_0.65fr_0.65fr_0.4fr_0.55fr_0.5fr_1.1fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
                   <div>
                     <p className="font-black text-white">{item.displayName}</p>
                     <p className="mt-1 text-slate-500">Spessore: {item.currentThickness ?? "-"} mm</p>
                   </div>
                   <span className="font-semibold text-slate-200">{item.hardwareLabel}</span>
                   <span className="font-semibold text-teal-100">{item.trustedProfile || "-"}</span>
+                  <span className="font-black text-slate-100">{item.reliabilityScore || "-"}</span>
                   <span className={
                     item.status === "compatible"
                       ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
@@ -7449,6 +8302,15 @@ function downloadImporterDiagnosticJson() {
                   }>
                     {item.status}
                   </span>
+                  <span className={
+                    item.productionGate === "pass"
+                      ? "h-fit rounded-full bg-cyan-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-cyan-100"
+                      : item.productionGate === "blocked"
+                        ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                        : "h-fit rounded-full bg-amber-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-amber-100"
+                  }>
+                    {item.productionGate || "review"}
+                  </span>
                   <span className="text-slate-300">{item.note}</span>
                 </div>
               ))
@@ -7456,6 +8318,159 @@ function downloadImporterDiagnosticJson() {
           </div>
         </section>
 
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#07131f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Production Readiness Gate V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Semaforo produzione componenti</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Incrocia Compatibility Matrix V1.2, Constraint Engine V1 e Collision Engine V1.5 per classificare ogni componente come pass, review o blocked.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadProductionReadinessGateV1Report}
+              className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+            >
+              Esporta production gate
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Pass</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{productionReadinessGateV1Report.totals.pass}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-amber-100">{productionReadinessGateV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{productionReadinessGateV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{productionReadinessGateV1Report.totals.components}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.55fr_0.55fr_0.7fr_1.4fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Gate</span>
+              <span>Matrix</span>
+              <span>Problemi</span>
+              <span>Motivazioni</span>
+            </div>
+
+            {productionReadinessGateV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">Nessun componente disponibile per il Production Readiness Gate.</div>
+            ) : (
+              productionReadinessGateV1Report.items.slice(0, 80).map((item) => (
+                <div key={item.componentId} className="grid grid-cols-[1fr_0.55fr_0.55fr_0.7fr_1.4fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">{item.componentId}</p>
+                  </div>
+                  <span className={
+                    item.status === "pass"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "blocked"
+                        ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                        : "h-fit rounded-full bg-amber-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-amber-100"
+                  }>
+                    {item.status}
+                  </span>
+                  <span className="font-semibold text-sky-100">{item.compatibilityGate || "-"}</span>
+                  <span className="text-slate-300">
+                    C:{item.collisionCritical}/{item.collisionWarnings} · V:{item.constraintErrors}/{item.constraintWarnings}
+                  </span>
+                  <span className="text-slate-300">{item.reasons.slice(0, 2).join(" ")}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#12091f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Parametric Edit V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Prontezza modifica parametrica</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Controlla quali componenti possono entrare nel Parametric Edit mantenendo l'ingombro esterno bloccato e preparando il ricalcolo interno.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadParametricEditV1Report}
+              className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+            >
+              Esporta parametric edit
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{parametricEditV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{parametricEditV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-amber-100">{parametricEditV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{parametricEditV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Esterni bloccati</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{parametricEditV1Report.totals.externalDimensionsLocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Ricalcolo interno</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{parametricEditV1Report.totals.internalRecalculationRequired}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            {parametricEditV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">Nessun componente disponibile per Parametric Edit V1.</div>
+            ) : (
+              parametricEditV1Report.items.slice(0, 80).map((item) => (
+                <div key={item.componentId} className="grid grid-cols-[1fr_0.55fr_0.7fr_0.7fr_1.4fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">{item.componentId}</p>
+                  </div>
+                  <span className={
+                    item.status === "ready"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "blocked"
+                        ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                        : item.status === "skipped"
+                          ? "h-fit rounded-full bg-slate-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-slate-100"
+                          : "h-fit rounded-full bg-amber-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-amber-100"
+                  }>
+                    {item.status}
+                  </span>
+                  <span className="text-slate-300">{item.originalThickness ?? "n/d"} → {item.targetThickness ?? "n/d"} mm</span>
+                  <span className="text-slate-300">Ext: {item.externalDimensionsLocked ? "lock" : "review"}</span>
+                  <span className="text-slate-300">{item.note}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
 
         <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#17071a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
