@@ -53,6 +53,8 @@ type MeshConfig = {
   drillingLinks?: string;
   dependencyParents?: string;
   dependencyChildren?: string;
+  parametricData?: string;
+  manufacturingOverrideData?: string;
 
   ledFrontOffset: string;
 ledSideMargin: string;
@@ -768,6 +770,139 @@ function readCollisionDimensionsV1(mesh: MeshConfig) {
   );
 
   return { width, height, depth, panelThickness };
+}
+
+
+type ManufacturingOverrideV1Report = {
+  schema: "bagastudio-manufacturing-override-v1";
+  version: 1;
+  generatedAt: string;
+  targetThickness: number | null;
+  totals: {
+    components: number;
+    editableComponents: number;
+    changedComponents: number;
+    lockedExternalDimensions: number;
+    skippedComponents: number;
+  };
+  items: Array<{
+    componentId: string;
+    meshName: string;
+    displayName: string;
+    originalThickness: number | null;
+    targetThickness: number | null;
+    deltaThickness: number | null;
+    lockExternalDimensions: boolean;
+    status: "ready" | "changed" | "skipped";
+    note: string;
+  }>;
+};
+
+function buildManufacturingOverrideV1Report(meshes: MeshConfig[], targetThicknessValue: string): ManufacturingOverrideV1Report {
+  const targetThickness = readCollisionNumberV1(targetThicknessValue);
+  const items = meshes.map((mesh, index) => {
+    const dimensions = readCollisionDimensionsV1(mesh);
+    const originalThickness = dimensions.panelThickness;
+    const isEditable = originalThickness !== null && targetThickness !== null;
+    const deltaThickness = isEditable ? Number((targetThickness - originalThickness).toFixed(3)) : null;
+    const changed = Boolean(isEditable && Math.abs(deltaThickness || 0) > 0.001);
+
+    return {
+      componentId: buildStablePartId(mesh, index),
+      meshName: mesh.meshName,
+      displayName: mesh.displayName || mesh.meshName || `Componente ${index + 1}`,
+      originalThickness,
+      targetThickness,
+      deltaThickness,
+      lockExternalDimensions: true,
+      status: !isEditable ? "skipped" as const : changed ? "changed" as const : "ready" as const,
+      note: !isEditable
+        ? "Spessore non disponibile: componente saltato."
+        : changed
+          ? "Override pronto: ingombro esterno bloccato, quote interne da ricalcolare negli step successivi."
+          : "Spessore già allineato al valore richiesto.",
+    };
+  });
+
+  return {
+    schema: "bagastudio-manufacturing-override-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    targetThickness,
+    totals: {
+      components: meshes.length,
+      editableComponents: items.filter((item) => item.status !== "skipped").length,
+      changedComponents: items.filter((item) => item.status === "changed").length,
+      lockedExternalDimensions: items.filter((item) => item.lockExternalDimensions).length,
+      skippedComponents: items.filter((item) => item.status === "skipped").length,
+    },
+    items,
+  };
+}
+
+function applyManufacturingOverrideV1(meshes: MeshConfig[], targetThicknessValue: string): MeshConfig[] {
+  const targetThickness = readCollisionNumberV1(targetThicknessValue);
+  if (targetThickness === null) return meshes;
+
+  return meshes.map((mesh, index) => {
+    const dimensions = readCollisionDimensionsV1(mesh);
+    const originalThickness = dimensions.panelThickness;
+    if (originalThickness === null) return mesh;
+
+    const existingManufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {}) as Record<string, unknown>;
+    const existingParametricData = parseBagaStudioJsonField(mesh.parametricData, {}) as Record<string, unknown>;
+
+    const parametricData = {
+      ...existingParametricData,
+      originalWidth: readCollisionNumberV1(existingParametricData.originalWidth, dimensions.width),
+      originalHeight: readCollisionNumberV1(existingParametricData.originalHeight, dimensions.height),
+      originalDepth: readCollisionNumberV1(existingParametricData.originalDepth, dimensions.depth),
+      originalThickness: readCollisionNumberV1(existingParametricData.originalThickness, originalThickness),
+      currentWidth: readCollisionNumberV1(existingParametricData.currentWidth, dimensions.width),
+      currentHeight: readCollisionNumberV1(existingParametricData.currentHeight, dimensions.height),
+      currentDepth: readCollisionNumberV1(existingParametricData.currentDepth, dimensions.depth),
+      currentThickness: targetThickness,
+      lockExternalDimensions: true,
+      parametricVersion: 1,
+      lastOverrideAt: new Date().toISOString(),
+    };
+
+    const manufacturingOverrideData = {
+      schema: "bagastudio-manufacturing-override-v1",
+      version: 1,
+      appliedAt: new Date().toISOString(),
+      componentId: buildStablePartId(mesh, index),
+      originalThickness,
+      targetThickness,
+      deltaThickness: Number((targetThickness - originalThickness).toFixed(3)),
+      lockExternalDimensions: true,
+      externalDimensionsLocked: {
+        width: dimensions.width,
+        height: dimensions.height,
+        depth: dimensions.depth,
+      },
+      nextSteps: [
+        "recalculate-internal-quotes",
+        "recalculate-drillings",
+        "validate-collision-engine-v1-5",
+        "prepare-csv-regeneration",
+      ],
+    };
+
+    return {
+      ...mesh,
+      panelThickness: String(targetThickness),
+      manufacturingData: JSON.stringify({
+        ...existingManufacturingData,
+        panelThickness: targetThickness,
+        thickness: targetThickness,
+        manufacturingOverrideV1Ready: true,
+        externalDimensionsLocked: true,
+      }),
+      parametricData: JSON.stringify(parametricData),
+      manufacturingOverrideData: JSON.stringify(manufacturingOverrideData),
+    };
+  });
 }
 
 function readCollisionPointV1(item: any) {
@@ -2767,8 +2902,22 @@ const collisionEngineV1Report = useMemo(() => {
   return buildCollisionEngineV1Report(meshList);
 }, [meshList]);
 
+const [manufacturingOverrideThickness, setManufacturingOverrideThickness] = useState("17.8");
+
+const manufacturingOverrideV1Report = useMemo(() => {
+  return buildManufacturingOverrideV1Report(meshList, manufacturingOverrideThickness);
+}, [meshList, manufacturingOverrideThickness]);
+
 function downloadCollisionEngineV1Report() {
   downloadJsonFile(`bagastudio-collision-engine-v1-5-${Date.now()}.json`, collisionEngineV1Report);
+}
+
+function downloadManufacturingOverrideV1Report() {
+  downloadJsonFile(`bagastudio-manufacturing-override-v1-${Date.now()}.json`, manufacturingOverrideV1Report);
+}
+
+function applyManufacturingOverrideThicknessV1() {
+  setMeshList((current) => applyManufacturingOverrideV1(current, manufacturingOverrideThickness));
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -3155,20 +3304,25 @@ function buildCurrentProductPackageJson() {
           }
         : null,
 
-      parametricData: {
-        originalWidth: productionMatch?.csvPart?.width ?? null,
-        originalHeight: null,
-        originalDepth: productionMatch?.csvPart?.depth ?? null,
-        originalThickness: productionMatch?.csvPart?.thickness ?? null,
+      parametricData: (() => {
+        const existingParametricData = parseBagaStudioJsonField(mesh.parametricData, {}) as Record<string, unknown>;
+        return {
+          originalWidth: readCollisionNumberV1(existingParametricData.originalWidth, productionMatch?.csvPart?.width) ?? null,
+          originalHeight: readCollisionNumberV1(existingParametricData.originalHeight) ?? null,
+          originalDepth: readCollisionNumberV1(existingParametricData.originalDepth, productionMatch?.csvPart?.depth) ?? null,
+          originalThickness: readCollisionNumberV1(existingParametricData.originalThickness, productionMatch?.csvPart?.thickness) ?? null,
 
-        currentWidth: productionMatch?.csvPart?.width ?? null,
-        currentHeight: null,
-        currentDepth: productionMatch?.csvPart?.depth ?? null,
-        currentThickness: productionMatch?.csvPart?.thickness ?? null,
+          currentWidth: readCollisionNumberV1(existingParametricData.currentWidth, productionMatch?.csvPart?.width) ?? null,
+          currentHeight: readCollisionNumberV1(existingParametricData.currentHeight) ?? null,
+          currentDepth: readCollisionNumberV1(existingParametricData.currentDepth, productionMatch?.csvPart?.depth) ?? null,
+          currentThickness: readCollisionNumberV1(existingParametricData.currentThickness, mesh.panelThickness, productionMatch?.csvPart?.thickness) ?? null,
 
-        lockExternalDimensions: true,
-        parametricVersion: 1,
-      },
+          lockExternalDimensions: true,
+          parametricVersion: 1,
+        };
+      })(),
+
+      manufacturingOverrideData: parseBagaStudioJsonField(mesh.manufacturingOverrideData, null),
     };
   });
 
@@ -4542,6 +4696,94 @@ function downloadImporterDiagnosticJson() {
               Mostrate le prime 30 anomalie. Esporta il report JSON per vedere l'elenco completo.
             </p>
           )}
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06121a]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Manufacturing Override Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Override spessori pannelli</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Applica un nuovo spessore tecnico mantenendo bloccate le dimensioni esterne. Questo step prepara il ricalcolo di quote interne, forature, ferramenta e CSV senza deformare il modulo.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Nuovo spessore mm</span>
+                <input
+                  value={manufacturingOverrideThickness}
+                  onChange={(event) => setManufacturingOverrideThickness(event.target.value)}
+                  className="w-36 rounded-2xl border border-cyan-400/25 bg-black/30 px-4 py-3 text-sm font-black text-white outline-none focus:border-cyan-300"
+                  placeholder="17.8"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={applyManufacturingOverrideThicknessV1}
+                className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-400"
+              >
+                Applica override
+              </button>
+
+              <button
+                type="button"
+                onClick={downloadManufacturingOverrideV1Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta report
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{manufacturingOverrideV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Editabili</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{manufacturingOverrideV1Report.totals.editableComponents}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Da cambiare</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{manufacturingOverrideV1Report.totals.changedComponents}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Esterno bloccato</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{manufacturingOverrideV1Report.totals.lockedExternalDimensions}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Saltati</p>
+              <p className="mt-1 text-2xl font-black text-slate-200">{manufacturingOverrideV1Report.totals.skippedComponents}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 space-y-3 overflow-auto pr-2">
+            {manufacturingOverrideV1Report.items.slice(0, 20).map((item) => (
+              <div key={item.componentId} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Originale: {item.originalThickness ?? "n/d"} mm · Nuovo: {item.targetThickness ?? "n/d"} mm · Delta: {item.deltaThickness ?? "n/d"}
+                    </p>
+                  </div>
+                  <span className={
+                    item.status === "changed"
+                      ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                      : item.status === "skipped"
+                        ? "rounded-full border border-slate-400/20 bg-slate-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-200"
+                        : "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-100"
+                  }>
+                    {item.status}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{item.note}</p>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
