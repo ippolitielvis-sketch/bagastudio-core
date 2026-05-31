@@ -2084,6 +2084,91 @@ function inferAutoMappingV2MaterialSlots(name: string, category: string) {
   return "main";
 }
 
+
+type CixDrillingExtractorV1Item = {
+  sourceFileName: string;
+  macro: string;
+  index: number;
+  side: number | null;
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  depth: number | null;
+  diameter: number | null;
+  repeatIndex: number;
+  repeatCount: number;
+};
+
+function readCixParamNumberV1(value: unknown): number | null {
+  const parsed = Number(String(value ?? "").replace(/\"/g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseCixMacroParamsV1(block: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const paramRegex = /PARAM,NAME=([^,\r\n]+),VALUE=([^\r\n]*)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = paramRegex.exec(block))) {
+    const key = String(match[1] || "").trim();
+    const rawValue = String(match[2] || "").trim();
+    params[key] = rawValue.replace(/^\"|\"$/g, "");
+  }
+
+  return params;
+}
+
+function extractCixDrillingsV1(fileName: string, content: string): CixDrillingExtractorV1Item[] {
+  const drillings: CixDrillingExtractorV1Item[] = [];
+  const macroRegex = /NAME=(BV|BH)\s*([\s\S]*?)(?=\n\s*BEGIN MACRO|\n\s*END MACRO|$)/g;
+  let match: RegExpExecArray | null;
+  let macroIndex = 0;
+
+  while ((match = macroRegex.exec(content))) {
+    const macro = String(match[1] || "").trim();
+    const block = String(match[2] || "");
+    const params = parseCixMacroParamsV1(block);
+
+    const x = readCixParamNumberV1(params.X);
+    const y = readCixParamNumberV1(params.Y);
+    const z = readCixParamNumberV1(params.Z);
+    const dx = readCixParamNumberV1(params.DX) ?? 0;
+    const dy = readCixParamNumberV1(params.DY) ?? 0;
+    const side = readCixParamNumberV1(params.SIDE);
+    const depth = readCixParamNumberV1(params.DP);
+    const diameter = readCixParamNumberV1(params.DIA);
+    const repeatRaw = readCixParamNumberV1(params.NRP);
+    const repeatCount = repeatRaw && repeatRaw > 0 ? Math.max(1, Math.round(repeatRaw)) : 1;
+
+    for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex += 1) {
+      drillings.push({
+        sourceFileName: fileName,
+        macro,
+        index: macroIndex,
+        side,
+        x: x === null ? null : x + dx * repeatIndex,
+        y: y === null ? null : y + dy * repeatIndex,
+        z,
+        depth,
+        diameter,
+        repeatIndex,
+        repeatCount,
+      });
+    }
+
+    macroIndex += 1;
+  }
+
+  return drillings;
+}
+
+function readCixDrillingLinksFromPartV1(cixPart: unknown): string {
+  const raw = (cixPart as { drillingLinks?: unknown })?.drillingLinks;
+  const serializedRaw = typeof raw === "string" ? raw : raw ? JSON.stringify(raw) : undefined;
+  const links = normalizeCollisionArrayV1(parseBagaStudioJsonField(serializedRaw, []));
+  return links.length > 0 ? JSON.stringify(links) : "";
+}
+
 function buildAutoMappingV2MeshFromMatch(match: CsvCixMatch, index: number): MeshConfig {
   const csvName = match.csvPart?.name || `Componente CSV ${index + 1}`;
   const cixName = match.cixPart?.partName || match.cixPart?.fileName || csvName;
@@ -2115,6 +2200,7 @@ function buildAutoMappingV2MeshFromMatch(match: CsvCixMatch, index: number): Mes
     supportsAccessories: !["mirror", "lighting"].includes(category),
     materialSlots: inferAutoMappingV2MaterialSlots(displayName, category),
     compatibleAccessories: isPanel ? "led, insert" : category === "hardware" ? "hardware" : "",
+    drillingLinks: readCixDrillingLinksFromPartV1(match.cixPart),
     ledPosition: "front",
     ledFrontOffset: "4",
     ledSideMargin: "5",
@@ -2154,6 +2240,7 @@ function mergeAutoMappingV2MatchIntoMesh(mesh: MeshConfig, match: CsvCixMatch, i
     supportsAccessories: mesh.supportsAccessories !== false,
     materialSlots: mesh.materialSlots || mapped.materialSlots,
     compatibleAccessories: mesh.compatibleAccessories || mapped.compatibleAccessories,
+    drillingLinks: mesh.drillingLinks || mapped.drillingLinks,
     ledPosition: mesh.ledPosition || mapped.ledPosition,
     ledFrontOffset: mesh.ledFrontOffset || mapped.ledFrontOffset,
     ledSideMargin: mesh.ledSideMargin || mapped.ledSideMargin,
@@ -3285,12 +3372,648 @@ function downloadRegeneratedCsvV1() {
 }
 
 
+
+type HardwareAnalyzerV2ThicknessItem = {
+  componentId: string;
+  displayName: string;
+  originalThickness: number | null;
+  targetThickness: number | null;
+  status: "compatible" | "incompatible" | "skipped" | "missing";
+  severity: "ok" | "warning" | "error";
+  note: string;
+};
+
+type HardwareAnalyzerV2ThicknessReport = {
+  schema: "bagastudio-hardware-analyzer-v2-thickness";
+  version: 2;
+  generatedAt: string;
+  productionStatus: "PRODUCTION_READY" | "PRODUCTION_BLOCKED";
+  targetThickness: number | null;
+  totals: {
+    analyzed: number;
+    compatible: number;
+    incompatible: number;
+    skipped: number;
+    missing: number;
+  };
+  items: HardwareAnalyzerV2ThicknessItem[];
+};
+
+function buildHardwareAnalyzerV2ThicknessReport(
+  csvReport: CsvRegenerationV1Report,
+  targetThickness: number | null
+): HardwareAnalyzerV2ThicknessReport {
+  const items: HardwareAnalyzerV2ThicknessItem[] = csvReport.rows.map((row, index) => {
+    const originalThickness = readCollisionNumberV1(row.originalThickness);
+    const regeneratedThickness = readCollisionNumberV1(row.regeneratedThickness, targetThickness);
+
+    if (originalThickness === null) {
+      return {
+        componentId: `${index}-${row.name}`,
+        displayName: row.name,
+        originalThickness,
+        targetThickness: regeneratedThickness,
+        status: "missing",
+        severity: "warning",
+        note: "Spessore originale non rilevato: controllo compatibilità non eseguibile.",
+      };
+    }
+
+    if (row.status === "skipped") {
+      return {
+        componentId: `${index}-${row.name}`,
+        displayName: row.name,
+        originalThickness,
+        targetThickness: originalThickness,
+        status: "skipped",
+        severity: "ok",
+        note: "Componente escluso dalle regole produttive: spessore mantenuto invariato.",
+      };
+    }
+
+    const isThinPanel = originalThickness <= 6;
+    const isManualCheck = originalThickness > 6 && originalThickness < 12;
+
+    if (isThinPanel) {
+      return {
+        componentId: `${index}-${row.name}`,
+        displayName: row.name,
+        originalThickness,
+        targetThickness: originalThickness,
+        status: "skipped",
+        severity: "ok",
+        note: "Pannello sottile protetto: non deve seguire l'override spessore.",
+      };
+    }
+
+    if (isManualCheck) {
+      return {
+        componentId: `${index}-${row.name}`,
+        displayName: row.name,
+        originalThickness,
+        targetThickness: originalThickness,
+        status: "incompatible",
+        severity: "warning",
+        note: "Spessore intermedio 6-12 mm: richiede controllo manuale prima della produzione.",
+      };
+    }
+
+    if (regeneratedThickness === null) {
+      return {
+        componentId: `${index}-${row.name}`,
+        displayName: row.name,
+        originalThickness,
+        targetThickness: null,
+        status: "missing",
+        severity: "warning",
+        note: "Spessore target non disponibile.",
+      };
+    }
+
+    return {
+      componentId: `${index}-${row.name}`,
+      displayName: row.name,
+      originalThickness,
+      targetThickness: regeneratedThickness,
+      status: "compatible",
+      severity: "ok",
+      note: "Compatibile con override spessore e regole produttive.",
+    };
+  });
+
+  const totals = {
+    analyzed: items.length,
+    compatible: items.filter((item) => item.status === "compatible").length,
+    incompatible: items.filter((item) => item.status === "incompatible").length,
+    skipped: items.filter((item) => item.status === "skipped").length,
+    missing: items.filter((item) => item.status === "missing").length,
+  };
+
+  const productionStatus =
+    totals.incompatible > 0 || totals.missing > 0
+      ? "PRODUCTION_BLOCKED"
+      : "PRODUCTION_READY";
+
+  return {
+    schema: "bagastudio-hardware-analyzer-v2-thickness",
+    version: 2,
+    generatedAt: new Date().toISOString(),
+    productionStatus,
+    targetThickness,
+    totals,
+    items,
+  };
+}
+
+
 const manufacturingDataInspectorV1Report = useMemo(() => {
   return buildManufacturingDataInspectorV1Report(meshList);
 }, [meshList]);
 
 function downloadManufacturingDataInspectorV1Report() {
   downloadJsonFile(`bagastudio-manufacturing-data-inspector-v1-${Date.now()}.json`, manufacturingDataInspectorV1Report);
+}
+
+
+
+type ConstraintInspectorV1Item = {
+  componentId: string;
+  displayName: string;
+  role: string | null;
+  source: "csvRegeneration" | "meshList" | "unknown";
+  status: "present" | "missing";
+};
+
+type ConstraintInspectorV1Report = {
+  schema: "bagastudio-constraint-inspector-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    analyzed: number;
+    withRole: number;
+    withoutRole: number;
+  };
+  roles: Record<string, number>;
+  items: ConstraintInspectorV1Item[];
+};
+
+function inferConstraintRoleV1(name: unknown): string | null {
+  const value = String(name || "").toLowerCase();
+
+  if (value.includes("schiena") || value.includes("back")) return "backPanel";
+  if (value.includes("fianco") || value.includes("side")) return "externalPanel";
+  if (value.includes("ripiano") || value.includes("shelf")) return "shelf";
+  if (value.includes("anta") || value.includes("door")) return "door";
+  if (value.includes("cielo") || value.includes("top")) return "topPanel";
+  if (value.includes("fondo") || value.includes("bottom")) return "bottomPanel";
+  if (value.includes("zoccolo") || value.includes("plinth")) return "plinth";
+
+  return null;
+}
+
+function buildConstraintInspectorV1Report(
+  csvReport: CsvRegenerationV1Report,
+  meshes: MeshConfig[]
+): ConstraintInspectorV1Report {
+  const roles: Record<string, number> = {};
+
+  const csvItems: ConstraintInspectorV1Item[] = csvReport.rows.map((row, index) => {
+    const inferredRole = inferConstraintRoleV1(row.name);
+
+    if (inferredRole) {
+      roles[inferredRole] = (roles[inferredRole] || 0) + 1;
+    }
+
+    return {
+      componentId: `csv-${index}-${row.name}`,
+      displayName: row.name,
+      role: inferredRole,
+      source: "csvRegeneration",
+      status: inferredRole ? "present" : "missing",
+    };
+  });
+
+  const meshItems: ConstraintInspectorV1Item[] = csvItems.length > 0
+    ? []
+    : meshes.map((mesh, index) => {
+        const displayName = mesh.displayName || mesh.meshName || `Componente ${index + 1}`;
+        const explicitRole = String(mesh.constraintRole || "").trim();
+        const inferredRole = explicitRole || inferConstraintRoleV1(displayName);
+
+        if (inferredRole) {
+          roles[inferredRole] = (roles[inferredRole] || 0) + 1;
+        }
+
+        return {
+          componentId: buildStablePartId(mesh, index),
+          displayName,
+          role: inferredRole || null,
+          source: "meshList",
+          status: inferredRole ? "present" : "missing",
+        };
+      });
+
+  const items = csvItems.length > 0 ? csvItems : meshItems;
+
+  return {
+    schema: "bagastudio-constraint-inspector-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      analyzed: items.length,
+      withRole: items.filter((item) => item.status === "present").length,
+      withoutRole: items.filter((item) => item.status === "missing").length,
+    },
+    roles,
+    items,
+  };
+}
+
+
+const hardwareAnalyzerV2ThicknessReport = useMemo(() => {
+  return buildHardwareAnalyzerV2ThicknessReport(csvRegenerationV1Report, readCollisionNumberV1(manufacturingOverrideThickness));
+}, [csvRegenerationV1Report, manufacturingOverrideThickness]);
+
+function downloadHardwareAnalyzerV2ThicknessReport() {
+  downloadJsonFile(`bagastudio-hardware-analyzer-v2-thickness-${Date.now()}.json`, hardwareAnalyzerV2ThicknessReport);
+}
+
+
+
+type ConstraintValidationV21Item = {
+  componentId: string;
+  displayName: string;
+  role: string | null;
+  status: "valid" | "missing" | "invalid";
+  severity: "ok" | "warning" | "error";
+  note: string;
+};
+
+type ConstraintValidationV21Report = {
+  schema: "bagastudio-hardware-analyzer-v2-1-constraint-validation";
+  version: 21;
+  generatedAt: string;
+  validationStatus: "CONSTRAINT_READY" | "CONSTRAINT_BLOCKED";
+  allowedRoles: string[];
+  totals: {
+    analyzed: number;
+    valid: number;
+    missing: number;
+    invalid: number;
+  };
+  items: ConstraintValidationV21Item[];
+};
+
+const ALLOWED_CONSTRAINT_ROLES_V21 = [
+  "externalPanel",
+  "internalPanel",
+  "backPanel",
+  "shelf",
+  "door",
+  "topPanel",
+  "bottomPanel",
+  "plinth",
+];
+
+function buildConstraintValidationV21Report(
+  inspectorReport: ConstraintInspectorV1Report
+): ConstraintValidationV21Report {
+  const items: ConstraintValidationV21Item[] = inspectorReport.items.map((item) => {
+    const role = item.role ? String(item.role).trim() : null;
+
+    if (!role) {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        role: null,
+        status: "missing",
+        severity: "warning",
+        note: "Ruolo produttivo mancante: assegnare o correggere il constraintRole prima della validazione completa.",
+      };
+    }
+
+    if (!ALLOWED_CONSTRAINT_ROLES_V21.includes(role)) {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        role,
+        status: "invalid",
+        severity: "error",
+        note: `Ruolo non valido: "${role}". Usare uno dei ruoli ammessi.`,
+      };
+    }
+
+    return {
+      componentId: item.componentId,
+      displayName: item.displayName,
+      role,
+      status: "valid",
+      severity: "ok",
+      note: "Ruolo produttivo valido.",
+    };
+  });
+
+  const totals = {
+    analyzed: items.length,
+    valid: items.filter((item) => item.status === "valid").length,
+    missing: items.filter((item) => item.status === "missing").length,
+    invalid: items.filter((item) => item.status === "invalid").length,
+  };
+
+  const validationStatus =
+    totals.missing > 0 || totals.invalid > 0
+      ? "CONSTRAINT_BLOCKED"
+      : "CONSTRAINT_READY";
+
+  return {
+    schema: "bagastudio-hardware-analyzer-v2-1-constraint-validation",
+    version: 21,
+    generatedAt: new Date().toISOString(),
+    validationStatus,
+    allowedRoles: ALLOWED_CONSTRAINT_ROLES_V21,
+    totals,
+    items,
+  };
+}
+
+
+const constraintInspectorV1Report = useMemo(() => {
+  return buildConstraintInspectorV1Report(csvRegenerationV1Report, meshList);
+}, [csvRegenerationV1Report, meshList]);
+
+function downloadConstraintInspectorV1Report() {
+  downloadJsonFile(`bagastudio-constraint-inspector-v1-${Date.now()}.json`, constraintInspectorV1Report);
+}
+
+
+
+type DrillingInspectorV1Item = {
+  componentId: string;
+  displayName: string;
+  source: "csvRegeneration" | "meshList";
+  drillings: number;
+  diameters: string[];
+  depths: string[];
+  status: "present" | "missing";
+};
+
+type DrillingInspectorV1Report = {
+  schema: "bagastudio-drilling-inspector-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    components: number;
+    componentsWithDrillings: number;
+    componentsWithoutDrillings: number;
+    drillings: number;
+  };
+  items: DrillingInspectorV1Item[];
+  readiness: "DRILLING_DATA_READY" | "DRILLING_DATA_MISSING";
+};
+
+function readDrillingNumberLabelV1(value: unknown): string | null {
+  const parsed = readCollisionNumberV1(value);
+  return parsed === null ? null : String(parsed);
+}
+
+function buildDrillingInspectorV1Report(
+  csvReport: CsvRegenerationV1Report,
+  meshes: MeshConfig[]
+): DrillingInspectorV1Report {
+  const meshRows: DrillingInspectorV1Item[] = meshes.map((mesh, index) => {
+    const displayName = mesh.displayName || mesh.meshName || `Componente ${index + 1}`;
+    const drillingItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    );
+
+    const diameters = Array.from(
+      new Set(
+        drillingItems
+          .map((item) => readDrillingNumberLabelV1(item?.diameter ?? item?.diametro ?? item?.d))
+          .filter((item): item is string => Boolean(item))
+      )
+    );
+
+    const depths = Array.from(
+      new Set(
+        drillingItems
+          .map((item) => readDrillingNumberLabelV1(item?.depth ?? item?.profondita ?? item?.z))
+          .filter((item): item is string => Boolean(item))
+      )
+    );
+
+    return {
+      componentId: buildStablePartId(mesh, index),
+      displayName,
+      source: "meshList",
+      drillings: drillingItems.length,
+      diameters,
+      depths,
+      status: drillingItems.length > 0 ? "present" : "missing",
+    };
+  });
+
+  const csvFallbackRows: DrillingInspectorV1Item[] = meshRows.length > 0
+    ? []
+    : csvReport.rows.map((row, index) => ({
+        componentId: `csv-${index}-${row.name}`,
+        displayName: row.name,
+        source: "csvRegeneration",
+        drillings: 0,
+        diameters: [],
+        depths: [],
+        status: "missing",
+      }));
+
+  const items = meshRows.length > 0 ? meshRows : csvFallbackRows;
+  const totalDrillings = items.reduce((sum, item) => sum + item.drillings, 0);
+
+  return {
+    schema: "bagastudio-drilling-inspector-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      components: items.length,
+      componentsWithDrillings: items.filter((item) => item.drillings > 0).length,
+      componentsWithoutDrillings: items.filter((item) => item.drillings <= 0).length,
+      drillings: totalDrillings,
+    },
+    items,
+    readiness: totalDrillings > 0 ? "DRILLING_DATA_READY" : "DRILLING_DATA_MISSING",
+  };
+}
+
+
+const constraintValidationV21Report = useMemo(() => {
+  return buildConstraintValidationV21Report(constraintInspectorV1Report);
+}, [constraintInspectorV1Report]);
+
+function downloadConstraintValidationV21Report() {
+  downloadJsonFile(`bagastudio-constraint-validation-v2-1-${Date.now()}.json`, constraintValidationV21Report);
+}
+
+
+
+type DrillingValidationV22Status = "valid" | "warning" | "error";
+
+type DrillingValidationV22Issue = {
+  componentId: string;
+  displayName: string;
+  drillingIndex: number;
+  status: DrillingValidationV22Status;
+  code: string;
+  message: string;
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  diameter: number | null;
+  depth: number | null;
+};
+
+type DrillingValidationV22Report = {
+  schema: "bagastudio-hardware-analyzer-v2-2-drilling-validation";
+  version: 22;
+  generatedAt: string;
+  validationStatus: "DRILLING_READY" | "DRILLING_WARNING" | "DRILLING_BLOCKED";
+  totals: {
+    components: number;
+    drillings: number;
+    valid: number;
+    warnings: number;
+    errors: number;
+  };
+  allowedDiameters: number[];
+  issues: DrillingValidationV22Issue[];
+};
+
+const ALLOWED_DRILLING_DIAMETERS_V22 = [3, 5, 8, 10, 15, 20, 25, 35];
+
+function buildDrillingValidationV22Report(meshes: MeshConfig[]): DrillingValidationV22Report {
+  const issues: DrillingValidationV22Issue[] = [];
+  let drillings = 0;
+  let valid = 0;
+  let warnings = 0;
+  let errors = 0;
+
+  meshes.forEach((mesh, meshIndex) => {
+    const componentId = buildStablePartId(mesh, meshIndex);
+    const displayName = mesh.displayName || mesh.meshName || `Componente ${meshIndex + 1}`;
+    const dimensions = readCollisionDimensionsV1(mesh);
+    const drillingItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    );
+
+    drillingItems.forEach((item, drillingIndex) => {
+      drillings += 1;
+
+      const x = readCollisionNumberV1(item?.x, item?.X);
+      const y = readCollisionNumberV1(item?.y, item?.Y);
+      const z = readCollisionNumberV1(item?.z, item?.Z);
+      const diameter = readCollisionNumberV1(item?.diameter, item?.dia, item?.DIA);
+      const depth = readCollisionNumberV1(item?.depth, item?.dp, item?.DP, item?.drillingDepth);
+      const issueBase = { componentId, displayName, drillingIndex, x, y, z, diameter, depth };
+
+      let hasIssue = false;
+
+      if (x === null || y === null || diameter === null) {
+        warnings += 1;
+        hasIssue = true;
+        issues.push({
+          ...issueBase,
+          status: "warning",
+          code: "DRILLING_DATA_INCOMPLETE",
+          message: "Foratura con coordinate o diametro incompleti.",
+        });
+      }
+
+      if (diameter !== null && !ALLOWED_DRILLING_DIAMETERS_V22.includes(Number(diameter))) {
+        warnings += 1;
+        hasIssue = true;
+        issues.push({
+          ...issueBase,
+          status: "warning",
+          code: "DRILLING_DIAMETER_NOT_STANDARD",
+          message: `Diametro non nella whitelist base: ${diameter} mm.`,
+        });
+      }
+
+      if (dimensions.width !== null && x !== null && (x < 0 || x > dimensions.width)) {
+        errors += 1;
+        hasIssue = true;
+        issues.push({
+          ...issueBase,
+          status: "error",
+          code: "DRILLING_X_OUTSIDE_PANEL",
+          message: `Quota X fuori pannello: ${x} mm su larghezza ${dimensions.width} mm.`,
+        });
+      }
+
+      if (dimensions.height !== null && y !== null && (y < 0 || y > dimensions.height)) {
+        errors += 1;
+        hasIssue = true;
+        issues.push({
+          ...issueBase,
+          status: "error",
+          code: "DRILLING_Y_OUTSIDE_PANEL",
+          message: `Quota Y fuori pannello: ${y} mm su altezza ${dimensions.height} mm.`,
+        });
+      }
+
+      if (dimensions.panelThickness !== null && depth !== null && depth > dimensions.panelThickness) {
+        warnings += 1;
+        hasIssue = true;
+        issues.push({
+          ...issueBase,
+          status: "warning",
+          code: "DRILLING_DEPTH_OVER_THICKNESS",
+          message: `Profondità foro ${depth} mm superiore allo spessore pannello ${dimensions.panelThickness} mm.`,
+        });
+      }
+
+      const edgeLimit = diameter !== null ? Math.max(3, diameter / 2) : 3;
+
+      if (dimensions.width !== null && x !== null && x >= 0 && x <= dimensions.width) {
+        const edgeDistanceX = Math.min(x, dimensions.width - x);
+        if (edgeDistanceX < edgeLimit) {
+          warnings += 1;
+          hasIssue = true;
+          issues.push({
+            ...issueBase,
+            status: "warning",
+            code: "DRILLING_EDGE_DISTANCE_X_WARNING",
+            message: `Distanza dal bordo X ridotta: ${Number(edgeDistanceX.toFixed(2))} mm.`,
+          });
+        }
+      }
+
+      if (dimensions.height !== null && y !== null && y >= 0 && y <= dimensions.height) {
+        const edgeDistanceY = Math.min(y, dimensions.height - y);
+        if (edgeDistanceY < edgeLimit) {
+          warnings += 1;
+          hasIssue = true;
+          issues.push({
+            ...issueBase,
+            status: "warning",
+            code: "DRILLING_EDGE_DISTANCE_Y_WARNING",
+            message: `Distanza dal bordo Y ridotta: ${Number(edgeDistanceY.toFixed(2))} mm.`,
+          });
+        }
+      }
+
+      if (!hasIssue) valid += 1;
+    });
+  });
+
+  const validationStatus =
+    errors > 0 ? "DRILLING_BLOCKED" : warnings > 0 ? "DRILLING_WARNING" : "DRILLING_READY";
+
+  return {
+    schema: "bagastudio-hardware-analyzer-v2-2-drilling-validation",
+    version: 22,
+    generatedAt: new Date().toISOString(),
+    validationStatus,
+    totals: { components: meshes.length, drillings, valid, warnings, errors },
+    allowedDiameters: ALLOWED_DRILLING_DIAMETERS_V22,
+    issues,
+  };
+}
+
+
+const drillingInspectorV1Report = useMemo(() => {
+  return buildDrillingInspectorV1Report(csvRegenerationV1Report, meshList);
+}, [csvRegenerationV1Report, meshList]);
+
+function downloadDrillingInspectorV1Report() {
+  downloadJsonFile(`bagastudio-drilling-inspector-v1-${Date.now()}.json`, drillingInspectorV1Report);
+}
+
+
+const drillingValidationV22Report = useMemo(() => {
+  return buildDrillingValidationV22Report(meshList);
+}, [meshList]);
+
+function downloadDrillingValidationV22Report() {
+  downloadJsonFile(`bagastudio-drilling-validation-v2-2-${Date.now()}.json`, drillingValidationV22Report);
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -4080,11 +4803,25 @@ async function handleSpace3DCixImport(files?: FileList | null) {
       }))
     );
 
-    const cixParts = parseCixFiles(cixFiles);
+    const cixDrillingsByFileName = Object.fromEntries(
+      cixFiles.map((file) => [file.fileName, extractCixDrillingsV1(file.fileName, file.content)])
+    );
+    const parsedCixParts = parseCixFiles(cixFiles);
+    const cixParts = parsedCixParts.map((part, index) => {
+      const partFileName = String((part as { fileName?: string }).fileName || cixFiles[index]?.fileName || "");
+      const drillingLinks = cixDrillingsByFileName[partFileName] || [];
+
+      return {
+        ...part,
+        drillingLinks: drillingLinks.length > 0 ? JSON.stringify(drillingLinks) : "",
+      } as CixPart & { drillingLinks?: string };
+    });
+    const extractedDrillings = Object.values(cixDrillingsByFileName).reduce((sum, items) => sum + items.length, 0);
 
     setSpace3DCixFileNames(fileList.map((file) => file.name));
     setSpace3DCixParts(cixParts);
     updateCsvCixMatcherReport(space3DCsvParts, cixParts);
+    setCsvCixStatus(`CIX Drilling Extractor V1: ${extractedDrillings} forature rilevate da ${fileList.length} file CIX.`);
   } catch (error) {
     console.error("BagaStudio CIX import error:", error);
     setCsvCixStatus(error instanceof Error ? `Errore CIX: ${error.message}` : "Errore CIX sconosciuto.");
@@ -5383,8 +6120,8 @@ function downloadImporterDiagnosticJson() {
                 </tr>
               </thead>
               <tbody>
-                {csvRegenerationV1Report.rows.slice(0, 30).map((row) => (
-                  <tr key={`${row.rowIndex}-${row.name}`} className="border-t border-white/5 text-slate-300">
+                {csvRegenerationV1Report.rows.slice(0, 30).map((row, index) => (
+                  <tr key={`${index}-${row.name}`} className="border-t border-white/5 text-slate-300">
                     <td className="px-3 py-2 font-semibold text-white">{row.name}</td>
                     <td className="px-3 py-2">{row.material || "-"}</td>
                     <td className="px-3 py-2">{row.originalThickness ?? "n/d"} → {row.regeneratedThickness ?? "n/d"}</td>
@@ -5403,6 +6140,437 @@ function downloadImporterDiagnosticJson() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-emerald-400/15 bg-[#071a13]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-200">Hardware Analyzer V2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Thickness Compatibility Check</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Primo validatore produttivo: verifica se gli spessori rigenerati sono compatibili con le regole produttive prima delle validazioni ferramenta/forature.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                hardwareAnalyzerV2ThicknessReport.productionStatus === "PRODUCTION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+              }>
+                {hardwareAnalyzerV2ThicknessReport.productionStatus === "PRODUCTION_READY"
+                  ? "Production Ready"
+                  : "Production Blocked"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadHardwareAnalyzerV2ThicknessReport}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-3 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/20"
+              >
+                Esporta analyzer
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Analizzati</p>
+              <p className="mt-1 text-2xl font-black text-white">{hardwareAnalyzerV2ThicknessReport.totals.analyzed}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Compatibili</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{hardwareAnalyzerV2ThicknessReport.totals.compatible}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Incompatibili</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{hardwareAnalyzerV2ThicknessReport.totals.incompatible}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Saltati</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{hardwareAnalyzerV2ThicknessReport.totals.skipped}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Mancanti</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{hardwareAnalyzerV2ThicknessReport.totals.missing}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1.4fr_0.6fr_0.6fr_0.7fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Originale</span>
+              <span>Target</span>
+              <span>Stato</span>
+            </div>
+
+            {hardwareAnalyzerV2ThicknessReport.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-500">Nessun componente disponibile per Hardware Analyzer V2.</div>
+            ) : (
+              hardwareAnalyzerV2ThicknessReport.items.map((item) => (
+                <div key={item.componentId} className="grid grid-cols-[1.4fr_0.6fr_0.6fr_0.7fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">{item.note}</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">{item.originalThickness ?? "n/d"} mm</span>
+                  <span className="font-semibold text-slate-200">{item.targetThickness ?? "n/d"} mm</span>
+                  <span className={
+                    item.status === "compatible"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "skipped"
+                        ? "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                        : "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                  }>
+                    {item.status}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-purple-400/15 bg-[#12071a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200">Constraint Inspector V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Controllo ruoli produttivi</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Verifica preliminare dei ruoli componente prima del Constraint Validation: fianco, schiena, ripiano, anta, cielo, fondo e zoccolo.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadConstraintInspectorV1Report}
+              className="rounded-2xl border border-purple-400/25 bg-purple-400/10 px-5 py-3 text-sm font-black text-purple-100 transition hover:bg-purple-400/20"
+            >
+              Esporta constraint
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Analizzati</p>
+              <p className="mt-1 text-2xl font-black text-white">{constraintInspectorV1Report.totals.analyzed}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Con ruolo</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{constraintInspectorV1Report.totals.withRole}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Senza ruolo</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{constraintInspectorV1Report.totals.withoutRole}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+            <div className="max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <div className="grid grid-cols-[1.3fr_0.8fr_0.6fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                <span>Componente</span>
+                <span>Ruolo</span>
+                <span>Stato</span>
+              </div>
+
+              {constraintInspectorV1Report.items.length === 0 ? (
+                <div className="px-4 py-8 text-sm text-slate-500">Nessun componente disponibile per Constraint Inspector.</div>
+              ) : (
+                constraintInspectorV1Report.items.map((item) => (
+                  <div key={item.componentId} className="grid grid-cols-[1.3fr_0.8fr_0.6fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                    <div>
+                      <p className="font-black text-white">{item.displayName}</p>
+                      <p className="mt-1 text-slate-500">Sorgente: {item.source}</p>
+                    </div>
+                    <span className="font-semibold text-slate-200">{item.role || "-"}</span>
+                    <span className={
+                      item.status === "present"
+                        ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                        : "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                    }>
+                      {item.status}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-sm font-black text-white">Ruoli rilevati</p>
+              <div className="mt-3 space-y-2">
+                {Object.entries(constraintInspectorV1Report.roles).length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessun ruolo rilevato.</p>
+                ) : (
+                  Object.entries(constraintInspectorV1Report.roles).map(([role, count]) => (
+                    <div key={role} className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs">
+                      <span className="text-slate-300">{role}</span>
+                      <span className="font-black text-purple-100">{count}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#17071a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Hardware Analyzer V2.1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Constraint Validation</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Valida i ruoli produttivi rilevati dal Constraint Inspector: presenza ruolo e conformità ai valori ammessi.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                constraintValidationV21Report.validationStatus === "CONSTRAINT_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+              }>
+                {constraintValidationV21Report.validationStatus === "CONSTRAINT_READY"
+                  ? "Constraint Ready"
+                  : "Constraint Blocked"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadConstraintValidationV21Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta validation
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Analizzati</p>
+              <p className="mt-1 text-2xl font-black text-white">{constraintValidationV21Report.totals.analyzed}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Validi</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{constraintValidationV21Report.totals.valid}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Mancanti</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{constraintValidationV21Report.totals.missing}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Invalidi</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{constraintValidationV21Report.totals.invalid}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1.3fr_0.7fr_0.6fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Ruolo</span>
+              <span>Stato</span>
+            </div>
+
+            {constraintValidationV21Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-500">Nessun componente disponibile per Constraint Validation.</div>
+            ) : (
+              constraintValidationV21Report.items.map((item) => (
+                <div key={item.componentId} className="grid grid-cols-[1.3fr_0.7fr_0.6fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">{item.note}</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">{item.role || "-"}</span>
+                  <span className={
+                    item.status === "valid"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : item.status === "missing"
+                        ? "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                        : "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                  }>
+                    {item.status}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#07131a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Hardware Analyzer V2.2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Drilling Inspector V1</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Verifica preliminare delle forature importate da CIX/CSV/modello prima di costruire il Drilling Validation.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                drillingInspectorV1Report.readiness === "DRILLING_DATA_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {drillingInspectorV1Report.readiness === "DRILLING_DATA_READY"
+                  ? "Drilling Data Ready"
+                  : "Drilling Data Missing"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDrillingInspectorV1Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta drilling
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{drillingInspectorV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Con forature</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{drillingInspectorV1Report.totals.componentsWithDrillings}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Senza forature</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{drillingInspectorV1Report.totals.componentsWithoutDrillings}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Fori rilevati</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{drillingInspectorV1Report.totals.drillings}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1.2fr_0.45fr_0.65fr_0.65fr_0.55fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Fori</span>
+              <span>Diametri</span>
+              <span>Profondità</span>
+              <span>Stato</span>
+            </div>
+
+            {drillingInspectorV1Report.items.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-500">Nessun componente disponibile per Drilling Inspector.</div>
+            ) : (
+              drillingInspectorV1Report.items.map((item) => (
+                <div key={item.componentId} className="grid grid-cols-[1.2fr_0.45fr_0.65fr_0.65fr_0.55fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{item.displayName}</p>
+                    <p className="mt-1 text-slate-500">Sorgente: {item.source}</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">{item.drillings}</span>
+                  <span className="font-semibold text-slate-200">{item.diameters.length ? item.diameters.join(" / ") : "-"}</span>
+                  <span className="font-semibold text-slate-200">{item.depths.length ? item.depths.join(" / ") : "-"}</span>
+                  <span className={
+                    item.status === "present"
+                      ? "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                      : "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                  }>
+                    {item.status}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-blue-400/15 bg-[#07101a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-200">Hardware Analyzer V2.2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Drilling Validation</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Valida le forature estratte dai CIX: coordinate, diametri, profondità e distanza minima dai bordi.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                drillingValidationV22Report.validationStatus === "DRILLING_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : drillingValidationV22Report.validationStatus === "DRILLING_WARNING"
+                    ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+                    : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+              }>
+                {drillingValidationV22Report.validationStatus === "DRILLING_READY"
+                  ? "Drilling Ready"
+                  : drillingValidationV22Report.validationStatus === "DRILLING_WARNING"
+                    ? "Drilling Warning"
+                    : "Drilling Blocked"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDrillingValidationV22Report}
+                className="rounded-2xl border border-blue-400/25 bg-blue-400/10 px-5 py-3 text-sm font-black text-blue-100 transition hover:bg-blue-400/20"
+              >
+                Esporta validation
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Forature</p>
+              <p className="mt-1 text-2xl font-black text-white">{drillingValidationV22Report.totals.drillings}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Valide</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{drillingValidationV22Report.totals.valid}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{drillingValidationV22Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{drillingValidationV22Report.totals.errors}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <div className="grid grid-cols-[1fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/10 bg-black/25 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <span>Componente</span>
+              <span>Foro</span>
+              <span>Stato</span>
+              <span>Messaggio</span>
+            </div>
+
+            {drillingValidationV22Report.issues.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-400">
+                Nessun problema rilevato sulle forature disponibili.
+              </div>
+            ) : (
+              drillingValidationV22Report.issues.slice(0, 80).map((issue, index) => (
+                <div key={`${issue.componentId}-${issue.code}-${index}`} className="grid grid-cols-[1fr_0.55fr_0.55fr_1.2fr] gap-3 border-b border-white/5 px-4 py-3 text-xs">
+                  <div>
+                    <p className="font-black text-white">{issue.displayName}</p>
+                    <p className="mt-1 text-slate-500">X {issue.x ?? "-"} · Y {issue.y ?? "-"} · Ø {issue.diameter ?? "-"}</p>
+                  </div>
+                  <span className="font-semibold text-slate-200">#{issue.drillingIndex + 1}</span>
+                  <span className={
+                    issue.status === "error"
+                      ? "h-fit rounded-full bg-red-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-red-100"
+                      : issue.status === "warning"
+                        ? "h-fit rounded-full bg-yellow-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-yellow-100"
+                        : "h-fit rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-100"
+                  }>
+                    {issue.status}
+                  </span>
+                  <span className="text-slate-300">{issue.message}</span>
+                </div>
+              ))
+            )}
           </div>
         </section>
 
