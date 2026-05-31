@@ -670,6 +670,313 @@ function inferManufacturingConstraintRoleV1(componentCategory: string, category:
   return "UNKNOWN";
 }
 
+type CollisionEngineV1Severity = "critical" | "warning" | "info";
+
+type CollisionEngineV1Issue = {
+  id: string;
+  componentId: string;
+  meshName: string;
+  displayName: string;
+  code: string;
+  severity: CollisionEngineV1Severity;
+  message: string;
+  targetType: "hardware" | "drilling" | "component";
+  targetLabel: string;
+  axis?: "x" | "y" | "z" | "edge" | "thickness" | "pair";
+  value?: number | null;
+  limit?: number | null;
+  recommendation: string;
+};
+
+type CollisionEngineV1Report = {
+  schema: "bagastudio-collision-engine-v1";
+  version: 1;
+  generatedAt: string;
+  totals: {
+    components: number;
+    checkedComponents: number;
+    skippedComponents: number;
+    critical: number;
+    warning: number;
+    info: number;
+    issues: number;
+  };
+  issues: CollisionEngineV1Issue[];
+};
+
+function readCollisionNumberV1(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const normalized = value.replace(",", ".").trim();
+      if (!normalized) continue;
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+
+  return null;
+}
+
+function normalizeCollisionArrayV1(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    const objectValue = value as Record<string, any>;
+    if (Array.isArray(objectValue.items)) return objectValue.items;
+    if (Array.isArray(objectValue.hardware)) return objectValue.hardware;
+    if (Array.isArray(objectValue.drillings)) return objectValue.drillings;
+    if (Array.isArray(objectValue.links)) return objectValue.links;
+  }
+
+  return [];
+}
+
+function readCollisionDimensionsV1(mesh: MeshConfig) {
+  const dimensions = parseBagaStudioJsonField<Record<string, any>>(mesh.dimensions, {});
+  const manufacturingData = parseBagaStudioJsonField<Record<string, any>>(mesh.manufacturingData, {});
+  const manufacturingDimensions = manufacturingData?.dimensions || manufacturingData?.panel || {};
+
+  const width = readCollisionNumberV1(
+    dimensions.width,
+    dimensions.w,
+    dimensions.x,
+    manufacturingDimensions.width,
+    manufacturingDimensions.w,
+    manufacturingDimensions.x
+  );
+  const height = readCollisionNumberV1(
+    dimensions.height,
+    dimensions.h,
+    dimensions.y,
+    manufacturingDimensions.height,
+    manufacturingDimensions.h,
+    manufacturingDimensions.y
+  );
+  const depth = readCollisionNumberV1(
+    dimensions.depth,
+    dimensions.d,
+    dimensions.z,
+    dimensions.thickness,
+    manufacturingDimensions.depth,
+    manufacturingDimensions.d,
+    manufacturingDimensions.z,
+    mesh.panelThickness
+  );
+  const panelThickness = readCollisionNumberV1(
+    mesh.panelThickness,
+    dimensions.thickness,
+    dimensions.panelThickness,
+    manufacturingData?.panelThickness,
+    manufacturingDimensions.thickness
+  );
+
+  return { width, height, depth, panelThickness };
+}
+
+function readCollisionPointV1(item: any) {
+  return {
+    x: readCollisionNumberV1(item?.x, item?.posX, item?.positionX, item?.left, item?.fromLeft, item?.offsetX, item?.position?.x),
+    y: readCollisionNumberV1(item?.y, item?.posY, item?.positionY, item?.top, item?.fromTop, item?.offsetY, item?.position?.y),
+    z: readCollisionNumberV1(item?.z, item?.posZ, item?.positionZ, item?.depth, item?.fromFace, item?.offsetZ, item?.position?.z),
+    diameter: readCollisionNumberV1(item?.diameter, item?.dia, item?.radius ? Number(item.radius) * 2 : null),
+    length: readCollisionNumberV1(item?.length, item?.hardwareLength, item?.depth, item?.drillingDepth),
+    minThickness: readCollisionNumberV1(item?.minThickness, item?.requiredThickness, item?.minimumPanelThickness),
+    label: String(item?.name || item?.label || item?.type || item?.hardwareType || item?.drillingType || item?.code || "elemento tecnico"),
+  };
+}
+
+function pushCollisionIssueV1(
+  issues: CollisionEngineV1Issue[],
+  issue: Omit<CollisionEngineV1Issue, "id">
+) {
+  issues.push({
+    ...issue,
+    id: `${issue.componentId}-${issue.code}-${issues.length + 1}`,
+  });
+}
+
+function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Report {
+  const issues: CollisionEngineV1Issue[] = [];
+  const minimumEdgeDistance = 5;
+  let checkedComponents = 0;
+  let skippedComponents = 0;
+
+  meshes.forEach((mesh, meshIndex) => {
+    const componentId = mesh.partId || mesh.meshName || `component-${meshIndex + 1}`;
+    const displayName = mesh.displayName || mesh.meshName || componentId;
+    const dimensions = readCollisionDimensionsV1(mesh);
+    const hasPanelBounds = dimensions.width !== null && dimensions.height !== null;
+
+    const hardwareLinks = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.hardwareLinks, parseBagaStudioCsvField(mesh.hardware).map((hardwareType) => ({ hardwareType })))
+    );
+    const drillingLinks = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    );
+
+    if (!hasPanelBounds) {
+      skippedComponents += 1;
+
+      if (hardwareLinks.length > 0 || drillingLinks.length > 0 || mesh.panelThickness) {
+        pushCollisionIssueV1(issues, {
+          componentId,
+          meshName: mesh.meshName,
+          displayName,
+          code: "DIMENSIONS_MISSING",
+          severity: "info",
+          message: "Dimensioni pannello mancanti o incomplete: il controllo collisioni è stato preparato ma non può validare i limiti del pezzo.",
+          targetType: "component",
+          targetLabel: displayName,
+          recommendation: "Compila il campo Dimensioni JSON con width/height/depth in mm per attivare i controlli geometrici.",
+        });
+      }
+
+      return;
+    }
+
+    checkedComponents += 1;
+
+    const checkTechnicalItem = (item: any, targetType: "hardware" | "drilling", index: number) => {
+      const point = readCollisionPointV1(item);
+      const targetLabel = `${point.label} #${index + 1}`;
+      const edgeLimit = Math.max(minimumEdgeDistance, (point.diameter || 0) / 2);
+
+      ([
+        ["x", point.x, dimensions.width],
+        ["y", point.y, dimensions.height],
+        ["z", point.z, dimensions.depth],
+      ] as const).forEach(([axis, value, limit]) => {
+        if (value === null || limit === null) return;
+
+        if (value < 0 || value > limit) {
+          pushCollisionIssueV1(issues, {
+            componentId,
+            meshName: mesh.meshName,
+            displayName,
+            code: targetType === "hardware" ? "HARDWARE_OUTSIDE_PANEL" : "DRILLING_OUTSIDE_PANEL",
+            severity: "critical",
+            message: `${targetLabel}: quota ${axis.toUpperCase()} fuori dal pannello.`,
+            targetType,
+            targetLabel,
+            axis,
+            value,
+            limit,
+            recommendation: "Correggi la quota o collega l'elemento a un riferimento parametrico valido prima dell'export produzione.",
+          });
+        }
+      });
+
+      if (point.x !== null && dimensions.width !== null && (point.x < edgeLimit || dimensions.width - point.x < edgeLimit)) {
+        pushCollisionIssueV1(issues, {
+          componentId,
+          meshName: mesh.meshName,
+          displayName,
+          code: "EDGE_CLEARANCE_VIOLATION",
+          severity: "warning",
+          message: `${targetLabel}: distanza dal bordo X inferiore alla soglia minima.`,
+          targetType,
+          targetLabel,
+          axis: "edge",
+          value: Math.min(point.x, dimensions.width - point.x),
+          limit: edgeLimit,
+          recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
+        });
+      }
+
+      if (point.y !== null && dimensions.height !== null && (point.y < edgeLimit || dimensions.height - point.y < edgeLimit)) {
+        pushCollisionIssueV1(issues, {
+          componentId,
+          meshName: mesh.meshName,
+          displayName,
+          code: "EDGE_CLEARANCE_VIOLATION",
+          severity: "warning",
+          message: `${targetLabel}: distanza dal bordo Y inferiore alla soglia minima.`,
+          targetType,
+          targetLabel,
+          axis: "edge",
+          value: Math.min(point.y, dimensions.height - point.y),
+          limit: edgeLimit,
+          recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
+        });
+      }
+
+      const requiredThickness = point.minThickness || point.length;
+      if (requiredThickness !== null && dimensions.panelThickness !== null && requiredThickness > dimensions.panelThickness) {
+        pushCollisionIssueV1(issues, {
+          componentId,
+          meshName: mesh.meshName,
+          displayName,
+          code: "THICKNESS_COMPATIBILITY_WARNING",
+          severity: "warning",
+          message: `${targetLabel}: elemento tecnico più profondo/spesso dello spessore pannello disponibile.`,
+          targetType,
+          targetLabel,
+          axis: "thickness",
+          value: requiredThickness,
+          limit: dimensions.panelThickness,
+          recommendation: "Verifica ferramenta, profondità foro o spessore pannello prima della rigenerazione CSV/CIX.",
+        });
+      }
+    };
+
+    hardwareLinks.forEach((item, index) => checkTechnicalItem(item, "hardware", index));
+    drillingLinks.forEach((item, index) => checkTechnicalItem(item, "drilling", index));
+
+    const pointItems = [...hardwareLinks, ...drillingLinks]
+      .map((item, index) => ({ item, index, point: readCollisionPointV1(item) }))
+      .filter(({ point }) => point.x !== null && point.y !== null);
+
+    for (let firstIndex = 0; firstIndex < pointItems.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < pointItems.length; secondIndex += 1) {
+        const first = pointItems[firstIndex];
+        const second = pointItems[secondIndex];
+        const dx = Number(first.point.x) - Number(second.point.x);
+        const dy = Number(first.point.y) - Number(second.point.y);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const safeDistance = Math.max(
+          8,
+          ((first.point.diameter || 0) / 2) + ((second.point.diameter || 0) / 2)
+        );
+
+        if (distance < safeDistance) {
+          pushCollisionIssueV1(issues, {
+            componentId,
+            meshName: mesh.meshName,
+            displayName,
+            code: "TECHNICAL_ITEM_COLLISION",
+            severity: "warning",
+            message: `${first.point.label} e ${second.point.label}: distanza tecnica insufficiente sul pannello.`,
+            targetType: "component",
+            targetLabel: `${first.point.label} ↔ ${second.point.label}`,
+            axis: "pair",
+            value: Number(distance.toFixed(2)),
+            limit: safeDistance,
+            recommendation: "Distanzia gli elementi o assegna regole parametriche separate per evitare sovrapposizioni in produzione.",
+          });
+        }
+      }
+    }
+  });
+
+  const totals = {
+    components: meshes.length,
+    checkedComponents,
+    skippedComponents,
+    critical: issues.filter((issue) => issue.severity === "critical").length,
+    warning: issues.filter((issue) => issue.severity === "warning").length,
+    info: issues.filter((issue) => issue.severity === "info").length,
+    issues: issues.length,
+  };
+
+  return {
+    schema: "bagastudio-collision-engine-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    totals,
+    issues,
+  };
+}
+
 function buildHardwareAnalyzerV1(mesh: MeshConfig, partId: string, componentCategory: AutoMappingEngineV25ComponentCategory, runtimeRole: string) {
   const constraintRole = (mesh.constraintRole as ManufacturingConstraintRoleV1) || inferManufacturingConstraintRoleV1(componentCategory, mesh.category || "", mesh.displayName || mesh.meshName);
   const hardwareLinks = parseBagaStudioJsonField(mesh.hardwareLinks, parseBagaStudioCsvField(mesh.hardware).map((hardwareType) => ({
@@ -2238,7 +2545,6 @@ const [meshThumbnails, setMeshThumbnails] = useState<Record<string, string>>({})
 const [backupStatus, setBackupStatus] = useState<string>(ADMIN_I18N.it.noAutosaveLoaded);
 const [productLibrary, setProductLibrary] = useState<ProductLibraryItem[]>([]);
 const [librarySearch, setLibrarySearch] = useState("");
-const [textureSearch, setTextureSearch] = useState("");
 const [selectedLibraryProductId, setSelectedLibraryProductId] = useState("");
 const [space3DFileName, setSpace3DFileName] = useState("");
 const [space3DAnalyzerReport, setSpace3DAnalyzerReport] = useState<Space3DAnalyzerReport | null>(null);
@@ -2372,31 +2678,6 @@ const filteredProductLibrary = useMemo(() => {
   });
 }, [productLibrary, librarySearch]);
 
-const filteredDefaultProductMaterials = useMemo(() => {
-  const query = textureSearch.trim().toLowerCase();
-
-  if (!query) return DEFAULT_PRODUCT_MATERIALS;
-
-  return DEFAULT_PRODUCT_MATERIALS.filter((material) => {
-    const haystack = [material.id, material.name, material.category, material.textureUrl]
-      .join(" ")
-      .toLowerCase();
-
-    return haystack.includes(query);
-  });
-}, [textureSearch]);
-
-const filteredSpace3DAnalyzerMaterials = useMemo(() => {
-  const query = textureSearch.trim().toLowerCase();
-  const materials = space3DAnalyzerReport?.materials || [];
-
-  if (!query) return materials;
-
-  return materials.filter((material) =>
-    [material.id, material.name, material.category].join(" ").toLowerCase().includes(query)
-  );
-}, [space3DAnalyzerReport, textureSearch]);
-
 const selectedLibraryProduct = useMemo(() => {
   return productLibrary.find((item) => item.id === selectedLibraryProductId) || productLibrary[0] || null;
 }, [productLibrary, selectedLibraryProductId]);
@@ -2438,6 +2719,14 @@ const importerReadiness = useMemo(() => {
     packageReady: Boolean(hasSupportedFormat && hasComponents && hasMappedNames),
   };
 }, [modelExtension, meshList]);
+
+const collisionEngineV1Report = useMemo(() => {
+  return buildCollisionEngineV1Report(meshList);
+}, [meshList]);
+
+function downloadCollisionEngineV1Report() {
+  downloadJsonFile(`bagastudio-collision-engine-v1-${Date.now()}.json`, collisionEngineV1Report);
+}
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
@@ -4106,34 +4395,93 @@ function downloadImporterDiagnosticJson() {
           </div>
         </section>
 
-
-
-        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <section className="rounded-[28px] border border-orange-400/15 bg-[#120b05]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-xl font-semibold">Ricerca Texture / Materiali</h2>
-              <p className="mt-1 text-sm text-slate-400">Filtro rapido per trovare texture interne BagaStudio e materiali rilevati dai file Space3D.</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Collision Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Controllo collisioni produzione</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Verifica ferramenta fuori pannello, fori fuori pezzo, distanze minime dai bordi, incompatibilità spessori e sovrapposizioni tecniche.
+              </p>
             </div>
-            <div className="rounded-2xl border border-cyan-400/10 bg-black/30 px-4 py-3 text-sm text-slate-300">
-              {filteredDefaultProductMaterials.length} / {DEFAULT_PRODUCT_MATERIALS.length} texture interne
+
+            <button
+              type="button"
+              onClick={downloadCollisionEngineV1Report}
+              className="rounded-2xl border border-orange-400/25 bg-orange-400/10 px-5 py-3 text-sm font-black text-orange-100 transition hover:bg-orange-400/20"
+            >
+              Esporta report collisioni
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{collisionEngineV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Verificati</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{collisionEngineV1Report.totals.checkedComponents}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Saltati</p>
+              <p className="mt-1 text-2xl font-black text-slate-200">{collisionEngineV1Report.totals.skippedComponents}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{collisionEngineV1Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{collisionEngineV1Report.totals.warning}</p>
+            </div>
+            <div className="rounded-2xl border border-blue-400/15 bg-blue-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-blue-200">Info</p>
+              <p className="mt-1 text-2xl font-black text-blue-100">{collisionEngineV1Report.totals.info}</p>
             </div>
           </div>
 
-          <input
-            value={textureSearch}
-            onChange={(event) => setTextureSearch(event.target.value)}
-            placeholder="Cerca texture, materiale, categoria, file..."
-            className="mt-4 w-full rounded-2xl border border-cyan-400/20 bg-black/30 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60"
-          />
-
-          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {filteredDefaultProductMaterials.slice(0, 18).map((material) => (
-              <div key={material.id} className="rounded-2xl border border-cyan-400/10 bg-black/25 p-3">
-                <p className="text-sm font-black text-white">{material.name}</p>
-                <p className="mt-1 break-all text-[11px] text-slate-500">{material.category} · {material.textureUrl}</p>
+          <div className="mt-5 max-h-80 space-y-3 overflow-auto pr-2">
+            {collisionEngineV1Report.issues.length === 0 ? (
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4 text-sm text-emerald-100">
+                Nessuna collisione rilevata sui dati tecnici attualmente compilati.
               </div>
-            ))}
+            ) : (
+              collisionEngineV1Report.issues.slice(0, 30).map((issue) => (
+                <div key={issue.id} className="rounded-2xl border border-orange-400/10 bg-black/25 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-white">{issue.displayName}</p>
+                      <p className="mt-1 text-xs text-slate-400">{issue.code} · {issue.targetLabel}</p>
+                    </div>
+                    <span className={
+                      issue.severity === "critical"
+                        ? "rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-red-100"
+                        : issue.severity === "warning"
+                          ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                          : "rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-blue-100"
+                    }>
+                      {issue.severity}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 text-sm text-slate-200">{issue.message}</p>
+                  <p className="mt-2 text-xs text-slate-500">{issue.recommendation}</p>
+                  {(issue.value !== undefined || issue.limit !== undefined) && (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Valore: {issue.value ?? "-"} · Limite: {issue.limit ?? "-"}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
           </div>
+
+          {collisionEngineV1Report.issues.length > 30 && (
+            <p className="mt-3 text-xs text-slate-500">
+              Mostrate le prime 30 anomalie. Esporta il report JSON per vedere l'elenco completo.
+            </p>
+          )}
         </section>
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
@@ -4491,12 +4839,6 @@ function downloadImporterDiagnosticJson() {
                     <p className="text-sm font-black text-white">Componenti Space3D</p>
                     <p className="text-xs text-slate-500">Prime 40 voci filtrate</p>
                   </div>
-                  <input
-                    value={textureSearch}
-                    onChange={(event) => setTextureSearch(event.target.value)}
-                    placeholder="Cerca texture/materiale..."
-                    className="mt-3 w-full rounded-xl border border-violet-400/20 bg-black/30 px-3 py-2 text-xs text-white outline-none placeholder:text-slate-500 focus:border-violet-300/60"
-                  />
                   <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
                     {space3DAnalyzerReport.components.slice(0, 40).map((component) => (
                       <button
@@ -4518,7 +4860,7 @@ function downloadImporterDiagnosticJson() {
                     <p className="text-xs text-slate-500">Prime 40 voci</p>
                   </div>
                   <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
-                    {filteredSpace3DAnalyzerMaterials.slice(0, 40).map((material) => (
+                    {(space3DAnalyzerReport?.materials || []).slice(0, 40).map((material) => (
                       <div key={material.id} className="rounded-lg border border-violet-400/10 bg-white/[0.03] px-3 py-2">
                         <p className="text-xs font-bold text-white">{material.name}</p>
                         <p className="text-[11px] text-slate-500">{material.category} · {material.id}</p>
