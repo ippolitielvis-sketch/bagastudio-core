@@ -689,8 +689,8 @@ type CollisionEngineV1Issue = {
 };
 
 type CollisionEngineV1Report = {
-  schema: "bagastudio-collision-engine-v1";
-  version: 1;
+  schema: "bagastudio-collision-engine-v1-5";
+  version: 1.5;
   generatedAt: string;
   totals: {
     components: number;
@@ -707,10 +707,10 @@ type CollisionEngineV1Report = {
 function readCollisionNumberV1(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
+
     if (typeof value === "string") {
-      const normalized = value.replace(",", ".").trim();
-      if (!normalized) continue;
-      const parsed = Number(normalized);
+      const cleaned = value.replace(",", ".").replace(/[^\d.-]/g, "");
+      const parsed = Number(cleaned);
       if (Number.isFinite(parsed)) return parsed;
     }
   }
@@ -720,54 +720,67 @@ function readCollisionNumberV1(...values: unknown[]) {
 
 function normalizeCollisionArrayV1(value: unknown): any[] {
   if (Array.isArray(value)) return value;
-  if (value && typeof value === "object") {
-    const objectValue = value as Record<string, any>;
-    if (Array.isArray(objectValue.items)) return objectValue.items;
-    if (Array.isArray(objectValue.hardware)) return objectValue.hardware;
-    if (Array.isArray(objectValue.drillings)) return objectValue.drillings;
-    if (Array.isArray(objectValue.links)) return objectValue.links;
+
+  if (typeof value === "string") {
+    const parsed = parseBagaStudioJsonField(value, null);
+    if (Array.isArray(parsed)) return parsed;
+    const csvValues = parseBagaStudioCsvField(value);
+    return csvValues.map((item) => ({ label: item, name: item }));
   }
 
   return [];
 }
 
+type CollisionDimensionSourceV1 = {
+  width?: unknown;
+  w?: unknown;
+  x?: unknown;
+  length?: unknown;
+  height?: unknown;
+  h?: unknown;
+  y?: unknown;
+  depth?: unknown;
+  d?: unknown;
+  z?: unknown;
+  panelThickness?: unknown;
+  thickness?: unknown;
+  t?: unknown;
+};
+
 function readCollisionDimensionsV1(mesh: MeshConfig) {
-  const dimensions = parseBagaStudioJsonField<Record<string, any>>(mesh.dimensions, {});
-  const manufacturingData = parseBagaStudioJsonField<Record<string, any>>(mesh.manufacturingData, {});
-  const manufacturingDimensions = manufacturingData?.dimensions || manufacturingData?.panel || {};
+  const dimensions = parseBagaStudioJsonField<CollisionDimensionSourceV1>(mesh.dimensions, {});
+  const manufacturingData = parseBagaStudioJsonField<CollisionDimensionSourceV1>(mesh.manufacturingData, {});
 
   const width = readCollisionNumberV1(
     dimensions.width,
     dimensions.w,
     dimensions.x,
-    manufacturingDimensions.width,
-    manufacturingDimensions.w,
-    manufacturingDimensions.x
+    dimensions.length,
+    manufacturingData.width,
+    manufacturingData.length
   );
+
   const height = readCollisionNumberV1(
     dimensions.height,
     dimensions.h,
     dimensions.y,
-    manufacturingDimensions.height,
-    manufacturingDimensions.h,
-    manufacturingDimensions.y
+    manufacturingData.height
   );
+
   const depth = readCollisionNumberV1(
     dimensions.depth,
     dimensions.d,
     dimensions.z,
-    dimensions.thickness,
-    manufacturingDimensions.depth,
-    manufacturingDimensions.d,
-    manufacturingDimensions.z,
-    mesh.panelThickness
+    manufacturingData.depth
   );
+
   const panelThickness = readCollisionNumberV1(
     mesh.panelThickness,
-    dimensions.thickness,
     dimensions.panelThickness,
-    manufacturingData?.panelThickness,
-    manufacturingDimensions.thickness
+    dimensions.thickness,
+    dimensions.t,
+    manufacturingData.panelThickness,
+    manufacturingData.thickness
   );
 
   return { width, height, depth, panelThickness };
@@ -785,10 +798,42 @@ function readCollisionPointV1(item: any) {
   };
 }
 
+function readCollisionFootprintV15(point: ReturnType<typeof readCollisionPointV1>) {
+  const diameter = point.diameter || 0;
+  const length = point.length || 0;
+  const radius = diameter > 0 ? diameter / 2 : Math.max(length / 2, 4);
+
+  return Math.max(radius, 4);
+}
+
 function pushCollisionIssueV1(
   issues: CollisionEngineV1Issue[],
   issue: Omit<CollisionEngineV1Issue, "id">
 ) {
+  const issueKey = [
+    issue.componentId,
+    issue.code,
+    issue.targetType,
+    issue.targetLabel,
+    issue.axis || "none",
+    issue.value ?? "none",
+    issue.limit ?? "none",
+  ].join("|");
+
+  const alreadyExists = issues.some((existingIssue) => (
+    [
+      existingIssue.componentId,
+      existingIssue.code,
+      existingIssue.targetType,
+      existingIssue.targetLabel,
+      existingIssue.axis || "none",
+      existingIssue.value ?? "none",
+      existingIssue.limit ?? "none",
+    ].join("|") === issueKey
+  ));
+
+  if (alreadyExists) return;
+
   issues.push({
     ...issue,
     id: `${issue.componentId}-${issue.code}-${issues.length + 1}`,
@@ -798,6 +843,7 @@ function pushCollisionIssueV1(
 function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Report {
   const issues: CollisionEngineV1Issue[] = [];
   const minimumEdgeDistance = 5;
+  const minimumHardwareDistance = 8;
   let checkedComponents = 0;
   let skippedComponents = 0;
 
@@ -810,6 +856,7 @@ function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Re
     const hardwareLinks = normalizeCollisionArrayV1(
       parseBagaStudioJsonField(mesh.hardwareLinks, parseBagaStudioCsvField(mesh.hardware).map((hardwareType) => ({ hardwareType })))
     );
+
     const drillingLinks = normalizeCollisionArrayV1(
       parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
     );
@@ -839,7 +886,8 @@ function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Re
     const checkTechnicalItem = (item: any, targetType: "hardware" | "drilling", index: number) => {
       const point = readCollisionPointV1(item);
       const targetLabel = `${point.label} #${index + 1}`;
-      const edgeLimit = Math.max(minimumEdgeDistance, (point.diameter || 0) / 2);
+      const footprint = readCollisionFootprintV15(point);
+      const edgeLimit = Math.max(minimumEdgeDistance, footprint);
 
       ([
         ["x", point.x, dimensions.width],
@@ -866,38 +914,46 @@ function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Re
         }
       });
 
-      if (point.x !== null && dimensions.width !== null && (point.x < edgeLimit || dimensions.width - point.x < edgeLimit)) {
-        pushCollisionIssueV1(issues, {
-          componentId,
-          meshName: mesh.meshName,
-          displayName,
-          code: "EDGE_CLEARANCE_VIOLATION",
-          severity: "warning",
-          message: `${targetLabel}: distanza dal bordo X inferiore alla soglia minima.`,
-          targetType,
-          targetLabel,
-          axis: "edge",
-          value: Math.min(point.x, dimensions.width - point.x),
-          limit: edgeLimit,
-          recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
-        });
+      if (point.x !== null && dimensions.width !== null && point.x >= 0 && point.x <= dimensions.width) {
+        const edgeDistanceX = Math.min(point.x, dimensions.width - point.x);
+
+        if (edgeDistanceX < edgeLimit) {
+          pushCollisionIssueV1(issues, {
+            componentId,
+            meshName: mesh.meshName,
+            displayName,
+            code: "EDGE_CLEARANCE_VIOLATION",
+            severity: "warning",
+            message: `${targetLabel}: distanza dal bordo X inferiore alla soglia minima.`,
+            targetType,
+            targetLabel,
+            axis: "edge",
+            value: Number(edgeDistanceX.toFixed(2)),
+            limit: edgeLimit,
+            recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
+          });
+        }
       }
 
-      if (point.y !== null && dimensions.height !== null && (point.y < edgeLimit || dimensions.height - point.y < edgeLimit)) {
-        pushCollisionIssueV1(issues, {
-          componentId,
-          meshName: mesh.meshName,
-          displayName,
-          code: "EDGE_CLEARANCE_VIOLATION",
-          severity: "warning",
-          message: `${targetLabel}: distanza dal bordo Y inferiore alla soglia minima.`,
-          targetType,
-          targetLabel,
-          axis: "edge",
-          value: Math.min(point.y, dimensions.height - point.y),
-          limit: edgeLimit,
-          recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
-        });
+      if (point.y !== null && dimensions.height !== null && point.y >= 0 && point.y <= dimensions.height) {
+        const edgeDistanceY = Math.min(point.y, dimensions.height - point.y);
+
+        if (edgeDistanceY < edgeLimit) {
+          pushCollisionIssueV1(issues, {
+            componentId,
+            meshName: mesh.meshName,
+            displayName,
+            code: "EDGE_CLEARANCE_VIOLATION",
+            severity: "warning",
+            message: `${targetLabel}: distanza dal bordo Y inferiore alla soglia minima.`,
+            targetType,
+            targetLabel,
+            axis: "edge",
+            value: Number(edgeDistanceY.toFixed(2)),
+            limit: edgeLimit,
+            recommendation: "Aumenta la distanza dal bordo o modifica la regola parametrica del foro/ferramenta.",
+          });
+        }
       }
 
       const requiredThickness = point.minThickness || point.length;
@@ -922,36 +978,39 @@ function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Re
     hardwareLinks.forEach((item, index) => checkTechnicalItem(item, "hardware", index));
     drillingLinks.forEach((item, index) => checkTechnicalItem(item, "drilling", index));
 
-    const pointItems = [...hardwareLinks, ...drillingLinks]
-      .map((item, index) => ({ item, index, point: readCollisionPointV1(item) }))
-      .filter(({ point }) => point.x !== null && point.y !== null);
+    const technicalPointItems = [
+      ...hardwareLinks.map((item, index) => ({ item, index, targetType: "hardware" as const, point: readCollisionPointV1(item) })),
+      ...drillingLinks.map((item, index) => ({ item, index, targetType: "drilling" as const, point: readCollisionPointV1(item) })),
+    ].filter(({ point }) => point.x !== null && point.y !== null);
 
-    for (let firstIndex = 0; firstIndex < pointItems.length; firstIndex += 1) {
-      for (let secondIndex = firstIndex + 1; secondIndex < pointItems.length; secondIndex += 1) {
-        const first = pointItems[firstIndex];
-        const second = pointItems[secondIndex];
+    for (let firstIndex = 0; firstIndex < technicalPointItems.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < technicalPointItems.length; secondIndex += 1) {
+        const first = technicalPointItems[firstIndex];
+        const second = technicalPointItems[secondIndex];
         const dx = Number(first.point.x) - Number(second.point.x);
         const dy = Number(first.point.y) - Number(second.point.y);
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const safeDistance = Math.max(
-          8,
-          ((first.point.diameter || 0) / 2) + ((second.point.diameter || 0) / 2)
-        );
+        const firstFootprint = readCollisionFootprintV15(first.point);
+        const secondFootprint = readCollisionFootprintV15(second.point);
+        const safeDistance = Math.max(minimumHardwareDistance, firstFootprint + secondFootprint);
+        const isHardwareToHardware = first.targetType === "hardware" && second.targetType === "hardware";
 
         if (distance < safeDistance) {
           pushCollisionIssueV1(issues, {
             componentId,
             meshName: mesh.meshName,
             displayName,
-            code: "TECHNICAL_ITEM_COLLISION",
-            severity: "warning",
+            code: isHardwareToHardware ? "HARDWARE_HARDWARE_COLLISION" : "TECHNICAL_ITEM_COLLISION",
+            severity: isHardwareToHardware ? "critical" : "warning",
             message: `${first.point.label} e ${second.point.label}: distanza tecnica insufficiente sul pannello.`,
             targetType: "component",
             targetLabel: `${first.point.label} ↔ ${second.point.label}`,
             axis: "pair",
             value: Number(distance.toFixed(2)),
-            limit: safeDistance,
-            recommendation: "Distanzia gli elementi o assegna regole parametriche separate per evitare sovrapposizioni in produzione.",
+            limit: Number(safeDistance.toFixed(2)),
+            recommendation: isHardwareToHardware
+              ? "Sposta una delle due ferramenta: la collisione può impedire montaggio, foratura o assemblaggio."
+              : "Distanzia gli elementi o assegna regole parametriche separate per evitare sovrapposizioni in produzione.",
           });
         }
       }
@@ -969,8 +1028,8 @@ function buildCollisionEngineV1Report(meshes: MeshConfig[]): CollisionEngineV1Re
   };
 
   return {
-    schema: "bagastudio-collision-engine-v1",
-    version: 1,
+    schema: "bagastudio-collision-engine-v1-5",
+    version: 1.5,
     generatedAt: new Date().toISOString(),
     totals,
     issues,
@@ -2725,7 +2784,7 @@ const collisionEngineV1Report = useMemo(() => {
 }, [meshList]);
 
 function downloadCollisionEngineV1Report() {
-  downloadJsonFile(`bagastudio-collision-engine-v1-${Date.now()}.json`, collisionEngineV1Report);
+  downloadJsonFile(`bagastudio-collision-engine-v1-5-${Date.now()}.json`, collisionEngineV1Report);
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -4398,7 +4457,7 @@ function downloadImporterDiagnosticJson() {
         <section className="rounded-[28px] border border-orange-400/15 bg-[#120b05]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Collision Engine V1</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Collision Engine V1.5</p>
               <h2 className="mt-1 text-xl font-semibold text-white">Controllo collisioni produzione</h2>
               <p className="mt-1 text-sm text-slate-400">
                 Verifica ferramenta fuori pannello, fori fuori pezzo, distanze minime dai bordi, incompatibilità spessori e sovrapposizioni tecniche.
