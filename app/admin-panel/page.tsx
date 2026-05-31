@@ -48,6 +48,7 @@ type MeshConfig = {
   hardware?: string;
   drillings?: string;
   manufacturingData?: string;
+  productionDimensions?: string;
   constraintRole?: string;
   hardwareLinks?: string;
   drillingLinks?: string;
@@ -737,6 +738,7 @@ function normalizeCollisionArrayV1(value: unknown): any[] {
 function readCollisionDimensionsV1(mesh: MeshConfig) {
   const dimensions = parseBagaStudioJsonField(mesh.dimensions, {}) as Record<string, unknown>;
   const manufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {}) as Record<string, unknown>;
+  const productionDimensions = parseBagaStudioJsonField(mesh.productionDimensions, {}) as Record<string, unknown>;
 
   const width = readCollisionNumberV1(
     dimensions.width,
@@ -744,21 +746,25 @@ function readCollisionDimensionsV1(mesh: MeshConfig) {
     dimensions.x,
     dimensions.length,
     manufacturingData.width,
-    manufacturingData.length
+    manufacturingData.length,
+    productionDimensions.width,
+    productionDimensions.length
   );
 
   const height = readCollisionNumberV1(
     dimensions.height,
     dimensions.h,
     dimensions.y,
-    manufacturingData.height
+    manufacturingData.height,
+    productionDimensions.height
   );
 
   const depth = readCollisionNumberV1(
     dimensions.depth,
     dimensions.d,
     dimensions.z,
-    manufacturingData.depth
+    manufacturingData.depth,
+    productionDimensions.depth
   );
 
   const panelThickness = readCollisionNumberV1(
@@ -767,7 +773,9 @@ function readCollisionDimensionsV1(mesh: MeshConfig) {
     dimensions.thickness,
     dimensions.t,
     manufacturingData.panelThickness,
-    manufacturingData.thickness
+    manufacturingData.thickness,
+    productionDimensions.panelThickness,
+    productionDimensions.thickness
   );
 
   return { width, height, depth, panelThickness };
@@ -906,6 +914,101 @@ function applyManufacturingOverrideV1(meshes: MeshConfig[], targetThicknessValue
   });
 }
 
+function buildManufacturingOverrideMeshesFromCsvV1(
+  csvParts: CsvPart[],
+  matches: CsvCixMatch[]
+): MeshConfig[] {
+  if (!csvParts.length) return [];
+
+  const matchByCsvKey = new Map<string, CsvCixMatch>();
+  matches.forEach((match) => {
+    const key = normalizeCsvRegenerationKey(match.csvPart?.name || "");
+    if (key) matchByCsvKey.set(key, match);
+  });
+
+  return csvParts.map((part, index): MeshConfig => {
+    const match = matchByCsvKey.get(normalizeCsvRegenerationKey(part.name || ""));
+    const displayName = part.name || `Pannello CSV ${index + 1}`;
+    const safeId = normalizeCsvRegenerationKey(displayName) || `csv_panel_${index + 1}`;
+    const productionDimensions = {
+      width: readCollisionNumberV1(part.width),
+      depth: readCollisionNumberV1(part.depth),
+      thickness: readCollisionNumberV1(part.thickness),
+    };
+
+    return {
+      meshName: `csv_component_${String(part.rowIndex ?? index + 1).padStart(3, "0")}_${safeId}`,
+      displayName,
+      category: "panel",
+      componentCategory: "panel",
+      partId: `csv_${String(part.rowIndex ?? index + 1).padStart(3, "0")}_${safeId}`,
+      componentType: "csv-production-panel",
+      runtimeRole: "panel",
+      tags: "csv,production,manufacturing-override-v1-1",
+      selectable: true,
+      visible: true,
+      compatibleLed: false,
+      compatibleInsert: false,
+      supportsAccessories: false,
+      materialSlots: "main",
+      compatibleAccessories: "",
+      dimensions: JSON.stringify({
+        width: productionDimensions.width,
+        depth: productionDimensions.depth,
+        thickness: productionDimensions.thickness,
+      }),
+      technicalPoints: "",
+      assemblyOrder: "",
+      panelThickness: productionDimensions.thickness !== null ? String(productionDimensions.thickness) : "",
+      materialCode: part.material || "",
+      edgeBanding: "",
+      hardware: "",
+      drillings: "",
+      manufacturingData: JSON.stringify({
+        source: "csv",
+        csvRowIndex: part.rowIndex ?? index + 1,
+        csvSource: part.name || null,
+        cixSource: match?.cixPart?.fileName || null,
+        material: part.material || null,
+        quantity: part.quantity ?? null,
+        width: productionDimensions.width,
+        depth: productionDimensions.depth,
+        thickness: productionDimensions.thickness,
+        panelThickness: productionDimensions.thickness,
+        manufacturingOverrideSourceReady: true,
+      }),
+      productionDimensions: JSON.stringify(productionDimensions),
+      constraintRole: "STRUCTURAL",
+      hardwareLinks: "",
+      drillingLinks: "",
+      dependencyParents: "",
+      dependencyChildren: "",
+      parametricData: JSON.stringify({
+        originalWidth: productionDimensions.width,
+        originalHeight: null,
+        originalDepth: productionDimensions.depth,
+        originalThickness: productionDimensions.thickness,
+        currentWidth: productionDimensions.width,
+        currentHeight: null,
+        currentDepth: productionDimensions.depth,
+        currentThickness: productionDimensions.thickness,
+        lockExternalDimensions: true,
+        parametricVersion: 1,
+      }),
+      manufacturingOverrideData: "",
+      csvRegenerationData: "",
+      ledFrontOffset: "4",
+      ledSideMargin: "5",
+      ledYOffset: "0",
+      insertPosition: "front",
+      insertOffsetX: "0",
+      insertOffsetY: "0",
+      insertOffsetZ: "1",
+      ledPosition: "front",
+    };
+  });
+}
+
 
 type CsvRegenerationV1Report = {
   schema: "bagastudio-csv-regeneration-v1";
@@ -985,16 +1088,33 @@ function buildCsvRegenerationV1Report(
     const originalWidth = readCollisionNumberV1(part.width, parametricData.originalWidth);
     const originalDepth = readCollisionNumberV1(part.depth, parametricData.originalDepth);
     const originalThickness = readCollisionNumberV1(part.thickness, parametricData.originalThickness);
-    const regeneratedThickness = readCollisionNumberV1(
+
+    const isThinPanel =
+      originalThickness !== null &&
+      originalThickness <= 6;
+
+    const isManualCheck =
+      originalThickness !== null &&
+      originalThickness > 6 &&
+      originalThickness < 12;
+
+    const requestedRegeneratedThickness = readCollisionNumberV1(
       parametricData.currentThickness,
       overrideData.targetThickness,
       targetThickness,
       originalThickness
     );
 
+    const regeneratedThickness =
+      isThinPanel || isManualCheck
+        ? originalThickness
+        : requestedRegeneratedThickness;
+
     const isLinked = Boolean(linkedMesh || linkedMatch);
     const changed = Boolean(
       isLinked &&
+      !isThinPanel &&
+      !isManualCheck &&
       regeneratedThickness !== null &&
       originalThickness !== null &&
       Math.abs(regeneratedThickness - originalThickness) > 0.001
@@ -1002,9 +1122,13 @@ function buildCsvRegenerationV1Report(
 
     const status: "updated" | "unchanged" | "skipped" = !isLinked
       ? "skipped"
-      : changed
-        ? "updated"
-        : "unchanged";
+      : isThinPanel
+        ? "skipped"
+        : isManualCheck
+          ? "skipped"
+          : changed
+            ? "updated"
+            : "unchanged";
 
     return {
       rowIndex: part.rowIndex,
@@ -1021,9 +1145,13 @@ function buildCsvRegenerationV1Report(
       status,
       note: !isLinked
         ? "Riga CSV non collegata a un componente/match CIX: mantenuta invariata."
-        : changed
-          ? "Riga pronta per CSV rigenerato: spessore aggiornato e ingombro esterno bloccato."
-          : "Riga collegata ma senza variazioni di spessore.",
+        : isThinPanel
+          ? "Manufacturing Rules Engine V1.1: pannello sottile <= 6 mm, spessore mantenuto invariato."
+          : isManualCheck
+            ? "Manufacturing Rules Engine V1.1: spessore tra 6 e 12 mm, controllo manuale richiesto."
+            : changed
+              ? "Riga pronta per CSV rigenerato: spessore aggiornato e ingombro esterno bloccato."
+              : "Riga collegata ma senza variazioni di spessore.",
     };
   });
 
@@ -3085,9 +3213,17 @@ const collisionEngineV1Report = useMemo(() => {
 
 const [manufacturingOverrideThickness, setManufacturingOverrideThickness] = useState("17.8");
 
+const manufacturingOverrideSourceMeshes = useMemo(() => {
+  if (meshList.length > 0) return meshList;
+  return buildManufacturingOverrideMeshesFromCsvV1(
+    space3DCsvParts,
+    csvCixMatcherReport?.matches || []
+  );
+}, [meshList, space3DCsvParts, csvCixMatcherReport]);
+
 const manufacturingOverrideV1Report = useMemo(() => {
-  return buildManufacturingOverrideV1Report(meshList, manufacturingOverrideThickness);
-}, [meshList, manufacturingOverrideThickness]);
+  return buildManufacturingOverrideV1Report(manufacturingOverrideSourceMeshes, manufacturingOverrideThickness);
+}, [manufacturingOverrideSourceMeshes, manufacturingOverrideThickness]);
 
 function downloadCollisionEngineV1Report() {
   downloadJsonFile(`bagastudio-collision-engine-v1-5-${Date.now()}.json`, collisionEngineV1Report);
@@ -3098,7 +3234,10 @@ function downloadManufacturingOverrideV1Report() {
 }
 
 function applyManufacturingOverrideThicknessV1() {
-  setMeshList((current) => applyManufacturingOverrideV1(current, manufacturingOverrideThickness));
+  setMeshList((current) => {
+    const source = current.length > 0 ? current : manufacturingOverrideSourceMeshes;
+    return applyManufacturingOverrideV1(source, manufacturingOverrideThickness);
+  });
 }
 
 
