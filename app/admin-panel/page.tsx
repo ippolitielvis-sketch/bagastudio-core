@@ -48,7 +48,6 @@ type MeshConfig = {
   hardware?: string;
   drillings?: string;
   manufacturingData?: string;
-  productionDimensions?: string;
   constraintRole?: string;
   hardwareLinks?: string;
   drillingLinks?: string;
@@ -738,7 +737,6 @@ function normalizeCollisionArrayV1(value: unknown): any[] {
 function readCollisionDimensionsV1(mesh: MeshConfig) {
   const dimensions = parseBagaStudioJsonField(mesh.dimensions, {}) as Record<string, unknown>;
   const manufacturingData = parseBagaStudioJsonField(mesh.manufacturingData, {}) as Record<string, unknown>;
-  const productionDimensions = parseBagaStudioJsonField(mesh.productionDimensions, {}) as Record<string, unknown>;
 
   const width = readCollisionNumberV1(
     dimensions.width,
@@ -746,25 +744,21 @@ function readCollisionDimensionsV1(mesh: MeshConfig) {
     dimensions.x,
     dimensions.length,
     manufacturingData.width,
-    manufacturingData.length,
-    productionDimensions.width,
-    productionDimensions.length
+    manufacturingData.length
   );
 
   const height = readCollisionNumberV1(
     dimensions.height,
     dimensions.h,
     dimensions.y,
-    manufacturingData.height,
-    productionDimensions.height
+    manufacturingData.height
   );
 
   const depth = readCollisionNumberV1(
     dimensions.depth,
     dimensions.d,
     dimensions.z,
-    manufacturingData.depth,
-    productionDimensions.depth
+    manufacturingData.depth
   );
 
   const panelThickness = readCollisionNumberV1(
@@ -773,9 +767,7 @@ function readCollisionDimensionsV1(mesh: MeshConfig) {
     dimensions.thickness,
     dimensions.t,
     manufacturingData.panelThickness,
-    manufacturingData.thickness,
-    productionDimensions.panelThickness,
-    productionDimensions.thickness
+    manufacturingData.thickness
   );
 
   return { width, height, depth, panelThickness };
@@ -914,101 +906,6 @@ function applyManufacturingOverrideV1(meshes: MeshConfig[], targetThicknessValue
   });
 }
 
-function buildManufacturingOverrideMeshesFromCsvV1(
-  csvParts: CsvPart[],
-  matches: CsvCixMatch[]
-): MeshConfig[] {
-  if (!csvParts.length) return [];
-
-  const matchByCsvKey = new Map<string, CsvCixMatch>();
-  matches.forEach((match) => {
-    const key = normalizeCsvRegenerationKey(match.csvPart?.name || "");
-    if (key) matchByCsvKey.set(key, match);
-  });
-
-  return csvParts.map((part, index): MeshConfig => {
-    const match = matchByCsvKey.get(normalizeCsvRegenerationKey(part.name || ""));
-    const displayName = part.name || `Pannello CSV ${index + 1}`;
-    const safeId = normalizeCsvRegenerationKey(displayName) || `csv_panel_${index + 1}`;
-    const productionDimensions = {
-      width: readCollisionNumberV1(part.width),
-      depth: readCollisionNumberV1(part.depth),
-      thickness: readCollisionNumberV1(part.thickness),
-    };
-
-    return {
-      meshName: `csv_component_${String(part.rowIndex ?? index + 1).padStart(3, "0")}_${safeId}`,
-      displayName,
-      category: "panel",
-      componentCategory: "panel",
-      partId: `csv_${String(part.rowIndex ?? index + 1).padStart(3, "0")}_${safeId}`,
-      componentType: "csv-production-panel",
-      runtimeRole: "panel",
-      tags: "csv,production,manufacturing-override-v1-1",
-      selectable: true,
-      visible: true,
-      compatibleLed: false,
-      compatibleInsert: false,
-      supportsAccessories: false,
-      materialSlots: "main",
-      compatibleAccessories: "",
-      dimensions: JSON.stringify({
-        width: productionDimensions.width,
-        depth: productionDimensions.depth,
-        thickness: productionDimensions.thickness,
-      }),
-      technicalPoints: "",
-      assemblyOrder: "",
-      panelThickness: productionDimensions.thickness !== null ? String(productionDimensions.thickness) : "",
-      materialCode: part.material || "",
-      edgeBanding: "",
-      hardware: "",
-      drillings: "",
-      manufacturingData: JSON.stringify({
-        source: "csv",
-        csvRowIndex: part.rowIndex ?? index + 1,
-        csvSource: part.name || null,
-        cixSource: match?.cixPart?.fileName || null,
-        material: part.material || null,
-        quantity: part.quantity ?? null,
-        width: productionDimensions.width,
-        depth: productionDimensions.depth,
-        thickness: productionDimensions.thickness,
-        panelThickness: productionDimensions.thickness,
-        manufacturingOverrideSourceReady: true,
-      }),
-      productionDimensions: JSON.stringify(productionDimensions),
-      constraintRole: "STRUCTURAL",
-      hardwareLinks: "",
-      drillingLinks: "",
-      dependencyParents: "",
-      dependencyChildren: "",
-      parametricData: JSON.stringify({
-        originalWidth: productionDimensions.width,
-        originalHeight: null,
-        originalDepth: productionDimensions.depth,
-        originalThickness: productionDimensions.thickness,
-        currentWidth: productionDimensions.width,
-        currentHeight: null,
-        currentDepth: productionDimensions.depth,
-        currentThickness: productionDimensions.thickness,
-        lockExternalDimensions: true,
-        parametricVersion: 1,
-      }),
-      manufacturingOverrideData: "",
-      csvRegenerationData: "",
-      ledFrontOffset: "4",
-      ledSideMargin: "5",
-      ledYOffset: "0",
-      insertPosition: "front",
-      insertOffsetX: "0",
-      insertOffsetY: "0",
-      insertOffsetZ: "1",
-      ledPosition: "front",
-    };
-  });
-}
-
 
 type CsvRegenerationV1Report = {
   schema: "bagastudio-csv-regeneration-v1";
@@ -1089,16 +986,10 @@ function buildCsvRegenerationV1Report(
     const originalDepth = readCollisionNumberV1(part.depth, parametricData.originalDepth);
     const originalThickness = readCollisionNumberV1(part.thickness, parametricData.originalThickness);
 
-    const isThinPanel =
-      originalThickness !== null &&
-      originalThickness <= 6;
+    const isThinPanel = originalThickness !== null && originalThickness <= 6;
+    const isManualCheck = originalThickness !== null && originalThickness > 6 && originalThickness < 12;
 
-    const isManualCheck =
-      originalThickness !== null &&
-      originalThickness > 6 &&
-      originalThickness < 12;
-
-    const requestedRegeneratedThickness = readCollisionNumberV1(
+    const requestedThickness = readCollisionNumberV1(
       parametricData.currentThickness,
       overrideData.targetThickness,
       targetThickness,
@@ -1106,9 +997,7 @@ function buildCsvRegenerationV1Report(
     );
 
     const regeneratedThickness =
-      isThinPanel || isManualCheck
-        ? originalThickness
-        : requestedRegeneratedThickness;
+      isThinPanel || isManualCheck ? originalThickness : requestedThickness;
 
     const isLinked = Boolean(linkedMesh || linkedMatch);
     const changed = Boolean(
@@ -1146,9 +1035,9 @@ function buildCsvRegenerationV1Report(
       note: !isLinked
         ? "Riga CSV non collegata a un componente/match CIX: mantenuta invariata."
         : isThinPanel
-          ? "Manufacturing Rules Engine V1.1: pannello sottile <= 6 mm, spessore mantenuto invariato."
+          ? "Manufacturing Rules Engine V1.2: pannello sottile <= 6 mm, spessore mantenuto invariato."
           : isManualCheck
-            ? "Manufacturing Rules Engine V1.1: spessore tra 6 e 12 mm, controllo manuale richiesto."
+            ? "Manufacturing Rules Engine V1.2: spessore tra 6 e 12 mm, controllo manuale richiesto."
             : changed
               ? "Riga pronta per CSV rigenerato: spessore aggiornato e ingombro esterno bloccato."
               : "Riga collegata ma senza variazioni di spessore.",
@@ -1212,6 +1101,153 @@ function downloadCsvTextFile(fileName: string, content: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+
+type ManufacturingDataInspectorV1Report = {
+  schema: "bagastudio-manufacturing-data-inspector-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: "READY_FOR_HARDWARE_ANALYZER_V2" | "MISSING_DATA_FOR_HARDWARE_ANALYZER_V2";
+  totals: {
+    components: number;
+    componentsWithThickness: number;
+    componentsWithoutThickness: number;
+    hardwareLinks: number;
+    componentsWithHardware: number;
+    drillingLinks: number;
+    componentsWithDrillings: number;
+    componentsWithConstraintRole: number;
+  };
+  constraintRoles: Record<string, number>;
+  thicknessRows: Array<{
+    componentId: string;
+    displayName: string;
+    thickness: number | null;
+    status: "ready" | "missing";
+  }>;
+  hardwareSummary: Array<{
+    label: string;
+    count: number;
+  }>;
+  drillingSummary: Array<{
+    label: string;
+    count: number;
+  }>;
+  missingData: string[];
+};
+
+function incrementInspectorCounterV1(counter: Record<string, number>, label: unknown) {
+  const key = String(label || "unknown").trim() || "unknown";
+  counter[key] = (counter[key] || 0) + 1;
+}
+
+function buildManufacturingDataInspectorV1Report(meshes: MeshConfig[]): ManufacturingDataInspectorV1Report {
+  const hardwareCounter: Record<string, number> = {};
+  const drillingCounter: Record<string, number> = {};
+  const constraintRoles: Record<string, number> = {};
+
+  let componentsWithThickness = 0;
+  let componentsWithHardware = 0;
+  let componentsWithDrillings = 0;
+  let componentsWithConstraintRole = 0;
+  let hardwareLinks = 0;
+  let drillingLinks = 0;
+
+  const thicknessRows = meshes.map((mesh, index) => {
+    const componentId = buildStablePartId(mesh, index);
+    const displayName = mesh.displayName || mesh.meshName || `Componente ${index + 1}`;
+    const dimensions = readCollisionDimensionsV1(mesh);
+    const thickness = dimensions.panelThickness;
+
+    if (thickness !== null) componentsWithThickness += 1;
+
+    const hardwareItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(
+        mesh.hardwareLinks,
+        parseBagaStudioCsvField(mesh.hardware).map((hardwareType) => ({ hardwareType }))
+      )
+    );
+
+    const drillingItems = normalizeCollisionArrayV1(
+      parseBagaStudioJsonField(mesh.drillingLinks, parseBagaStudioJsonField(mesh.drillings, []))
+    );
+
+    if (hardwareItems.length > 0) componentsWithHardware += 1;
+    if (drillingItems.length > 0) componentsWithDrillings += 1;
+
+    hardwareLinks += hardwareItems.length;
+    drillingLinks += drillingItems.length;
+
+    hardwareItems.forEach((item) => {
+      incrementInspectorCounterV1(
+        hardwareCounter,
+        item?.hardwareType || item?.type || item?.name || item?.label || item?.code
+      );
+    });
+
+    drillingItems.forEach((item) => {
+      incrementInspectorCounterV1(
+        drillingCounter,
+        item?.drillingType || item?.type || item?.name || item?.label || item?.code
+      );
+    });
+
+    const role = String(mesh.constraintRole || "").trim();
+    if (role) {
+      componentsWithConstraintRole += 1;
+      incrementInspectorCounterV1(constraintRoles, role);
+    }
+
+    return {
+      componentId,
+      displayName,
+      thickness,
+      status: thickness !== null ? "ready" as const : "missing" as const,
+    };
+  });
+
+  const missingData: string[] = [];
+  if (meshes.length === 0) missingData.push("Nessun componente disponibile per l'ispezione.");
+  if (componentsWithThickness === 0) missingData.push("Spessori pannelli mancanti.");
+  if (hardwareLinks === 0) missingData.push("Hardware links non rilevati.");
+  if (drillingLinks === 0) missingData.push("Drilling links / forature non rilevati.");
+  if (componentsWithConstraintRole === 0) missingData.push("Constraint role non rilevati.");
+
+  const readiness =
+    meshes.length > 0 &&
+    componentsWithThickness > 0 &&
+    hardwareLinks > 0 &&
+    drillingLinks > 0 &&
+    componentsWithConstraintRole > 0
+      ? "READY_FOR_HARDWARE_ANALYZER_V2"
+      : "MISSING_DATA_FOR_HARDWARE_ANALYZER_V2";
+
+  return {
+    schema: "bagastudio-manufacturing-data-inspector-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness,
+    totals: {
+      components: meshes.length,
+      componentsWithThickness,
+      componentsWithoutThickness: meshes.length - componentsWithThickness,
+      hardwareLinks,
+      componentsWithHardware,
+      drillingLinks,
+      componentsWithDrillings,
+      componentsWithConstraintRole,
+    },
+    constraintRoles,
+    thicknessRows,
+    hardwareSummary: Object.entries(hardwareCounter)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count),
+    drillingSummary: Object.entries(drillingCounter)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count),
+    missingData,
+  };
 }
 
 function readCollisionPointV1(item: any) {
@@ -3213,17 +3249,9 @@ const collisionEngineV1Report = useMemo(() => {
 
 const [manufacturingOverrideThickness, setManufacturingOverrideThickness] = useState("17.8");
 
-const manufacturingOverrideSourceMeshes = useMemo(() => {
-  if (meshList.length > 0) return meshList;
-  return buildManufacturingOverrideMeshesFromCsvV1(
-    space3DCsvParts,
-    csvCixMatcherReport?.matches || []
-  );
-}, [meshList, space3DCsvParts, csvCixMatcherReport]);
-
 const manufacturingOverrideV1Report = useMemo(() => {
-  return buildManufacturingOverrideV1Report(manufacturingOverrideSourceMeshes, manufacturingOverrideThickness);
-}, [manufacturingOverrideSourceMeshes, manufacturingOverrideThickness]);
+  return buildManufacturingOverrideV1Report(meshList, manufacturingOverrideThickness);
+}, [meshList, manufacturingOverrideThickness]);
 
 function downloadCollisionEngineV1Report() {
   downloadJsonFile(`bagastudio-collision-engine-v1-5-${Date.now()}.json`, collisionEngineV1Report);
@@ -3234,10 +3262,7 @@ function downloadManufacturingOverrideV1Report() {
 }
 
 function applyManufacturingOverrideThicknessV1() {
-  setMeshList((current) => {
-    const source = current.length > 0 ? current : manufacturingOverrideSourceMeshes;
-    return applyManufacturingOverrideV1(source, manufacturingOverrideThickness);
-  });
+  setMeshList((current) => applyManufacturingOverrideV1(current, manufacturingOverrideThickness));
 }
 
 
@@ -3257,6 +3282,15 @@ function downloadCsvRegenerationV1Report() {
 
 function downloadRegeneratedCsvV1() {
   downloadCsvTextFile(`bagastudio-rigenerato-${Date.now()}.csv`, buildCsvRegenerationV1Csv(csvRegenerationV1Report));
+}
+
+
+const manufacturingDataInspectorV1Report = useMemo(() => {
+  return buildManufacturingDataInspectorV1Report(meshList);
+}, [meshList]);
+
+function downloadManufacturingDataInspectorV1Report() {
+  downloadJsonFile(`bagastudio-manufacturing-data-inspector-v1-${Date.now()}.json`, manufacturingDataInspectorV1Report);
 }
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
@@ -5035,6 +5069,165 @@ function downloadImporterDiagnosticJson() {
               Mostrate le prime 30 anomalie. Esporta il report JSON per vedere l'elenco completo.
             </p>
           )}
+        </section>
+
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#0d071a]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Manufacturing Data Inspector V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Ispezione dati produttivi importati</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Controlla quali dati tecnici sono realmente disponibili prima di attivare Hardware Analyzer V2: spessori, ferramenta, forature e constraint.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                manufacturingDataInspectorV1Report.readiness === "READY_FOR_HARDWARE_ANALYZER_V2"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {manufacturingDataInspectorV1Report.readiness === "READY_FOR_HARDWARE_ANALYZER_V2"
+                  ? "Ready for Analyzer V2"
+                  : "Dati mancanti"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadManufacturingDataInspectorV1Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta inspector
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{manufacturingDataInspectorV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Con spessore</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{manufacturingDataInspectorV1Report.totals.componentsWithThickness}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Hardware links</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{manufacturingDataInspectorV1Report.totals.hardwareLinks}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Forature</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{manufacturingDataInspectorV1Report.totals.drillingLinks}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-black text-white">Thickness Inspector</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Senza spessore: {manufacturingDataInspectorV1Report.totals.componentsWithoutThickness}
+              </p>
+              <div className="mt-3 max-h-64 space-y-2 overflow-auto pr-2">
+                {manufacturingDataInspectorV1Report.thicknessRows.slice(0, 24).map((row) => (
+                  <div key={row.componentId} className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs">
+                    <span className="font-semibold text-slate-200">{row.displayName}</span>
+                    <span className={row.status === "ready" ? "font-black text-emerald-100" : "font-black text-red-100"}>
+                      {row.thickness ?? "n/d"} mm
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-black text-white">Production Readiness</p>
+              <div className="mt-3 grid gap-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <span className="text-slate-400">Thickness Data</span>
+                  <span className={manufacturingDataInspectorV1Report.totals.componentsWithThickness > 0 ? "font-black text-emerald-100" : "font-black text-red-100"}>
+                    {manufacturingDataInspectorV1Report.totals.componentsWithThickness > 0 ? "OK" : "MISSING"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <span className="text-slate-400">Hardware Data</span>
+                  <span className={manufacturingDataInspectorV1Report.totals.hardwareLinks > 0 ? "font-black text-emerald-100" : "font-black text-yellow-100"}>
+                    {manufacturingDataInspectorV1Report.totals.hardwareLinks > 0 ? "OK" : "MISSING"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <span className="text-slate-400">Drilling Data</span>
+                  <span className={manufacturingDataInspectorV1Report.totals.drillingLinks > 0 ? "font-black text-emerald-100" : "font-black text-yellow-100"}>
+                    {manufacturingDataInspectorV1Report.totals.drillingLinks > 0 ? "OK" : "MISSING"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2">
+                  <span className="text-slate-400">Constraint Data</span>
+                  <span className={manufacturingDataInspectorV1Report.totals.componentsWithConstraintRole > 0 ? "font-black text-emerald-100" : "font-black text-yellow-100"}>
+                    {manufacturingDataInspectorV1Report.totals.componentsWithConstraintRole > 0 ? "OK" : "MISSING"}
+                  </span>
+                </div>
+              </div>
+
+              {manufacturingDataInspectorV1Report.missingData.length > 0 && (
+                <div className="mt-4 rounded-xl border border-yellow-400/10 bg-yellow-400/5 p-3">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-yellow-100">Dati mancanti</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-300">
+                    {manufacturingDataInspectorV1Report.missingData.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-black text-white">Hardware Inspector</p>
+              <p className="mt-1 text-xs text-slate-500">Componenti con hardware: {manufacturingDataInspectorV1Report.totals.componentsWithHardware}</p>
+              <div className="mt-3 space-y-2">
+                {manufacturingDataInspectorV1Report.hardwareSummary.length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessuna ferramenta rilevata.</p>
+                ) : manufacturingDataInspectorV1Report.hardwareSummary.slice(0, 8).map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs">
+                    <span className="text-slate-300">{item.label}</span>
+                    <span className="font-black text-orange-100">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-black text-white">Drilling Inspector</p>
+              <p className="mt-1 text-xs text-slate-500">Componenti con forature: {manufacturingDataInspectorV1Report.totals.componentsWithDrillings}</p>
+              <div className="mt-3 space-y-2">
+                {manufacturingDataInspectorV1Report.drillingSummary.length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessuna foratura rilevata.</p>
+                ) : manufacturingDataInspectorV1Report.drillingSummary.slice(0, 8).map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs">
+                    <span className="text-slate-300">{item.label}</span>
+                    <span className="font-black text-cyan-100">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-black text-white">Constraint Inspector</p>
+              <p className="mt-1 text-xs text-slate-500">Componenti con ruolo: {manufacturingDataInspectorV1Report.totals.componentsWithConstraintRole}</p>
+              <div className="mt-3 space-y-2">
+                {Object.entries(manufacturingDataInspectorV1Report.constraintRoles).length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessun constraint rilevato.</p>
+                ) : Object.entries(manufacturingDataInspectorV1Report.constraintRoles).slice(0, 8).map(([role, count]) => (
+                  <div key={role} className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-xs">
+                    <span className="text-slate-300">{role}</span>
+                    <span className="font-black text-violet-100">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="rounded-[28px] border border-cyan-400/15 bg-[#06121a]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
