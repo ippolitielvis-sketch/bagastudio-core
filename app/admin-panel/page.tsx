@@ -55,6 +55,7 @@ type MeshConfig = {
   dependencyChildren?: string;
   parametricData?: string;
   manufacturingOverrideData?: string;
+  csvRegenerationData?: string;
 
   ledFrontOffset: string;
 ledSideMargin: string;
@@ -903,6 +904,186 @@ function applyManufacturingOverrideV1(meshes: MeshConfig[], targetThicknessValue
       manufacturingOverrideData: JSON.stringify(manufacturingOverrideData),
     };
   });
+}
+
+
+type CsvRegenerationV1Report = {
+  schema: "bagastudio-csv-regeneration-v1";
+  version: 1;
+  generatedAt: string;
+  targetThickness: number | null;
+  sourceCsvFileName: string | null;
+  totals: {
+    csvRows: number;
+    linkedRows: number;
+    updatedRows: number;
+    unchangedRows: number;
+    skippedRows: number;
+  };
+  rows: Array<{
+    rowIndex: number;
+    name: string;
+    material: string | null;
+    quantity: number | null;
+    originalWidth: number | null;
+    originalDepth: number | null;
+    originalThickness: number | null;
+    regeneratedWidth: number | null;
+    regeneratedDepth: number | null;
+    regeneratedThickness: number | null;
+    cixSource: string | null;
+    status: "updated" | "unchanged" | "skipped";
+    note: string;
+  }>;
+};
+
+function normalizeCsvRegenerationKey(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function csvRegenerationEscape(value: unknown) {
+  if (value === null || value === undefined) return "";
+  const raw = String(value);
+  if (/[";,\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
+  return raw;
+}
+
+function buildCsvRegenerationV1Report(
+  csvParts: CsvPart[],
+  matches: CsvCixMatch[],
+  meshes: MeshConfig[],
+  targetThicknessValue: string,
+  sourceCsvFileName?: string
+): CsvRegenerationV1Report {
+  const targetThickness = readCollisionNumberV1(targetThicknessValue);
+
+  const meshByCsvKey = new Map<string, MeshConfig>();
+  meshes.forEach((mesh) => {
+    const meshAny = mesh as any;
+    [meshAny.csvSource, mesh.displayName, mesh.meshName, mesh.partId]
+      .filter(Boolean)
+      .forEach((key) => meshByCsvKey.set(normalizeCsvRegenerationKey(key), mesh));
+  });
+
+  const matchByCsvKey = new Map<string, CsvCixMatch>();
+  matches.forEach((match) => {
+    if (match?.csvPart?.name) matchByCsvKey.set(normalizeCsvRegenerationKey(match.csvPart.name), match);
+  });
+
+  const rows = csvParts.map((part) => {
+    const csvKey = normalizeCsvRegenerationKey(part.name);
+    const linkedMesh = meshByCsvKey.get(csvKey) || null;
+    const linkedMatch = matchByCsvKey.get(csvKey) || null;
+    const meshAny = linkedMesh as any;
+    const overrideData = parseBagaStudioJsonField(meshAny?.manufacturingOverrideData, {}) as Record<string, unknown>;
+    const parametricData = parseBagaStudioJsonField(meshAny?.parametricData, {}) as Record<string, unknown>;
+
+    const originalWidth = readCollisionNumberV1(part.width, parametricData.originalWidth);
+    const originalDepth = readCollisionNumberV1(part.depth, parametricData.originalDepth);
+    const originalThickness = readCollisionNumberV1(part.thickness, parametricData.originalThickness);
+    const regeneratedThickness = readCollisionNumberV1(
+      parametricData.currentThickness,
+      overrideData.targetThickness,
+      targetThickness,
+      originalThickness
+    );
+
+    const isLinked = Boolean(linkedMesh || linkedMatch);
+    const changed = Boolean(
+      isLinked &&
+      regeneratedThickness !== null &&
+      originalThickness !== null &&
+      Math.abs(regeneratedThickness - originalThickness) > 0.001
+    );
+
+    const status: "updated" | "unchanged" | "skipped" = !isLinked
+      ? "skipped"
+      : changed
+        ? "updated"
+        : "unchanged";
+
+    return {
+      rowIndex: part.rowIndex,
+      name: part.name,
+      material: part.material || null,
+      quantity: readCollisionNumberV1(part.quantity),
+      originalWidth,
+      originalDepth,
+      originalThickness,
+      regeneratedWidth: originalWidth,
+      regeneratedDepth: originalDepth,
+      regeneratedThickness,
+      cixSource: linkedMatch?.cixPart?.fileName || linkedMatch?.cixPart?.partName || meshAny?.cixSource || null,
+      status,
+      note: !isLinked
+        ? "Riga CSV non collegata a un componente/match CIX: mantenuta invariata."
+        : changed
+          ? "Riga pronta per CSV rigenerato: spessore aggiornato e ingombro esterno bloccato."
+          : "Riga collegata ma senza variazioni di spessore.",
+    };
+  });
+
+  return {
+    schema: "bagastudio-csv-regeneration-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    targetThickness,
+    sourceCsvFileName: sourceCsvFileName || null,
+    totals: {
+      csvRows: rows.length,
+      linkedRows: rows.filter((row) => row.status !== "skipped").length,
+      updatedRows: rows.filter((row) => row.status === "updated").length,
+      unchangedRows: rows.filter((row) => row.status === "unchanged").length,
+      skippedRows: rows.filter((row) => row.status === "skipped").length,
+    },
+    rows,
+  };
+}
+
+function buildCsvRegenerationV1Csv(report: CsvRegenerationV1Report) {
+  const header = [
+    "rowIndex",
+    "name",
+    "material",
+    "quantity",
+    "width",
+    "depth",
+    "thickness",
+    "cixSource",
+    "status",
+    "note",
+  ];
+
+  const body = report.rows.map((row) => [
+    row.rowIndex,
+    row.name,
+    row.material,
+    row.quantity,
+    row.regeneratedWidth,
+    row.regeneratedDepth,
+    row.regeneratedThickness,
+    row.cixSource,
+    row.status,
+    row.note,
+  ]);
+
+  return [header, ...body]
+    .map((line) => line.map(csvRegenerationEscape).join(";"))
+    .join("\n");
+}
+
+function downloadCsvTextFile(fileName: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function readCollisionPointV1(item: any) {
@@ -2920,6 +3101,25 @@ function applyManufacturingOverrideThicknessV1() {
   setMeshList((current) => applyManufacturingOverrideV1(current, manufacturingOverrideThickness));
 }
 
+
+const csvRegenerationV1Report = useMemo(() => {
+  return buildCsvRegenerationV1Report(
+    space3DCsvParts,
+    csvCixMatcherReport?.matches || [],
+    meshList,
+    manufacturingOverrideThickness,
+    space3DCsvFileName
+  );
+}, [space3DCsvParts, csvCixMatcherReport, meshList, manufacturingOverrideThickness, space3DCsvFileName]);
+
+function downloadCsvRegenerationV1Report() {
+  downloadJsonFile(`bagastudio-csv-regeneration-v1-${Date.now()}.json`, csvRegenerationV1Report);
+}
+
+function downloadRegeneratedCsvV1() {
+  downloadCsvTextFile(`bagastudio-rigenerato-${Date.now()}.csv`, buildCsvRegenerationV1Csv(csvRegenerationV1Report));
+}
+
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
@@ -4783,6 +4983,94 @@ function downloadImporterDiagnosticJson() {
                 <p className="mt-2 text-xs text-slate-500">{item.note}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-emerald-400/15 bg-[#061a14]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-200">CSV Regeneration Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rigenerazione CSV produzione</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Genera una prima versione CSV aggiornata dopo l'override spessore. Le dimensioni esterne restano bloccate; le righe non collegate vengono mantenute e segnalate come saltate.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={downloadRegeneratedCsvV1}
+                disabled={csvRegenerationV1Report.totals.csvRows === 0}
+                className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Scarica CSV rigenerato
+              </button>
+
+              <button
+                type="button"
+                onClick={downloadCsvRegenerationV1Report}
+                disabled={csvRegenerationV1Report.totals.csvRows === 0}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-3 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta report
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Righe CSV</p>
+              <p className="mt-1 text-2xl font-black text-white">{csvRegenerationV1Report.totals.csvRows}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Collegate</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{csvRegenerationV1Report.totals.linkedRows}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Aggiornate</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{csvRegenerationV1Report.totals.updatedRows}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Invariate</p>
+              <p className="mt-1 text-2xl font-black text-slate-200">{csvRegenerationV1Report.totals.unchangedRows}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Saltate</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{csvRegenerationV1Report.totals.skippedRows}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-[#071611] text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Pezzo</th>
+                  <th className="px-3 py-3">Materiale</th>
+                  <th className="px-3 py-3">Spessore</th>
+                  <th className="px-3 py-3">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {csvRegenerationV1Report.rows.slice(0, 30).map((row) => (
+                  <tr key={`${row.rowIndex}-${row.name}`} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 font-semibold text-white">{row.name}</td>
+                    <td className="px-3 py-2">{row.material || "-"}</td>
+                    <td className="px-3 py-2">{row.originalThickness ?? "n/d"} → {row.regeneratedThickness ?? "n/d"}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        row.status === "updated"
+                          ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                          : row.status === "skipped"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                      }>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
