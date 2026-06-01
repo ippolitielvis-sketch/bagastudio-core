@@ -54,6 +54,8 @@ type Viewer3DProps = {
  ledKelvin?: Record<string, number>;
  ledIntensity?: Record<string, number>;
  woodDirection?: Record<string, "x" | "z">;
+ xRayEnabled?: boolean;
+ xRayOpacity?: number;
   views?: {
   id: string;
   name: string;
@@ -2645,6 +2647,234 @@ function createImportedModelSafeLedBar(
   return led;
 }
 
+
+function buildBagastudioSpazio3DColladaRuntimeRootFromText(daeText: string, fileName = "Spazio3D.dae") {
+  try {
+    if (typeof DOMParser === "undefined") return null;
+
+    const documentXml = new DOMParser().parseFromString(daeText, "application/xml");
+    if (documentXml.querySelector("parsererror")) return null;
+
+    const parseNumbers = (value: string | null | undefined) =>
+      String(value || "")
+        .trim()
+        .split(/\s+/)
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item));
+
+    const localName = (element: Element | null | undefined) => element?.localName || "";
+    const childElements = (element: Element | null | undefined, name?: string) =>
+      Array.from(element?.children || []).filter((child) => !name || localName(child) === name) as Element[];
+    const firstChild = (element: Element | null | undefined, name: string) =>
+      childElements(element, name)[0] || null;
+    const cleanRef = (value: string | null | undefined) => String(value || "").replace(/^#/, "");
+
+    const material = () =>
+      new THREE.MeshStandardMaterial({
+        color: "#d8d3ca",
+        roughness: 0.55,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      });
+
+    const geometryById = new Map<string, THREE.BufferGeometry>();
+    const geometryNameById = new Map<string, string>();
+
+    documentXml.querySelectorAll("geometry").forEach((geometryElement) => {
+      const geometryId = geometryElement.getAttribute("id") || "";
+      if (!geometryId) return;
+
+      const meshElement = firstChild(geometryElement, "mesh");
+      if (!meshElement) return;
+
+      const sources = new Map<string, number[]>();
+      childElements(meshElement, "source").forEach((sourceElement) => {
+        const sourceId = sourceElement.getAttribute("id") || "";
+        const floatArray = firstChild(sourceElement, "float_array");
+        if (sourceId && floatArray?.textContent) {
+          sources.set(sourceId, parseNumbers(floatArray.textContent));
+        }
+      });
+
+      const verticesMap = new Map<string, string>();
+      childElements(meshElement, "vertices").forEach((verticesElement) => {
+        const verticesId = verticesElement.getAttribute("id") || "";
+        const positionInput = childElements(verticesElement, "input").find(
+          (input) => input.getAttribute("semantic") === "POSITION"
+        );
+        if (verticesId && positionInput) verticesMap.set(verticesId, cleanRef(positionInput.getAttribute("source")));
+      });
+
+      const primitiveElement = firstChild(meshElement, "polylist") || firstChild(meshElement, "triangles");
+      if (!primitiveElement) return;
+
+      const inputs = childElements(primitiveElement, "input").map((input) => ({
+        semantic: input.getAttribute("semantic") || "",
+        source: cleanRef(input.getAttribute("source")),
+        offset: Number(input.getAttribute("offset") || 0),
+      }));
+
+      const vertexInput = inputs.find((input) => input.semantic === "VERTEX") || inputs.find((input) => input.semantic === "POSITION");
+      if (!vertexInput) return;
+
+      const positionSourceId = vertexInput.semantic === "VERTEX" ? verticesMap.get(vertexInput.source) : vertexInput.source;
+      const positionValues = positionSourceId ? sources.get(positionSourceId) : null;
+      if (!positionValues || positionValues.length < 9) return;
+
+      const stride = Math.max(...inputs.map((input) => input.offset)) + 1;
+      const indices = parseNumbers(firstChild(primitiveElement, "p")?.textContent || "").map((item) => Math.trunc(item));
+      const vcount = localName(primitiveElement) === "triangles"
+        ? new Array(Number(primitiveElement.getAttribute("count") || 0)).fill(3)
+        : parseNumbers(firstChild(primitiveElement, "vcount")?.textContent || "").map((item) => Math.trunc(item));
+
+      const positions: number[] = [];
+      let cursor = 0;
+
+      vcount.forEach((polygonSize) => {
+        const polygonVertices: number[][] = [];
+
+        for (let i = 0; i < polygonSize; i += 1) {
+          const vertexIndex = indices[cursor + vertexInput.offset];
+          const base = vertexIndex * 3;
+          polygonVertices.push([
+            positionValues[base] || 0,
+            positionValues[base + 1] || 0,
+            positionValues[base + 2] || 0,
+          ]);
+          cursor += stride;
+        }
+
+        for (let i = 1; i < polygonVertices.length - 1; i += 1) {
+          positions.push(...polygonVertices[0], ...polygonVertices[i], ...polygonVertices[i + 1]);
+        }
+      });
+
+      if (positions.length < 9) return;
+
+      const bufferGeometry = new THREE.BufferGeometry();
+      bufferGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      bufferGeometry.computeVertexNormals();
+      bufferGeometry.computeBoundingBox();
+      bufferGeometry.computeBoundingSphere();
+
+      geometryById.set(geometryId, bufferGeometry);
+      geometryNameById.set(geometryId, geometryElement.getAttribute("name") || geometryId);
+    });
+
+    if (geometryById.size === 0) return null;
+
+    const libraryNodes = new Map<string, Element>();
+    const libraryNodesElement = documentXml.querySelector("library_nodes");
+    childElements(libraryNodesElement, "node").forEach((nodeElement) => {
+      const nodeId = nodeElement.getAttribute("id") || "";
+      if (nodeId) libraryNodes.set(nodeId, nodeElement);
+    });
+
+    const applyMatrix = (object: THREE.Object3D, nodeElement: Element) => {
+      const matrixValues = parseNumbers(firstChild(nodeElement, "matrix")?.textContent || "");
+      if (matrixValues.length === 16) {
+        const matrix = new THREE.Matrix4();
+        matrix.set(
+          matrixValues[0], matrixValues[1], matrixValues[2], matrixValues[3],
+          matrixValues[4], matrixValues[5], matrixValues[6], matrixValues[7],
+          matrixValues[8], matrixValues[9], matrixValues[10], matrixValues[11],
+          matrixValues[12], matrixValues[13], matrixValues[14], matrixValues[15]
+        );
+        object.matrix.copy(matrix);
+        object.matrixAutoUpdate = false;
+      }
+    };
+
+    const buildNode = (nodeElement: Element): THREE.Object3D => {
+      const group = new THREE.Group();
+      group.name = nodeElement.getAttribute("name") || nodeElement.getAttribute("id") || "dae_node";
+      applyMatrix(group, nodeElement);
+
+      childElements(nodeElement).forEach((child) => {
+        if (localName(child) === "node") {
+          group.add(buildNode(child));
+          return;
+        }
+
+        if (localName(child) === "instance_node") {
+          const target = libraryNodes.get(cleanRef(child.getAttribute("url")));
+          if (target) group.add(buildNode(target));
+          return;
+        }
+
+        if (localName(child) === "instance_geometry") {
+          const geometryId = cleanRef(child.getAttribute("url"));
+          const sourceGeometry = geometryById.get(geometryId);
+          if (!sourceGeometry) return;
+
+          const mesh = new THREE.Mesh(sourceGeometry.clone(), material());
+          mesh.name = group.name || geometryNameById.get(geometryId) || geometryId;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          mesh.visible = true;
+          mesh.userData = {
+            ...mesh.userData,
+            bagastudioImportedFormat: "dae",
+            bagastudioSourceType: "spazio3d-manual-collada-parser",
+            bagastudioSelectable: true,
+            bagastudioRuntimeComponent: true,
+            bagastudioOriginalName: mesh.name,
+            bagastudioParentName: group.name,
+          };
+          group.add(mesh);
+        }
+      });
+
+      return group;
+    };
+
+    const root = new THREE.Group();
+    root.name = fileName.replace(/\.[^/.]+$/, "") || "Spazio3D_DAE";
+    root.userData = {
+      bagastudioImportedFormat: "dae",
+      bagastudioSourceType: "spazio3d-manual-collada-parser",
+      bagastudioPreserveHierarchy: true,
+    };
+
+    const visualScene = documentXml.querySelector("library_visual_scenes visual_scene");
+    childElements(visualScene).forEach((child) => {
+      if (localName(child) === "node") {
+        const group = new THREE.Group();
+        group.name = child.getAttribute("name") || child.getAttribute("id") || "Scene";
+        applyMatrix(group, child);
+        childElements(child).forEach((sceneChild) => {
+          if (localName(sceneChild) === "instance_node") {
+            const target = libraryNodes.get(cleanRef(sceneChild.getAttribute("url")));
+            if (target) group.add(buildNode(target));
+          } else if (localName(sceneChild) === "node") {
+            group.add(buildNode(sceneChild));
+          }
+        });
+        root.add(group.children.length ? group : buildNode(child));
+      }
+    });
+
+    if (root.children.length === 0) {
+      libraryNodes.forEach((node) => root.add(buildNode(node)));
+    }
+
+    let meshCount = 0;
+    root.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      meshCount += 1;
+    });
+
+    if (meshCount === 0) return null;
+    root.updateMatrixWorld(true);
+    return root;
+  } catch (error) {
+    console.warn("BagaStudio Spazio3D DAE manual parser failed", error);
+    return null;
+  }
+}
+
 function ProductModel({
   materials = {},
   productMaterials = [],
@@ -2661,6 +2891,8 @@ function ProductModel({
   views = [],
   productParts = [],
   woodDirection,
+  xRayEnabled = false,
+  xRayOpacity = 0.35,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -2701,12 +2933,7 @@ function ProductModel({
       const analyzedComponents = analyzeImportedModelComponents(object, format);
 
       if (typeof window !== "undefined") {
-        const currentRuntimeComponents = Array.isArray((window as any).__bagastudioViewerRuntimeComponents)
-          ? (window as any).__bagastudioViewerRuntimeComponents
-          : [];
-        if (analyzedComponents.length >= currentRuntimeComponents.length) {
-          (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
-        }
+        (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
@@ -2741,58 +2968,74 @@ function ProductModel({
       } else if (format === "fbx") {
         new FBXLoader().load(productModel, onLoaded, undefined, onError);
       } else if (format === "dae") {
-        new ColladaLoader().load(
-          productModel,
-          (collada) => {
-            const daeScene = collada?.scene;
+        const loadWithColladaLoaderFallback = () => {
+          new ColladaLoader().load(
+            productModel,
+            (collada) => {
+              const daeScene = collada?.scene;
 
-            if (!daeScene) {
-              onError(new Error("DAE scene not found"));
+              if (!daeScene) {
+                onError(new Error("DAE scene not found"));
+                return;
+              }
+
+              const daeGroup = buildBagastudioColladaRuntimeRoot(daeScene);
+
+              prepareBagastudioImportedObject(daeGroup, "dae");
+
+              daeGroup.traverse((child) => {
+                const mesh = child as THREE.Mesh;
+                if (!mesh.isMesh) return;
+
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.frustumCulled = false;
+                mesh.visible = true;
+
+                if (!mesh.name || mesh.name.trim() === "") {
+                  mesh.name = `part_${mesh.id}`;
+                }
+
+                mesh.userData = {
+                  ...mesh.userData,
+                  bagastudioImportedFormat: "dae",
+                  bagastudioSelectable: true,
+                  bagastudioRuntimeComponent: true,
+                };
+
+                if (!hasUsableMaterial(mesh.material)) {
+                  mesh.material = createBagastudioNeutralImportMaterial();
+                }
+
+                const apply = (mat: THREE.Material) => {
+                  mat.side = THREE.DoubleSide;
+                  mat.needsUpdate = true;
+                };
+
+                if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
+                else if (mesh.material) apply(mesh.material as THREE.Material);
+              });
+
+              onLoaded(daeGroup);
+            },
+            undefined,
+            onError
+          );
+        };
+
+        fetch(productModel)
+          .then((response) => response.text())
+          .then((daeText) => {
+            if (cancelled) return;
+            const manualRoot = buildBagastudioSpazio3DColladaRuntimeRootFromText(daeText, String(productModel || "Nuovo.dae"));
+            if (manualRoot) {
+              prepareBagastudioImportedObject(manualRoot, "dae");
+              onLoaded(manualRoot);
               return;
             }
-
-            const daeGroup = buildBagastudioColladaRuntimeRoot(daeScene);
-
-            prepareBagastudioImportedObject(daeGroup, "dae");
-
-            daeGroup.traverse((child) => {
-              const mesh = child as THREE.Mesh;
-              if (!mesh.isMesh) return;
-
-              mesh.castShadow = true;
-              mesh.receiveShadow = true;
-              mesh.frustumCulled = false;
-              mesh.visible = true;
-
-              if (!mesh.name || mesh.name.trim() === "") {
-                mesh.name = `part_${mesh.id}`;
-              }
-
-              mesh.userData = {
-                ...mesh.userData,
-                bagastudioImportedFormat: "dae",
-                bagastudioSelectable: true,
-                bagastudioRuntimeComponent: true,
-              };
-
-              if (!hasUsableMaterial(mesh.material)) {
-                mesh.material = createBagastudioNeutralImportMaterial();
-              }
-
-              const apply = (mat: THREE.Material) => {
-                mat.side = THREE.DoubleSide;
-                mat.needsUpdate = true;
-              };
-
-              if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
-              else if (mesh.material) apply(mesh.material as THREE.Material);
-            });
-
-            onLoaded(daeGroup);
-          },
-          undefined,
-          onError
-        );
+            loadWithColladaLoaderFallback();
+          })
+          .catch(() => loadWithColladaLoaderFallback());
       } else {
         new GLTFLoader().load(productModel, (gltf) => onLoaded(gltf.scene), undefined, onError);
       }
@@ -2825,18 +3068,11 @@ const cloneMaterialForRestore = (material: THREE.Material | THREE.Material[]) =>
 const restoreHighlightedMesh = () => {
   if (!highlightedRef.current) return;
 
-  highlightedRef.current.mesh.material = highlightedRef.current.material;
+  // Recovery V6: never restore a previously cloned material on deselect/selection change.
+  // The old restore path could overwrite a texture that had just been applied asynchronously,
+  // making the material disappear when clicking another component. Selection must be
+  // non-destructive: only reset render priority.
   highlightedRef.current.mesh.renderOrder = 0;
-
-  const materials = Array.isArray(highlightedRef.current.mesh.material)
-    ? highlightedRef.current.mesh.material
-    : [highlightedRef.current.mesh.material];
-
-  materials.forEach((mat: any) => {
-    if (!mat) return;
-    mat.needsUpdate = true;
-  });
-
   highlightedRef.current = null;
 };
   const scene = useMemo(() => {
@@ -2850,10 +3086,25 @@ const restoreHighlightedMesh = () => {
         if (mesh.name.includes("Piano")) {
 }
         const partKey = mesh.name;
+        const meshPartId = String(mesh.userData?.bagastudioPartId || "");
+        const meshRuntimeMeshName = String(mesh.userData?.bagastudioMeshName || "");
+        const meshDisplayName = String(mesh.userData?.bagastudioDisplayName || "");
+        const meshOriginalName = String(mesh.userData?.bagastudioOriginalName || "");
+        const meshMaterialGroup = String(mesh.userData?.bagastudioMaterialGroup || "");
+        const meshAliases = [
+          partKey,
+          mesh.name,
+          meshPartId,
+          meshRuntimeMeshName,
+          meshDisplayName,
+          meshOriginalName,
+          meshMaterialGroup,
+        ].filter(Boolean);
 
         const productPart =
-  productParts.find((p) => p.meshName === mesh.name) ||
-  productParts.find((p) => mesh.name.includes(p.meshName)) ||
+  productParts.find((p) => meshAliases.includes(String(p.id))) ||
+  productParts.find((p) => meshAliases.includes(String(p.meshName))) ||
+  productParts.find((p) => meshAliases.some((alias) => String(alias).includes(String(p.meshName || "__no_match__")))) ||
   productParts.find((p) =>
     mesh.name.toLowerCase().includes("mirror") &&
     String(p.id).toLowerCase().includes("mirror")
@@ -2899,7 +3150,8 @@ const isMirrorPart =
 const materialId =
   isMirrorPart
     ? "specchio"
-    : materials[productPart?.id ?? ""] ||
+    : meshAliases.map((alias) => materials[String(alias)]).find(Boolean) ||
+  materials[productPart?.id ?? ""] ||
   materials[materialStoreKey] ||
   materials[partKey] ||
   productPart?.defaultMaterialId ||
@@ -2912,7 +3164,8 @@ const materialId =
   (
     selectedPartId === productPart?.id ||
     selectedPartId === partKey ||
-    selectedPartId === mesh.name
+    selectedPartId === mesh.name ||
+    meshAliases.includes(String(selectedPartId))
   );
 const ledColor =
   ledKelvin?.[partKey] === 6000
@@ -2932,20 +3185,12 @@ const materialData =
   materialsSource.find(
   (m: any) => normalizeKey(m.name) === normalizeKey(materialId)
 );
-console.log("MATERIAL FOUND:", materialData);
-console.log("MATERIAL CHECK:", {
-  materialId,
-  materialData,
-  productMaterials,
-});
-
 const isUnmappedImportedMesh =
   isImportedModelFormat(runtimeModelFormat) &&
   !productPart &&
-  !materials[partKey] &&
-  !materials[materialStoreKey];
+  !meshAliases.some((alias) => Boolean(materials[String(alias)]));
 
-if (isUnmappedImportedMesh) {
+if (isUnmappedImportedMesh && !materialData) {
   mesh.material = createBagastudioNeutralImportMaterial();
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -3020,8 +3265,6 @@ const projection =
 const rotateWood = selectedWoodDirection === "z";
 
 applyPlanarUV(mesh, rotateWood);
-console.log("MATERIAL DATA:", materialData);
-
 const textureUrl = materialData.textureUrl;
 const fallbackColor =
   materialData.fallbackColor ||
@@ -3033,10 +3276,16 @@ const configureTexture = (loadedTexture: THREE.Texture) => {
   loadedTexture.wrapS = THREE.RepeatWrapping;
   loadedTexture.wrapT = THREE.RepeatWrapping;
   loadedTexture.flipY = false;
+  loadedTexture.generateMipmaps = true;
+  loadedTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  loadedTexture.magFilter = THREE.LinearFilter;
+  loadedTexture.anisotropy = Math.max(8, loadedTexture.anisotropy || 1);
 
+  const repeatX = Number(materialData.repeatX ?? materialData.scaleX ?? 1);
+  const repeatY = Number(materialData.repeatY ?? materialData.scaleY ?? 1);
   loadedTexture.repeat.set(
-    materialData.repeatX ?? 1,
-    materialData.repeatY ?? 1
+    Number.isFinite(repeatX) && repeatX > 0 ? repeatX : 1,
+    Number.isFinite(repeatY) && repeatY > 0 ? repeatY : 1
   );
 
   loadedTexture.needsUpdate = true;
@@ -3275,7 +3524,16 @@ if (mesh.geometry) {
   mesh.geometry.computeBoundingSphere();
 }
 
-material.side = THREE.FrontSide;
+material.side = xRayEnabled ? THREE.DoubleSide : THREE.FrontSide;
+if (xRayEnabled) {
+  material.transparent = true;
+  material.opacity = THREE.MathUtils.clamp(Number(xRayOpacity), 0.08, 1);
+  material.depthWrite = false;
+} else {
+  material.transparent = false;
+  material.opacity = 1;
+  material.depthWrite = true;
+}
 material.needsUpdate = true;
 const visibilityKey = productPart?.id ?? partKey;
 
@@ -3380,6 +3638,8 @@ return clonedScene;
   ledIntensity,
   visibility,
   woodDirection,
+  xRayEnabled,
+  xRayOpacity,
   materialRefreshKey,
 ]);
 
@@ -3492,24 +3752,11 @@ const mesh = targetMesh as THREE.Mesh;
   material: cloneMaterialForRestore(mesh.material),
 };
 
-const applySoftSelectionHighlight = (material: THREE.Material | THREE.Material[]) => {
-  const materials = Array.isArray(material) ? material : [material];
-
-  materials.forEach((mat: any) => {
-    if (!mat) return;
-
-    mat.userData = {
-      ...(mat.userData || {}),
-      bagastudioSoftSelected: true,
-    };
-
-    if ("emissive" in mat && mat.emissive?.set) {
-      mat.emissive.set("#0ea5e9");
-      mat.emissiveIntensity = 0.08;
-    }
-
-    mat.needsUpdate = true;
-  });
+const applySoftSelectionHighlight = (_material: THREE.Material | THREE.Material[]) => {
+  // Recovery V6: no material mutation for selection highlight.
+  // Mutating emissive/material state on the selected mesh interfered with runtime texture
+  // persistence when another component was clicked. Keep selection visual non-destructive.
+  return;
 };
 
 applySoftSelectionHighlight(mesh.material);
@@ -3559,7 +3806,12 @@ const clickedPart =
     String(p.id).toLowerCase().includes("mirror")
   );
 
-const realPartKey = clickedPart?.id || clickedName;
+const clickedMeshObject = e.object as THREE.Mesh;
+const realPartKey =
+  clickedPart?.id ||
+  String(clickedMeshObject.userData?.bagastudioPartId || "") ||
+  String(clickedMeshObject.userData?.bagastudioMeshName || "") ||
+  clickedName;
 
     const clickedMesh =
   scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
@@ -3573,6 +3825,19 @@ const realPartKey = clickedPart?.id || clickedName;
       };
 
       setSelectedPartId(realPartKey);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("bagastudio:viewer-component-selected", {
+            detail: {
+              partId: realPartKey,
+              id: realPartKey,
+              meshName: clickedMesh.name || clickedName,
+              displayName: String(clickedMesh.userData?.bagastudioDisplayName || clickedMesh.name || clickedName),
+              originalName: String(clickedMesh.userData?.bagastudioOriginalName || clickedName),
+            },
+          })
+        );
+      }
     }}
   />
 </group>
@@ -3975,6 +4240,8 @@ export default function Viewer3D({
   activeViewId,
   ledIntensity,
   woodDirection,
+  xRayEnabled = false,
+  xRayOpacity = 0.35,
 }: Viewer3DProps) {
   const materialsSource =
 productMaterials?.length
@@ -4056,6 +4323,15 @@ productMaterials?.length
 
       runtimeImportedModelRef.current = nextModel;
       setRuntimeImportedModel(nextModel);
+
+      // BagaStudio Recovery DAE/Viewer V1:
+      // ogni nuovo modello deve ripartire da una lista componenti pulita.
+      // Prima potevano rimanere componenti/placeholder del Product Package precedente
+      // e il Viewer mostrava pezzi finti o non appartenenti al DAE caricato.
+      setViewerRuntimeComponents([]);
+      setRuntimeSelectedPartId("");
+      (window as any).__bagastudioViewerRuntimeComponents = [];
+      (window as any).__bagastudioViewerRuntimeMergeReport = null;
 
       window.dispatchEvent(
         new CustomEvent("bagastudio:viewer-runtime-model-loaded", {
@@ -4213,12 +4489,16 @@ productMaterials?.length
         ? payload.detail.components
         : [];
 
-      setViewerRuntimeComponents((current) => {
-        const incoming = incomingComponents as BagaStudioRuntimeComponent[];
-        if (!Array.isArray(current) || current.length === 0) return incoming;
-        if (!Array.isArray(incoming) || incoming.length === 0) return current;
-        return incoming.length >= current.length ? incoming : current;
-      });
+      const incoming = incomingComponents as BagaStudioRuntimeComponent[];
+
+      // BagaStudio Recovery DAE/Viewer V1:
+      // la lista componenti deve rappresentare il modello attivo, non il conteggio più alto
+      // visto in precedenza. Il confronto incoming >= current manteneva componenti vecchi
+      // quando il nuovo DAE aveva meno mesh, generando residui demo/package nel Viewer.
+      if (Array.isArray(incoming)) {
+        setViewerRuntimeComponents(incoming);
+        (window as any).__bagastudioViewerRuntimeComponents = incoming;
+      }
     };
 
     const handleComponentsReady = (event: Event) => {
@@ -4254,11 +4534,7 @@ productMaterials?.length
 
     const existingComponents = (window as any).__bagastudioViewerRuntimeComponents;
     if (Array.isArray(existingComponents)) {
-      setViewerRuntimeComponents((current) => {
-        const incoming = existingComponents as BagaStudioRuntimeComponent[];
-        if (!Array.isArray(current) || current.length === 0) return incoming;
-        return incoming.length >= current.length ? incoming : current;
-      });
+      setViewerRuntimeComponents(existingComponents as BagaStudioRuntimeComponent[]);
     }
 
     return () => {
@@ -4369,6 +4645,8 @@ productMaterials?.length
   productModelFormat={effectiveProductModelFormat}
   productParts={productParts}
   woodDirection={woodDirection}
+  xRayEnabled={xRayEnabled}
+  xRayOpacity={xRayOpacity}
 />
 
       <OrbitControls
@@ -4385,73 +4663,9 @@ productMaterials?.length
   }}
 />
       
-      {/* Runtime Placeholder Geometry V2 */}
-      {(() => {
-        if (!Array.isArray(viewerRuntimeComponents)) return null;
-
-        const runtimePlaceholders = viewerRuntimeComponents.filter(
-          (component: any) =>
-            component?.componentType === "reconstructed-placeholder" ||
-            component?.isRuntimeOnly
-        );
-
-        const bucketCounters: Record<string, number> = {};
-
-        return runtimePlaceholders.map((component: any, index: number) => {
-          const bucket = getRuntimePlaceholderBucket(component);
-          const bucketIndex = bucketCounters[bucket] || 0;
-          bucketCounters[bucket] = bucketIndex + 1;
-
-          const geometryData = buildRuntimePlaceholderGeometry(
-            component,
-            index,
-            bucketIndex
-          );
-
-          return (
-            <group
-              key={`runtime-placeholder-v2-${component.partId || index}`}
-              userData={{
-                bagastudioPlaceholder: true,
-                runtimeOnly: true,
-                component,
-                partId: component?.partId,
-                category: component?.category,
-                bucket: geometryData.bucket,
-                runtimeMetadata: component?.runtimeMetadata,
-              }}
-            >
-              <mesh
-                position={geometryData.position}
-                userData={{
-                  bagastudioPlaceholder: true,
-                  runtimeOnly: true,
-                  component,
-                  partId: component?.partId,
-                  category: component?.category,
-                  bucket: geometryData.bucket,
-                  runtimeMetadata: component?.runtimeMetadata,
-                }}
-              >
-                <boxGeometry
-                  args={[
-                    geometryData.width,
-                    geometryData.height,
-                    geometryData.depth,
-                  ]}
-                />
-                <meshStandardMaterial
-                  color={geometryData.color}
-                  transparent
-                  opacity={0.42}
-                  emissive={geometryData.color}
-                  emissiveIntensity={0.18}
-                />
-              </mesh>
-            </group>
-          );
-        });
-      })()}
+      {/* Runtime Placeholder Geometry V2 disattivata in Recovery DAE/Viewer V1.
+          I placeholder metadata non devono generare pannelli visibili nel Viewer cliente:
+          creavano pezzi estranei al modello reale e mascheravano il DAE caricato. */}
 
 </Canvas>
     </div>

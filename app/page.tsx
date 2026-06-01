@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
 import { useConfigStore } from "@/core/state/config.state";
-import { demoProduct2 } from "@/core/products/demo-product-2";
 import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 import { calculatePricing } from "@/core/engines/pricing.engine";
@@ -46,6 +45,24 @@ const DEFAULT_VIEWS = [
   },
 ];
 
+const EMPTY_IMPORTED_PRODUCT_BASE: AnyProduct = {
+  id: "empty-import",
+  name: "Import manuale",
+  displayName: "Import manuale",
+  source: "clean-import",
+  assets: {},
+  parts: [],
+  materials: DEFAULT_MATERIALS,
+  accessories: [],
+  views: DEFAULT_VIEWS,
+  pricing: { basePrice: 0, margin: 0, vat: 22 },
+  dimensions: {
+    width: { default: 180, min: 60, max: 400, step: 1 },
+    height: { default: 100, min: 40, max: 250, step: 1 },
+    depth: { default: 60, min: 20, max: 200, step: 1 },
+  },
+};
+
 
 const SUPPORTED_IMPORT_MODEL_ACCEPT = ".glb,.gltf,.dae,.fbx,.obj,.stl";
 const SUPPORTED_IMPORT_MODEL_FORMATS = ["glb", "gltf", "dae", "fbx", "obj", "stl"] as const;
@@ -63,7 +80,7 @@ function createImportedModelProduct(file: File, objectUrl: string, format: strin
   const now = new Date().toISOString();
 
   return normalizeProduct({
-    ...(baseProduct || demoProduct2),
+    ...(baseProduct || EMPTY_IMPORTED_PRODUCT_BASE),
     id: `imported-${cleanName.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}-${Date.now()}`,
     name: cleanName,
     displayName: cleanName,
@@ -482,7 +499,7 @@ function getModelUrl(product: AnyProduct | null) {
     product.assets?.convertedModelUrl ||
     product.assets?.modelUrl ||
     product.assets?.originalFileUrl ||
-    "/models/demo-product-2.glb"
+    ""
   );
 }
 
@@ -576,6 +593,8 @@ const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "admin"
 >("config");
 const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
+const [xRayEnabled, setXRayEnabled] = useState(false);
+const [xRayOpacity, setXRayOpacity] = useState(0.35);
 const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
 const [language, setLanguage] = useState<"it" | "en">(() => getInitialLanguage());
 const t = DICTIONARY[language];
@@ -639,10 +658,7 @@ useEffect(() => {
     const detail = customEvent.detail || {};
 
     if (Array.isArray(detail.components)) {
-      setViewerRuntimeComponents((current: any[]) => {
-        if (!Array.isArray(current) || current.length === 0) return detail.components;
-        return detail.components.length >= current.length ? detail.components : current;
-      });
+      setViewerRuntimeComponents(detail.components);
     }
 
     if (detail.runtimeMetadata) {
@@ -659,14 +675,39 @@ useEffect(() => {
 
     if (eventType === "bagastudio:runtime-product-ready" && detail?.parts) {
       setViewerRuntimeProduct(detail);
-      setViewerRuntimeComponents((current: any[]) => {
-        if (!Array.isArray(current) || current.length === 0) return detail.parts;
-        return detail.parts.length >= current.length ? detail.parts : current;
-      });
+      setViewerRuntimeComponents(detail.parts);
     }
 
     setLastImporterEvent(eventType.replace("bagastudio:", ""));
     refreshImporterUiState();
+  };
+
+  const handleViewerComponentSelected = (event: Event) => {
+    const detail = (event as CustomEvent).detail || {};
+    const nextId = String(detail?.partId || detail?.id || detail?.meshName || "");
+    if (!nextId) return;
+
+    setSelectedPart(nextId);
+    setActivePanel("materials");
+
+    setViewerRuntimeComponents((current) => {
+      if (!Array.isArray(current)) return current;
+      const exists = current.some((component: any) =>
+        component?.id === nextId || component?.partId === nextId || component?.meshName === nextId
+      );
+      if (exists) return current;
+      return [
+        ...current,
+        {
+          id: nextId,
+          partId: nextId,
+          meshName: detail?.meshName || nextId,
+          displayName: detail?.displayName || detail?.name || nextId,
+          originalName: detail?.originalName || detail?.meshName || nextId,
+          index: current.length + 1,
+        },
+      ];
+    });
   };
 
   const watchedEvents = [
@@ -679,6 +720,7 @@ useEffect(() => {
     "bagastudio:importer-compatibility-guard",
     "bagastudio:complete-product-package-saved",
     "bagastudio:viewer-components-ready",
+    "bagastudio:viewer-component-selected",
     "bagastudio:runtime-components-merged",
     "bagastudio:viewer-runtime-metadata-ready",
     "bagastudio:runtime-metadata-updated",
@@ -686,6 +728,7 @@ useEffect(() => {
   ];
 
   window.addEventListener("bagastudio:importer-ui-state", handleImporterUiState as EventListener);
+  window.addEventListener("bagastudio:viewer-component-selected", handleViewerComponentSelected as EventListener);
   watchedEvents
     .filter((eventName) => eventName !== "bagastudio:importer-ui-state")
     .forEach((eventName) => window.addEventListener(eventName, handleImporterRuntimeEvent as EventListener));
@@ -695,10 +738,7 @@ useEffect(() => {
   const runtimeProduct = (window as any).__bagastudioRuntimeProduct;
 
   if (Array.isArray(runtimeComponents)) {
-    setViewerRuntimeComponents((current: any[]) => {
-      if (!Array.isArray(current) || current.length === 0) return runtimeComponents;
-      return runtimeComponents.length >= current.length ? runtimeComponents : current;
-    });
+    setViewerRuntimeComponents(runtimeComponents);
   }
   if (runtimeMetadata) setViewerRuntimeMetadata(runtimeMetadata);
   if (runtimeProduct) setViewerRuntimeProduct(runtimeProduct);
@@ -708,6 +748,7 @@ useEffect(() => {
   return () => {
     window.clearTimeout(timer);
     window.removeEventListener("bagastudio:importer-ui-state", handleImporterUiState as EventListener);
+    window.removeEventListener("bagastudio:viewer-component-selected", handleViewerComponentSelected as EventListener);
     watchedEvents
       .filter((eventName) => eventName !== "bagastudio:importer-ui-state")
       .forEach((eventName) => window.removeEventListener(eventName, handleImporterRuntimeEvent as EventListener));
@@ -734,7 +775,7 @@ function requestViewerFullscreen() {
   viewerShellRef.current?.requestFullscreen?.();
 }
  const runtimeProduct = useMemo(() => {
-  return product ? normalizeProduct(product) : normalizeProduct(demoProduct2);
+  return product ? normalizeProduct(product) : null;
 }, [product]);
 
 const displayPricing = useMemo(() => {
@@ -755,6 +796,9 @@ const displayPricing = useMemo(() => {
       runtimeProduct?.parts?.find((part: any) => part.id === selectedPartId) ||
       runtimeProduct?.parts?.find((part: any) => part.meshName === selectedPartId) ||
       runtimeProduct?.parts?.find((part: any) => part.name === selectedPartId) ||
+      runtimeProduct?.parts?.find((part: any) => part.partId === selectedPartId) ||
+      runtimeProduct?.parts?.find((part: any) => part.displayName === selectedPartId) ||
+      runtimeProduct?.parts?.find((part: any) => part.originalName === selectedPartId) ||
       null;
 
     if (productPart) return productPart;
@@ -764,6 +808,8 @@ const displayPricing = useMemo(() => {
       viewerRuntimeComponents.find((part: any) => part.partId === selectedPartId) ||
       viewerRuntimeComponents.find((part: any) => part.meshName === selectedPartId) ||
       viewerRuntimeComponents.find((part: any) => part.name === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.displayName === selectedPartId) ||
+      viewerRuntimeComponents.find((part: any) => part.originalName === selectedPartId) ||
       null
     );
   }, [runtimeProduct, selectedPartId, viewerRuntimeComponents]);
@@ -864,13 +910,22 @@ const availableAccessories = useMemo(() => {
     const objectUrl = URL.createObjectURL(file);
     importedModelUrlRef.current = objectUrl;
 
-    const nextProduct = createImportedModelProduct(file, objectUrl, format, runtimeProduct);
+    const nextProduct = createImportedModelProduct(file, objectUrl, format, null);
+
+    setViewerRuntimeComponents([]);
+    setViewerRuntimeMetadata(null);
+    setViewerRuntimeProduct(null);
+    setImporterUiState(null);
+    componentRowRefs.current = {};
+    (window as any).__bagastudioViewerRuntimeComponents = [];
+    (window as any).__bagastudioRuntimeProduct = null;
+    (window as any).__bagastudioProductPackage = null;
 
     setRuntimeProduct(nextProduct);
     setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
     setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
     setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
-    setActiveView(nextProduct.views?.[0]?.id || "iso");
+    setActiveView("iso");
     setSelectedPart(null);
     setImportName(file.name);
     setImportedModelName(file.name);
@@ -885,21 +940,6 @@ const availableAccessories = useMemo(() => {
           format,
           objectUrl,
           sizeBytes: file.size,
-          importedAt: new Date().toISOString(),
-        },
-      })
-    );
-
-    window.dispatchEvent(
-      new CustomEvent("bagastudio:viewer-load-model", {
-        detail: {
-          file,
-          fileName: file.name,
-          format,
-          objectUrl,
-          modelUrl: objectUrl,
-          source: "viewer-import-ui",
-          forceReload: true,
           importedAt: new Date().toISOString(),
         },
       })
@@ -940,26 +980,43 @@ const availableAccessories = useMemo(() => {
         rawProduct?.productPackageVersion === 2;
 
       if (isProductPackage) {
-        const packageLoader = (window as any).bagastudioLoadProductPackageJson;
+        const nextProduct = normalizeProduct(rawProduct);
 
-        if (typeof packageLoader === "function") {
-          const result = packageLoader(rawProduct);
+        // Recovery DAE/Viewer V4:
+        // il Viewer3D espone bagastudioLoadProductPackageJson solo dopo il mount.
+        // Se importiamo un Product Package quando runtimeProduct è ancora vuoto,
+        // il Viewer non è montato e il loader non può esistere: non deve bloccare l'import.
+        // Prima montiamo il prodotto tramite store, poi lasciamo al Viewer caricare il modelUrl/dataUrl.
+        setRuntimeProduct(nextProduct);
+        setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
+        setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
+        setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
+        setActiveView("iso");
+        setSelectedPart(null);
+        setViewerRuntimeComponents([]);
+        componentRowRefs.current = {};
+        setImporterUiState((current: any) => ({
+          ...(current || {}),
+          productPackage: rawProduct,
+          componentCount: 0,
+        }));
 
-          if (result?.productPackage) {
-            setImporterUiState((current: any) => ({
-              ...(current || {}),
-              productPackage: result.productPackage,
-              componentCount: result.componentCount || result.components?.length || 0,
-            }));
+        window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+        window.dispatchEvent(new CustomEvent("bagastudio:runtime-components-cleared"));
+
+        window.setTimeout(() => {
+          const packageLoader = (window as any).bagastudioLoadProductPackageJson;
+          if (typeof packageLoader === "function") {
+            try {
+              packageLoader(rawProduct);
+            } catch (loaderError) {
+              console.warn("BagaStudio deferred Product Package loader skipped", loaderError);
+            }
           }
+        }, 120);
 
-          setImportName(file.name);
-          console.info("BagaStudio Product Package V2 imported");
-          return;
-        }
-
-        console.error("bagastudioLoadProductPackageJson not available");
-        alert("Viewer runtime loader non disponibile.");
+        setImportName(file.name);
+        console.info("BagaStudio Product Package imported without blocking on Viewer runtime loader");
         return;
       }
 
@@ -976,7 +1033,7 @@ const availableAccessories = useMemo(() => {
         if (part.meshName) setVisibility(part.meshName, part.visible !== false);
       });
 
-      setActiveView(nextProduct.views?.[0]?.id || "iso");
+      setActiveView("iso");
       setSelectedPart(null);
       setImportName(file.name);
       console.info("BagaStudio product imported successfully");
@@ -1010,10 +1067,10 @@ const availableAccessories = useMemo(() => {
   return (
    <main className="min-h-screen bg-[#07090f] text-white">
   <div className="flex h-screen flex-col">
-   <header className="sticky top-0 z-50 border-b border-sky-500/20 bg-[#07111c]/95 px-4 py-4 backdrop-blur-xl shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
-      <div className="rounded-2xl border border-sky-400/20 bg-[#07111c] px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+   <header className="sticky top-0 z-50 border-b border-sky-500/20 bg-[#07111c]/95 px-3 py-2 backdrop-blur-xl shadow-[0_10px_35px_rgba(0,0,0,0.38)]">
+      <div className="rounded-2xl border border-sky-400/20 bg-[#07111c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
         <div className="flex items-center justify-between gap-6">
-          <div className="flex min-w-[390px] items-center gap-4">
+          <div className="flex min-w-[170px] items-center gap-3">
             <button
               type="button"
               onClick={() => setIsLogoModalOpen(true)}
@@ -1023,12 +1080,12 @@ const availableAccessories = useMemo(() => {
               <img
                 src="/bagastudio-core-brand.png"
                 alt="BagaStudio Core"
-                className="h-28 w-auto shrink-0 object-contain drop-shadow-[0_0_22px_rgba(14,165,233,0.35)] transition group-hover:scale-[1.02]"
+                className="h-12 w-auto shrink-0 object-contain drop-shadow-[0_0_14px_rgba(14,165,233,0.3)] transition group-hover:scale-[1.02]"
               />
             </button>
           </div>
 
-          <div className="hidden flex-1 items-center justify-center gap-0 xl:flex">
+          <div className="hidden flex-1 items-center justify-center gap-0 2xl:flex">
             {[
               ["⬡", t.configurator],
               ["◉", t.realisticRender],
@@ -1037,11 +1094,11 @@ const availableAccessories = useMemo(() => {
             ].map((item, index) => (
               <div
                 key={item[1]}
-                className={`flex min-w-[150px] flex-col items-center justify-center gap-2 border-white/10 px-6 ${
+                className={`flex min-w-[105px] flex-col items-center justify-center gap-1 border-white/10 px-3 ${
                   index > 0 ? "border-l" : ""
                 }`}
               >
-                <div className="text-3xl font-black text-sky-400 drop-shadow-[0_0_12px_rgba(14,165,233,0.35)]">
+                <div className="text-lg font-black text-sky-400 drop-shadow-[0_0_12px_rgba(14,165,233,0.35)]">
                   {item[0]}
                 </div>
                 <div className="text-center text-[11px] font-bold tracking-wide text-neutral-200">
@@ -1052,9 +1109,9 @@ const availableAccessories = useMemo(() => {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="rounded-2xl border border-sky-400/20 bg-[#0b1826] px-6 py-4 shadow-[0_0_24px_rgba(14,165,233,0.08)]">
+            <div className="rounded-2xl border border-sky-400/20 bg-[#0b1826] px-4 py-2 shadow-[0_0_18px_rgba(14,165,233,0.08)]">
               <p className="text-xs font-bold uppercase tracking-widest text-neutral-300">{t.totalPrice}</p>
-              <p className="mt-1 text-3xl font-black text-sky-400">
+              <p className="mt-0 text-2xl font-black text-sky-400">
                 € {displayPricing.total.toFixed(2)}
               </p>
               <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
@@ -1062,17 +1119,17 @@ const availableAccessories = useMemo(() => {
 
            <div
   onClick={() => window.location.href = "/admin-panel"}
-  className="cursor-pointer rounded-3xl border border-sky-400/20 bg-gradient-to-br from-sky-500/10 to-black/40 p-5 shadow-[0_0_30px_rgba(14,165,233,0.08)] transition hover:border-sky-400/40 hover:shadow-[0_0_35px_rgba(14,165,233,0.18)]"
+  className="cursor-pointer rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-500/10 to-black/40 px-4 py-2 shadow-[0_0_18px_rgba(14,165,233,0.08)] transition hover:border-sky-400/40 hover:shadow-[0_0_24px_rgba(14,165,233,0.18)]"
 >
   <div className="text-[10px] font-bold tracking-[0.35em] text-sky-400">
     BAGASTUDIO CORE
   </div>
 
-  <h3 className="mt-3 flex items-center gap-2 text-xl font-black text-white">
+  <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
     ⚙ {t.adminPanel}
   </h3>
 
-  <p className="mt-2 text-xs leading-5 text-neutral-300">
+  <p className="hidden">
     {t.adminPanelDescription}
   </p>
 </div>
@@ -1094,7 +1151,7 @@ const availableAccessories = useMemo(() => {
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+        <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
           <div className="flex items-center gap-2">
             {[
               ["config", "⌂", t.project],
@@ -1106,7 +1163,7 @@ const availableAccessories = useMemo(() => {
               <button
                 key={tab[0]}
                 onClick={() => setActivePanel(tab[0])}
-                className={`rounded-xl px-5 py-3 text-sm font-bold transition ${
+                className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
                   activePanel === tab[0]
                     ? "bg-sky-500 text-white shadow-[0_0_22px_rgba(14,165,233,0.35)]"
                     : "bg-white/[0.03] text-neutral-300 hover:bg-white/[0.07]"
@@ -1118,13 +1175,13 @@ const availableAccessories = useMemo(() => {
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => saveAutosave()} className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
+            <button onClick={() => saveAutosave()} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
               {t.save}
             </button>
-            <button onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
+            <button onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
               {t.export}
             </button>
-            <button onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
+            <button onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
               {t.quote}
             </button>
           </div>
@@ -1132,8 +1189,8 @@ const availableAccessories = useMemo(() => {
       </div>
     </header>
 
-    <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_330px] gap-3 bg-[#07111c] p-3">
-  <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] gap-2 bg-[#07111c] p-2">
+  <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
 {activePanel === "config" && (
   <>
     <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
@@ -1259,6 +1316,41 @@ const availableAccessories = useMemo(() => {
           </div>
         </div>
       )}
+
+      <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-black/20 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-white">Trasparenza / X-Ray</p>
+            <p className="text-xs text-neutral-400">Controllo visivo interno del modello</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setXRayEnabled((value) => !value)}
+            className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+              xRayEnabled
+                ? "border-cyan-300 bg-cyan-500 text-white"
+                : "border-neutral-700 bg-neutral-900 text-neutral-200"
+            }`}
+          >
+            {xRayEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0.12}
+            max={0.85}
+            step={0.01}
+            value={xRayOpacity}
+            onChange={(event) => setXRayOpacity(Number(event.target.value))}
+            className="w-full"
+          />
+          <span className="w-12 text-right text-xs font-bold text-cyan-200">
+            {Math.round(xRayOpacity * 100)}%
+          </span>
+        </div>
+      </div>
     </section>
 
     {runtimeProduct && (
@@ -1734,10 +1826,24 @@ const availableAccessories = useMemo(() => {
         value={selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
         onChange={(event) => {
           if (!selectedStoreKey) return;
-          setMaterial(selectedStoreKey, event.target.value);
-          if (selectedPart?.meshName) {
-            setMaterial(selectedPart.meshName, event.target.value);
-          }
+          const nextMaterialId = event.target.value;
+          const materialKeys = Array.from(
+            new Set(
+              [
+                selectedStoreKey,
+                selectedPartId,
+                selectedPart?.id,
+                selectedPart?.partId,
+                selectedPart?.meshName,
+                selectedPart?.name,
+                selectedPart?.displayName,
+                selectedPart?.originalName,
+              ]
+                .map((value) => String(value || ""))
+                .filter(Boolean)
+            )
+          );
+          materialKeys.forEach((key) => setMaterial(key, nextMaterialId));
         }}
         className="w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-white"
       >
@@ -1953,6 +2059,8 @@ const availableAccessories = useMemo(() => {
       productParts={runtimeProduct.parts}
       views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
       woodDirection={woodDirection}
+      xRayEnabled={xRayEnabled}
+      xRayOpacity={xRayOpacity}
     />
   ) : (
     <div className="flex h-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-400">
@@ -1961,9 +2069,9 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           {/* bagastudio-sidebar-components-right-final-v1 */}
-          <section className="max-h-[300px] shrink-0 overflow-hidden rounded-2xl border border-cyan-400/15 bg-white/[0.03] p-4">
+          <section className="max-h-[240px] shrink-0 overflow-hidden rounded-2xl border border-cyan-400/15 bg-white/[0.03] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
@@ -1987,7 +2095,7 @@ const availableAccessories = useMemo(() => {
             </div>
 
             {viewerRuntimeComponents.length > 0 ? (
-              <div className="max-h-[195px] space-y-1 overflow-auto pr-1">
+              <div className="max-h-[145px] space-y-1 overflow-auto pr-1">
                 {viewerRuntimeComponents.map((component: any) => {
                   const componentId = component.id || component.partId || component.meshName;
                   const isSelected =
@@ -2015,6 +2123,7 @@ const availableAccessories = useMemo(() => {
                         if (!componentId) return;
 
                         setSelectedPart(componentId);
+                        setActivePanel("materials");
                         window.dispatchEvent(
                           new CustomEvent("bagastudio:viewer-select-component", {
                             detail: {
