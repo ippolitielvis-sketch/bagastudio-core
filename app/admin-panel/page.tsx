@@ -10238,6 +10238,2188 @@ function downloadDynamicRuleConflictResolverV29Report() {
 }
 
 
+type WallIntelligenceV30WallType = "masonry" | "drywall" | "wood" | "concrete" | "technical" | "unknown";
+type WallIntelligenceV30InputSource = "client_description" | "photo_assisted_future" | "dwg_dxf_future";
+type WallIntelligenceV30Confidence = "high" | "medium" | "low" | "unknown";
+type WallIntelligenceV30CheckStatus = "ready" | "review" | "blocked";
+
+type WallIntelligenceV30Profile = {
+  id: string;
+  label: string;
+  wallType: WallIntelligenceV30WallType;
+  inputSource: WallIntelligenceV30InputSource;
+  confidence: WallIntelligenceV30Confidence;
+  thicknessMm: number | null;
+  estimatedMaxLoadKg: number | null;
+  customerDescription: string;
+  requiresInstallerVerification: boolean;
+  acceptedForPreliminaryLayout: boolean;
+  futureEvidenceSlots: string[];
+};
+
+type WallIntelligenceV30FixingTarget = {
+  id: string;
+  label: string;
+  category: "mirror" | "suspended_cabinet" | "shelf" | "wall_panel" | "technical_point";
+  estimatedWeightKg: number;
+  linkedWallId: string;
+  requiredFixingPoints: number;
+  minimumRecommendedFixingPoints: number;
+  suggestedHardware: string[];
+  status: WallIntelligenceV30CheckStatus;
+  warning: string;
+};
+
+type WallIntelligenceEngineV30Report = {
+  schema: "bagastudio-wall-intelligence-engine-v3-0";
+  version: "3.0";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceRuleResolverSchema: DynamicRuleConflictResolverV29Report["schema"];
+  strategy: {
+    primaryInput: "client_description";
+    futureInputs: WallIntelligenceV30InputSource[];
+    mergePolicy: string[];
+    doesNotReplaceInstallerVerification: boolean;
+  };
+  wallProfiles: WallIntelligenceV30Profile[];
+  fixingTargets: WallIntelligenceV30FixingTarget[];
+  technicalWarnings: string[];
+  totals: {
+    walls: number;
+    unknownWalls: number;
+    targets: number;
+    ready: number;
+    review: number;
+    blocked: number;
+  };
+  nextActions: string[];
+};
+
+function buildWallIntelligenceEngineV30Report(params: {
+  conflictResolverV29: DynamicRuleConflictResolverV29Report;
+}): WallIntelligenceEngineV30Report {
+  const wallProfiles: WallIntelligenceV30Profile[] = [
+    {
+      id: "wall-v3-0-client-main",
+      label: "Parete principale da descrizione cliente",
+      wallType: "unknown",
+      inputSource: "client_description",
+      confidence: "unknown",
+      thicknessMm: null,
+      estimatedMaxLoadKg: null,
+      customerDescription: "Prima fase: il cliente descrive la parete tramite scheda guidata. Foto e DWG saranno prove successive di conferma.",
+      requiresInstallerVerification: true,
+      acceptedForPreliminaryLayout: true,
+      futureEvidenceSlots: ["foto parete", "pianta quotata", "DWG/DXF", "nota installatore"],
+    },
+    {
+      id: "wall-v3-0-masonry-reference",
+      label: "Profilo riferimento muratura",
+      wallType: "masonry",
+      inputSource: "client_description",
+      confidence: "medium",
+      thicknessMm: 120,
+      estimatedMaxLoadKg: 80,
+      customerDescription: "Parete dichiarata in muratura: valida per pre-verifica fissaggi, da confermare in sopralluogo.",
+      requiresInstallerVerification: true,
+      acceptedForPreliminaryLayout: true,
+      futureEvidenceSlots: ["foto", "DWG/DXF", "conferma supporto"],
+    },
+    {
+      id: "wall-v3-0-drywall-reference",
+      label: "Profilo riferimento cartongesso",
+      wallType: "drywall",
+      inputSource: "client_description",
+      confidence: "medium",
+      thicknessMm: 75,
+      estimatedMaxLoadKg: 25,
+      customerDescription: "Parete dichiarata in cartongesso: richiede verifica montanti e ferramenta dedicata.",
+      requiresInstallerVerification: true,
+      acceptedForPreliminaryLayout: true,
+      futureEvidenceSlots: ["foto", "posizione montanti", "scheda parete", "DWG/DXF"],
+    },
+  ];
+
+  const fixingTargets: WallIntelligenceV30FixingTarget[] = wallProfiles.flatMap((wall) => {
+    if (wall.wallType === "unknown") {
+      return [
+        {
+          id: `v3-0-target-mirror-${wall.id}`,
+          label: "Specchio sospeso / pannello specchio",
+          category: "mirror",
+          estimatedWeightKg: 18,
+          linkedWallId: wall.id,
+          requiredFixingPoints: 4,
+          minimumRecommendedFixingPoints: 4,
+          suggestedHardware: ["Dati parete insufficienti", "Richiedere descrizione cliente", "Confermare con foto/DWG in fase successiva"],
+          status: "review",
+          warning: "Tipo parete sconosciuto: il layout può proseguire, ma fissaggi e scheda tecnica restano da validare.",
+        },
+      ];
+    }
+
+    if (wall.wallType === "drywall") {
+      return [
+        {
+          id: `v3-0-target-mirror-${wall.id}`,
+          label: "Specchio su cartongesso",
+          category: "mirror",
+          estimatedWeightKg: 18,
+          linkedWallId: wall.id,
+          requiredFixingPoints: 4,
+          minimumRecommendedFixingPoints: 4,
+          suggestedHardware: ["Tassello metallico tipo Molly", "Ancoraggio su montante", "Verifica carico installatore"],
+          status: "review",
+          warning: "Cartongesso: verificare montanti e carico reale prima di confermare specchi/pensili.",
+        },
+        {
+          id: `v3-0-target-shelf-${wall.id}`,
+          label: "Mensola sospesa su cartongesso",
+          category: "shelf",
+          estimatedWeightKg: 12,
+          linkedWallId: wall.id,
+          requiredFixingPoints: 3,
+          minimumRecommendedFixingPoints: 3,
+          suggestedHardware: ["Staffa su montante", "Tassello cartongesso certificato", "Limitare carico utile"],
+          status: "review",
+          warning: "Mensola su cartongesso: evitare carichi elevati senza supporto strutturale.",
+        },
+      ];
+    }
+
+    return [
+      {
+        id: `v3-0-target-mirror-${wall.id}`,
+        label: "Specchio / pannello su muratura",
+        category: "mirror",
+        estimatedWeightKg: 18,
+        linkedWallId: wall.id,
+        requiredFixingPoints: 4,
+        minimumRecommendedFixingPoints: 4,
+        suggestedHardware: ["Tassello ad espansione per muratura", "Vite adeguata al peso", "Verifica supporto reale"],
+        status: "ready",
+        warning: "Pre-verifica positiva su muratura dichiarata, da confermare in installazione.",
+      },
+    ];
+  });
+
+  const blocked = fixingTargets.filter((target) => target.status === "blocked").length;
+  const review = fixingTargets.filter((target) => target.status === "review").length;
+  const ready = fixingTargets.filter((target) => target.status === "ready").length;
+  const unknownWalls = wallProfiles.filter((wall) => wall.wallType === "unknown").length;
+  const resolverBlocked = params.conflictResolverV29.status === "LAYOUT_V2_BLOCKED";
+
+  return {
+    schema: "bagastudio-wall-intelligence-engine-v3-0",
+    version: "3.0",
+    generatedAt: new Date().toISOString(),
+    status: resolverBlocked || blocked > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : review > 0 || unknownWalls > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceRuleResolverSchema: params.conflictResolverV29.schema,
+    strategy: {
+      primaryInput: "client_description",
+      futureInputs: ["photo_assisted_future", "dwg_dxf_future"],
+      mergePolicy: [
+        "La descrizione cliente crea il primo profilo parete e permette il layout preliminare.",
+        "Foto e DWG/DXF non sostituiscono la descrizione: confermano, correggono o aumentano la confidenza del profilo.",
+        "Se foto/DWG contraddicono la descrizione cliente, il sistema mette la parete in REVIEW e chiede conferma.",
+        "Le regole di fissaggio critiche restano bloccanti fino a verifica installatore quando il supporto non è certo.",
+      ],
+      doesNotReplaceInstallerVerification: true,
+    },
+    wallProfiles,
+    fixingTargets,
+    technicalWarnings: fixingTargets
+      .filter((target) => target.status !== "ready")
+      .map((target) => target.warning),
+    totals: {
+      walls: wallProfiles.length,
+      unknownWalls,
+      targets: fixingTargets.length,
+      ready,
+      review,
+      blocked,
+    },
+    nextActions: [
+      "Creare scheda cliente guidata: tipo parete, spessore, materiale, presenza montanti, note e confidenza dato.",
+      "Collegare ogni mobile/specchio/mensola alla parete corrispondente del Room Editor.",
+      "Aggiungere motore suggerimento ferramenta in base a parete, peso stimato e categoria elemento.",
+      "Preparare V3.1 con Wall Profile Form e predisposizione futura a foto/DWG come evidenze collegate.",
+    ],
+  };
+}
+
+const wallIntelligenceEngineV30Report = useMemo(() => {
+  return buildWallIntelligenceEngineV30Report({
+    conflictResolverV29: dynamicRuleConflictResolverV29Report,
+  });
+}, [dynamicRuleConflictResolverV29Report]);
+
+function downloadWallIntelligenceEngineV30Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-engine-v3-0-${Date.now()}.json`, wallIntelligenceEngineV30Report);
+}
+
+
+type WallIntelligenceV31QuestionType = "select" | "number" | "text" | "boolean" | "evidence";
+type WallIntelligenceV31AnswerStatus = "answered" | "missing" | "needs_confirmation";
+
+type WallIntelligenceV31GuidedQuestion = {
+  id: string;
+  label: string;
+  questionType: WallIntelligenceV31QuestionType;
+  required: boolean;
+  defaultValue: string;
+  status: WallIntelligenceV31AnswerStatus;
+  validatorHint: string;
+};
+
+type WallIntelligenceV31ClientWallCard = {
+  id: string;
+  sourceWallId: string;
+  label: string;
+  wallType: WallIntelligenceV30WallType;
+  confidence: WallIntelligenceV30Confidence;
+  completionPercent: number;
+  missingRequiredFields: string[];
+  guidedQuestions: WallIntelligenceV31GuidedQuestion[];
+  evidenceSlots: {
+    clientDescription: boolean;
+    photoFuture: boolean;
+    dwgDxfFuture: boolean;
+    installerNoteFuture: boolean;
+  };
+  validatorDecision: WallIntelligenceV30CheckStatus;
+  note: string;
+};
+
+type WallIntelligenceGuidedDescriptionV31Report = {
+  schema: "bagastudio-wall-intelligence-guided-description-v3-1";
+  version: "3.1";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceWallEngineSchema: WallIntelligenceEngineV30Report["schema"];
+  principle: {
+    clientDescriptionFirst: boolean;
+    photoDwgAsEvidenceLater: boolean;
+    unknownAllowedForPreliminaryLayout: boolean;
+    installerVerificationRequiredForCriticalFixings: boolean;
+  };
+  clientWallCards: WallIntelligenceV31ClientWallCard[];
+  totals: {
+    cards: number;
+    completed: number;
+    incomplete: number;
+    questions: number;
+    missingRequired: number;
+    review: number;
+    blocked: number;
+  };
+  nextActions: string[];
+};
+
+function buildWallIntelligenceGuidedDescriptionV31Report(params: {
+  wallEngineV30: WallIntelligenceEngineV30Report;
+}): WallIntelligenceGuidedDescriptionV31Report {
+  const buildQuestions = (wall: WallIntelligenceV30Profile): WallIntelligenceV31GuidedQuestion[] => {
+    const isUnknown = wall.wallType === "unknown";
+    return [
+      {
+        id: `${wall.id}-q-wall-type`,
+        label: "Che tipo di parete è?",
+        questionType: "select",
+        required: true,
+        defaultValue: wall.wallType === "unknown" ? "Da scegliere: muratura / cartongesso / legno / calcestruzzo / parete tecnica" : wall.wallType,
+        status: isUnknown ? "missing" : "answered",
+        validatorHint: "Serve per scegliere ferramenta, fissaggi, soglie carico e livello di confidenza.",
+      },
+      {
+        id: `${wall.id}-q-thickness`,
+        label: "Spessore parete stimato o conosciuto",
+        questionType: "number",
+        required: false,
+        defaultValue: wall.thicknessMm ? `${wall.thicknessMm} mm` : "Non dichiarato",
+        status: wall.thicknessMm ? "answered" : "needs_confirmation",
+        validatorHint: "Dato utile ma non sempre disponibile: se manca il sistema resta in review tecnica.",
+      },
+      {
+        id: `${wall.id}-q-load`,
+        label: "Carico massimo stimato o presenza rinforzi/montanti",
+        questionType: "text",
+        required: true,
+        defaultValue: wall.estimatedMaxLoadKg ? `${wall.estimatedMaxLoadKg} kg stimati` : "Da descrivere dal cliente/installatore",
+        status: wall.estimatedMaxLoadKg ? "answered" : "missing",
+        validatorHint: "Necessario per specchi, mensole, pensili e mobili sospesi.",
+      },
+      {
+        id: `${wall.id}-q-obstacles`,
+        label: "Ci sono impianti, prese, tubazioni o ostacoli sulla parete?",
+        questionType: "text",
+        required: false,
+        defaultValue: "Da compilare in scheda cliente",
+        status: "needs_confirmation",
+        validatorHint: "Alimenta punti tecnici, collisioni, forature e schede parete.",
+      },
+      {
+        id: `${wall.id}-q-evidence`,
+        label: "Foto/pianta/DWG disponibili per conferma futura",
+        questionType: "evidence",
+        required: false,
+        defaultValue: wall.futureEvidenceSlots.join(" · "),
+        status: "needs_confirmation",
+        validatorHint: "Non sostituisce la descrizione cliente: la conferma o la corregge.",
+      },
+    ];
+  };
+
+  const clientWallCards = params.wallEngineV30.wallProfiles.map((wall) => {
+    const guidedQuestions = buildQuestions(wall);
+    const missingRequiredFields = guidedQuestions
+      .filter((question) => question.required && question.status !== "answered")
+      .map((question) => question.label);
+    const answered = guidedQuestions.filter((question) => question.status === "answered").length;
+    const completionPercent = Math.round((answered / guidedQuestions.length) * 100);
+    const validatorDecision: WallIntelligenceV30CheckStatus = missingRequiredFields.length > 1
+      ? "review"
+      : wall.acceptedForPreliminaryLayout
+        ? "ready"
+        : "blocked";
+
+    return {
+      id: `v3-1-client-wall-card-${wall.id}`,
+      sourceWallId: wall.id,
+      label: wall.label,
+      wallType: wall.wallType,
+      confidence: wall.confidence,
+      completionPercent,
+      missingRequiredFields,
+      guidedQuestions,
+      evidenceSlots: {
+        clientDescription: true,
+        photoFuture: wall.futureEvidenceSlots.some((slot) => slot.toLowerCase().includes("foto")),
+        dwgDxfFuture: wall.futureEvidenceSlots.some((slot) => slot.toLowerCase().includes("dwg") || slot.toLowerCase().includes("dxf")),
+        installerNoteFuture: wall.requiresInstallerVerification,
+      },
+      validatorDecision,
+      note: missingRequiredFields.length
+        ? "Scheda parete utilizzabile per layout preliminare, ma non ancora sufficiente per confermare fissaggi critici."
+        : "Scheda parete compilata in modo sufficiente per pre-validazione tecnica.",
+    };
+  });
+
+  const missingRequired = clientWallCards.reduce((sum, card) => sum + card.missingRequiredFields.length, 0);
+  const blocked = clientWallCards.filter((card) => card.validatorDecision === "blocked").length;
+  const review = clientWallCards.filter((card) => card.validatorDecision === "review").length;
+  const completed = clientWallCards.filter((card) => card.missingRequiredFields.length === 0).length;
+
+  return {
+    schema: "bagastudio-wall-intelligence-guided-description-v3-1",
+    version: "3.1",
+    generatedAt: new Date().toISOString(),
+    status: params.wallEngineV30.status === "LAYOUT_V2_BLOCKED" || blocked > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : review > 0 || missingRequired > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceWallEngineSchema: params.wallEngineV30.schema,
+    principle: {
+      clientDescriptionFirst: true,
+      photoDwgAsEvidenceLater: true,
+      unknownAllowedForPreliminaryLayout: true,
+      installerVerificationRequiredForCriticalFixings: true,
+    },
+    clientWallCards,
+    totals: {
+      cards: clientWallCards.length,
+      completed,
+      incomplete: clientWallCards.length - completed,
+      questions: clientWallCards.reduce((sum, card) => sum + card.guidedQuestions.length, 0),
+      missingRequired,
+      review,
+      blocked,
+    },
+    nextActions: [
+      "Trasformare le domande guida in campi editabili dell'Admin/Room Editor.",
+      "Salvare le risposte cliente nel Product Package e nel progetto layout.",
+      "Collegare ogni scheda parete agli elementi installati su quella parete.",
+      "Preparare V3.2: Wall Evidence Bridge per collegare foto, pianta, DWG/DXF e note installatore come prove di conferma.",
+    ],
+  };
+}
+
+const wallIntelligenceGuidedDescriptionV31Report = useMemo(() => {
+  return buildWallIntelligenceGuidedDescriptionV31Report({
+    wallEngineV30: wallIntelligenceEngineV30Report,
+  });
+}, [wallIntelligenceEngineV30Report]);
+
+function downloadWallIntelligenceGuidedDescriptionV31Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-guided-description-v3-1-${Date.now()}.json`, wallIntelligenceGuidedDescriptionV31Report);
+}
+
+
+
+type WallIntelligenceV32ConfidenceLevel = "bassa" | "media" | "alta";
+type WallIntelligenceV32VerificationAlertSeverity = "info" | "warning" | "error";
+
+type WallIntelligenceV32VerificationAlert = {
+  id: string;
+  severity: WallIntelligenceV32VerificationAlertSeverity;
+  label: string;
+  reason: string;
+};
+
+type WallIntelligenceV32ConfidenceCard = {
+  id: string;
+  sourceWallCardId: string;
+  label: string;
+  wallType: WallIntelligenceV30WallType;
+  confidenceScore: number;
+  confidenceLevel: WallIntelligenceV32ConfidenceLevel;
+  needsVerification: boolean;
+  verificationReason: string;
+  positiveSignals: string[];
+  missingSignals: string[];
+  alerts: WallIntelligenceV32VerificationAlert[];
+  validatorDecision: WallIntelligenceV30CheckStatus;
+};
+
+type WallIntelligenceConfidenceEngineV32Report = {
+  schema: "bagastudio-wall-intelligence-confidence-engine-v3-2";
+  version: "3.2";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceGuidedDescriptionSchema: WallIntelligenceGuidedDescriptionV31Report["schema"];
+  thresholds: {
+    lowMax: number;
+    mediumMax: number;
+    highMin: number;
+  };
+  confidenceCards: WallIntelligenceV32ConfidenceCard[];
+  totals: {
+    cards: number;
+    high: number;
+    medium: number;
+    low: number;
+    needsVerification: number;
+    alerts: number;
+    warnings: number;
+    errors: number;
+  };
+  nextActions: string[];
+};
+
+function buildWallIntelligenceConfidenceEngineV32Report(params: {
+  guidedDescriptionV31: WallIntelligenceGuidedDescriptionV31Report;
+}): WallIntelligenceConfidenceEngineV32Report {
+  const getConfidenceLevel = (score: number): WallIntelligenceV32ConfidenceLevel => {
+    if (score <= 40) return "bassa";
+    if (score <= 70) return "media";
+    return "alta";
+  };
+
+  const confidenceCards: WallIntelligenceV32ConfidenceCard[] = params.guidedDescriptionV31.clientWallCards.map((card) => {
+    const answeredRequired = card.guidedQuestions.filter((question) => question.required && question.status === "answered").length;
+    const totalRequired = Math.max(1, card.guidedQuestions.filter((question) => question.required).length);
+    const answeredOptional = card.guidedQuestions.filter((question) => !question.required && question.status === "answered").length;
+    const evidenceSignals = [
+      card.evidenceSlots.clientDescription,
+      card.evidenceSlots.photoFuture,
+      card.evidenceSlots.dwgDxfFuture,
+      card.evidenceSlots.installerNoteFuture,
+    ].filter(Boolean).length;
+
+    let score = 20;
+    score += Math.round((answeredRequired / totalRequired) * 40);
+    score += Math.min(15, answeredOptional * 5);
+    score += Math.min(20, evidenceSignals * 5);
+    if (card.wallType !== "unknown") score += 10;
+    if (card.validatorDecision === "blocked") score -= 20;
+    if (card.validatorDecision === "review") score -= 8;
+    score = Math.max(0, Math.min(100, score));
+
+    const confidenceLevel = getConfidenceLevel(score);
+    const missingSignals: string[] = [];
+    const positiveSignals: string[] = [];
+    const alerts: WallIntelligenceV32VerificationAlert[] = [];
+
+    if (card.wallType === "unknown") {
+      missingSignals.push("Tipo parete non dichiarato");
+      alerts.push({
+        id: `${card.id}-unknown-wall-type`,
+        severity: "error",
+        label: "Tipo parete non verificato",
+        reason: "Senza tipo parete il sistema non può confermare fissaggi, carichi e ferramenta.",
+      });
+    } else {
+      positiveSignals.push("Tipo parete dichiarato");
+    }
+
+    if (card.missingRequiredFields.length > 0) {
+      missingSignals.push(...card.missingRequiredFields);
+      alerts.push({
+        id: `${card.id}-missing-required-fields`,
+        severity: "warning",
+        label: "Dati insufficienti",
+        reason: `Campi richiesti mancanti: ${card.missingRequiredFields.join(" · ")}`,
+      });
+    } else {
+      positiveSignals.push("Campi richiesti compilati");
+    }
+
+    if (!card.evidenceSlots.photoFuture && !card.evidenceSlots.dwgDxfFuture && !card.evidenceSlots.installerNoteFuture) {
+      missingSignals.push("Nessuna prova futura collegata");
+      alerts.push({
+        id: `${card.id}-no-evidence`,
+        severity: "info",
+        label: "Verifica installatore consigliata",
+        reason: "Foto, DWG/DXF o nota installatore potranno aumentare la confidenza senza rifare il profilo parete.",
+      });
+    } else {
+      positiveSignals.push("Evidenza futura predisposta");
+    }
+
+    if (confidenceLevel === "bassa") {
+      alerts.push({
+        id: `${card.id}-low-confidence`,
+        severity: "error",
+        label: "Confidenza bassa",
+        reason: "Usare solo per layout preliminare; bloccare conferma fissaggi critici finché mancano dati affidabili.",
+      });
+    }
+
+    const needsVerification = confidenceLevel !== "alta" || alerts.some((alert) => alert.severity === "error");
+    const verificationReason = needsVerification
+      ? missingSignals.length
+        ? missingSignals.join(" · ")
+        : "Verifica consigliata prima di generare scheda tecnica definitiva."
+      : "Dati sufficienti per pre-validazione tecnica ad alta confidenza.";
+
+    return {
+      id: `v3-2-confidence-${card.id}`,
+      sourceWallCardId: card.id,
+      label: card.label,
+      wallType: card.wallType,
+      confidenceScore: score,
+      confidenceLevel,
+      needsVerification,
+      verificationReason,
+      positiveSignals,
+      missingSignals,
+      alerts,
+      validatorDecision: alerts.some((alert) => alert.severity === "error")
+        ? "blocked"
+        : alerts.some((alert) => alert.severity === "warning") || card.validatorDecision === "review"
+          ? "review"
+          : "ready",
+    };
+  });
+
+  const errors = confidenceCards.reduce((sum, card) => sum + card.alerts.filter((alert) => alert.severity === "error").length, 0);
+  const warnings = confidenceCards.reduce((sum, card) => sum + card.alerts.filter((alert) => alert.severity === "warning").length, 0);
+
+  return {
+    schema: "bagastudio-wall-intelligence-confidence-engine-v3-2",
+    version: "3.2",
+    generatedAt: new Date().toISOString(),
+    status: errors > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : warnings > 0 || confidenceCards.some((card) => card.needsVerification)
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceGuidedDescriptionSchema: params.guidedDescriptionV31.schema,
+    thresholds: {
+      lowMax: 40,
+      mediumMax: 70,
+      highMin: 71,
+    },
+    confidenceCards,
+    totals: {
+      cards: confidenceCards.length,
+      high: confidenceCards.filter((card) => card.confidenceLevel === "alta").length,
+      medium: confidenceCards.filter((card) => card.confidenceLevel === "media").length,
+      low: confidenceCards.filter((card) => card.confidenceLevel === "bassa").length,
+      needsVerification: confidenceCards.filter((card) => card.needsVerification).length,
+      alerts: confidenceCards.reduce((sum, card) => sum + card.alerts.length, 0),
+      warnings,
+      errors,
+    },
+    nextActions: [
+      "Collegare il confidenceScore ai gate di schede tecniche PDF/DXF/CAD.",
+      "Permettere ad Admin/cliente di aggiungere foto, note installatore e DWG/DXF come evidenze progressive.",
+      "Preparare V3.3: Wall Load Analyzer con carichi, pesi, fissaggi e soglie parete.",
+    ],
+  };
+}
+
+const wallIntelligenceConfidenceEngineV32Report = useMemo(() => {
+  return buildWallIntelligenceConfidenceEngineV32Report({
+    guidedDescriptionV31: wallIntelligenceGuidedDescriptionV31Report,
+  });
+}, [wallIntelligenceGuidedDescriptionV31Report]);
+
+function downloadWallIntelligenceConfidenceEngineV32Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-confidence-engine-v3-2-${Date.now()}.json`, wallIntelligenceConfidenceEngineV32Report);
+}
+
+
+type WallIntelligenceV33LoadRisk = "safe" | "review" | "critical";
+type WallIntelligenceV33LoadCategory = "mirror" | "shelf" | "suspended_cabinet" | "wall_panel" | "technical_equipment";
+
+type WallIntelligenceV33LoadTarget = {
+  id: string;
+  label: string;
+  category: WallIntelligenceV33LoadCategory;
+  linkedWallCardId: string;
+  estimatedWeightKg: number;
+  projectedLoadKg: number;
+  fixingPoints: number;
+  loadPerFixingKg: number;
+  wallCapacityKg: number | null;
+  safetyFactor: number;
+  confidenceScore: number;
+  risk: WallIntelligenceV33LoadRisk;
+  validatorDecision: WallIntelligenceV30CheckStatus;
+  warnings: string[];
+  recommendations: string[];
+};
+
+type WallIntelligenceLoadAnalyzerV33Report = {
+  schema: "bagastudio-wall-intelligence-load-analyzer-v3-3";
+  version: "3.3";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceConfidenceSchema: WallIntelligenceConfidenceEngineV32Report["schema"];
+  analysisPrinciples: {
+    clientDescriptionFirst: boolean;
+    confidenceAffectsLoadDecision: boolean;
+    installerVerificationForCriticalLoads: boolean;
+    doesNotCertifyStructuralSafety: boolean;
+  };
+  loadTargets: WallIntelligenceV33LoadTarget[];
+  totals: {
+    targets: number;
+    safe: number;
+    review: number;
+    critical: number;
+    blocked: number;
+    warnings: number;
+  };
+  nextActions: string[];
+};
+
+function buildWallIntelligenceLoadAnalyzerV33Report(params: {
+  confidenceEngineV32: WallIntelligenceConfidenceEngineV32Report;
+  wallEngineV30: WallIntelligenceEngineV30Report;
+}): WallIntelligenceLoadAnalyzerV33Report {
+  const wallCapacityByType: Record<WallIntelligenceV30WallType, number | null> = {
+    masonry: 80,
+    concrete: 120,
+    wood: 55,
+    technical: 45,
+    drywall: 25,
+    unknown: null,
+  };
+
+  const getWallCapacity = (wallType: WallIntelligenceV30WallType) => wallCapacityByType[wallType] ?? null;
+
+  const demoTargetsByCategory: Array<{
+    category: WallIntelligenceV33LoadCategory;
+    label: string;
+    estimatedWeightKg: number;
+    fixingPoints: number;
+    safetyFactor: number;
+  }> = [
+    { category: "mirror", label: "Specchio / pannello specchio", estimatedWeightKg: 18, fixingPoints: 4, safetyFactor: 1.35 },
+    { category: "shelf", label: "Mensola sospesa con carico prodotti", estimatedWeightKg: 22, fixingPoints: 3, safetyFactor: 1.5 },
+    { category: "suspended_cabinet", label: "Pensile / mobile sospeso", estimatedWeightKg: 38, fixingPoints: 6, safetyFactor: 1.6 },
+  ];
+
+  const loadTargets = params.confidenceEngineV32.confidenceCards.flatMap((confidenceCard) => {
+    const wallProfile = params.wallEngineV30.wallProfiles.find((wall) =>
+      confidenceCard.sourceWallCardId.includes(wall.id)
+    );
+    const wallType = wallProfile?.wallType ?? confidenceCard.wallType;
+    const wallCapacityKg = getWallCapacity(wallType);
+
+    return demoTargetsByCategory.map((target, index): WallIntelligenceV33LoadTarget => {
+      const projectedLoadKg = Math.round(target.estimatedWeightKg * target.safetyFactor * 10) / 10;
+      const loadPerFixingKg = Math.round((projectedLoadKg / Math.max(1, target.fixingPoints)) * 10) / 10;
+      const warnings: string[] = [];
+      const recommendations: string[] = [];
+
+      if (wallCapacityKg === null) {
+        warnings.push("Capacità parete sconosciuta: impossibile validare il carico in modo affidabile.");
+        recommendations.push("Richiedere tipo parete e descrizione cliente prima della scheda tecnica definitiva.");
+      } else if (projectedLoadKg > wallCapacityKg) {
+        warnings.push(`Carico proiettato ${projectedLoadKg} kg superiore alla capacità stimata parete ${wallCapacityKg} kg.`);
+        recommendations.push("Ridurre carico, aumentare punti fissaggio o prevedere rinforzo/supporto strutturale.");
+      } else if (projectedLoadKg > wallCapacityKg * 0.7) {
+        warnings.push(`Carico proiettato vicino alla soglia: ${projectedLoadKg} kg su ${wallCapacityKg} kg stimati.`);
+        recommendations.push("Verifica installatore consigliata e ferramenta certificata per il supporto reale.");
+      }
+
+      if (confidenceCard.confidenceScore <= 40) {
+        warnings.push("Confidenza parete bassa: il carico non deve essere confermato senza sopralluogo/verifica.");
+        recommendations.push("Aggiungere foto, DWG/DXF, nota installatore o descrizione parete completa.");
+      } else if (confidenceCard.confidenceScore <= 70) {
+        warnings.push("Confidenza media: usare il risultato come pre-analisi, non come conferma definitiva.");
+        recommendations.push("Integrare evidenze e confermare fissaggi prima della produzione/installazione.");
+      }
+
+      if (wallType === "drywall" && target.category !== "mirror") {
+        warnings.push("Cartongesso con elemento caricato: verificare montanti o rinforzi dedicati.");
+        recommendations.push("Preferire ancoraggio su montante, rinforzo o staffa strutturale.");
+      }
+
+      const risk: WallIntelligenceV33LoadRisk =
+        wallCapacityKg === null || projectedLoadKg > (wallCapacityKg ?? 0) || confidenceCard.confidenceScore <= 40
+          ? "critical"
+          : warnings.length > 0 || confidenceCard.confidenceScore <= 70
+            ? "review"
+            : "safe";
+
+      return {
+        id: `v3-3-load-${confidenceCard.id}-${index}`,
+        label: `${target.label} · ${confidenceCard.label}`,
+        category: target.category,
+        linkedWallCardId: confidenceCard.id,
+        estimatedWeightKg: target.estimatedWeightKg,
+        projectedLoadKg,
+        fixingPoints: target.fixingPoints,
+        loadPerFixingKg,
+        wallCapacityKg,
+        safetyFactor: target.safetyFactor,
+        confidenceScore: confidenceCard.confidenceScore,
+        risk,
+        validatorDecision: risk === "critical" ? "blocked" : risk === "review" ? "review" : "ready",
+        warnings,
+        recommendations,
+      };
+    });
+  });
+
+  const critical = loadTargets.filter((target) => target.risk === "critical").length;
+  const review = loadTargets.filter((target) => target.risk === "review").length;
+  const blocked = loadTargets.filter((target) => target.validatorDecision === "blocked").length;
+
+  return {
+    schema: "bagastudio-wall-intelligence-load-analyzer-v3-3",
+    version: "3.3",
+    generatedAt: new Date().toISOString(),
+    status: blocked > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : review > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceConfidenceSchema: params.confidenceEngineV32.schema,
+    analysisPrinciples: {
+      clientDescriptionFirst: true,
+      confidenceAffectsLoadDecision: true,
+      installerVerificationForCriticalLoads: true,
+      doesNotCertifyStructuralSafety: true,
+    },
+    loadTargets,
+    totals: {
+      targets: loadTargets.length,
+      safe: loadTargets.filter((target) => target.risk === "safe").length,
+      review,
+      critical,
+      blocked,
+      warnings: loadTargets.reduce((sum, target) => sum + target.warnings.length, 0),
+    },
+    nextActions: [
+      "Collegare peso reale dei mobili Product Package al Wall Load Analyzer.",
+      "Aggiungere campi Admin per peso stimato, punti fissaggio, fattore sicurezza e carico previsto.",
+      "Preparare V3.4: Fixing Recommendation Engine con ferramenta suggerita in base a parete, peso e rischio.",
+      "Usare i risultati V3.3 nei gate di schede tecniche PDF/DXF/CAD e preventivo installazione.",
+    ],
+  };
+}
+
+const wallIntelligenceLoadAnalyzerV33Report = useMemo(() => {
+  return buildWallIntelligenceLoadAnalyzerV33Report({
+    confidenceEngineV32: wallIntelligenceConfidenceEngineV32Report,
+    wallEngineV30: wallIntelligenceEngineV30Report,
+  });
+}, [wallIntelligenceConfidenceEngineV32Report, wallIntelligenceEngineV30Report]);
+
+function downloadWallIntelligenceLoadAnalyzerV33Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-load-analyzer-v3-3-${Date.now()}.json`, wallIntelligenceLoadAnalyzerV33Report);
+}
+
+
+type WallIntelligenceV34RecommendationStatus = "safe" | "warning" | "critical";
+type WallIntelligenceV34HardwareFamily =
+  | "nylon_plug"
+  | "molly_anchor"
+  | "structural_anchor"
+  | "load_distribution_bar"
+  | "wood_screw"
+  | "site_survey_required";
+
+type WallIntelligenceV34FixingRecommendation = {
+  id: string;
+  sourceLoadTargetId: string;
+  label: string;
+  category: WallIntelligenceV33LoadCategory;
+  wallType: WallIntelligenceV30WallType;
+  status: WallIntelligenceV34RecommendationStatus;
+  hardwareFamily: WallIntelligenceV34HardwareFamily;
+  suggestedHardware: string[];
+  fixingStrategy: string;
+  minimumFixingPoints: number;
+  recommendedFixingPoints: number;
+  loadPerFixingKg: number;
+  confidenceScore: number;
+  installerRequired: boolean;
+  reasons: string[];
+  warnings: string[];
+};
+
+type WallIntelligenceFixingRecommendationV34Report = {
+  schema: "bagastudio-wall-intelligence-fixing-recommendation-v3-4";
+  version: "3.4";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLoadAnalyzerSchema: WallIntelligenceLoadAnalyzerV33Report["schema"];
+  recommendationPrinciples: {
+    clientDescriptionFirst: boolean;
+    fixingDependsOnWallType: boolean;
+    lowConfidenceRequiresInstallerVerification: boolean;
+    recommendationIsPreliminary: boolean;
+  };
+  recommendations: WallIntelligenceV34FixingRecommendation[];
+  totals: {
+    recommendations: number;
+    safe: number;
+    warning: number;
+    critical: number;
+    installerRequired: number;
+    drywallWarnings: number;
+  };
+  nextActions: string[];
+};
+
+function buildWallIntelligenceFixingRecommendationV34Report(params: {
+  loadAnalyzerV33: WallIntelligenceLoadAnalyzerV33Report;
+  confidenceEngineV32: WallIntelligenceConfidenceEngineV32Report;
+}): WallIntelligenceFixingRecommendationV34Report {
+  const confidenceById = new Map<string, WallIntelligenceV32ConfidenceCard>();
+  params.confidenceEngineV32.confidenceCards.forEach((card) => {
+    confidenceById.set(card.id, card);
+  });
+
+  const getBaseRecommendation = (
+    wallType: WallIntelligenceV30WallType,
+    category: WallIntelligenceV33LoadCategory,
+    loadPerFixingKg: number
+  ): Pick<WallIntelligenceV34FixingRecommendation, "hardwareFamily" | "suggestedHardware" | "fixingStrategy"> => {
+    if (wallType === "unknown") {
+      return {
+        hardwareFamily: "site_survey_required",
+        suggestedHardware: ["Sopralluogo tecnico", "Verifica supporto reale", "Definizione ferramenta dopo identificazione parete"],
+        fixingStrategy: "Bloccare conferma fissaggi finché il cliente/installatore non descrive la parete o allega evidenze.",
+      };
+    }
+
+    if (wallType === "drywall") {
+      if (category === "mirror" && loadPerFixingKg <= 6) {
+        return {
+          hardwareFamily: "molly_anchor",
+          suggestedHardware: ["Tassello metallico Molly", "Fissaggi multipli", "Verifica presenza montanti"],
+          fixingStrategy: "Distribuire il carico su più punti e preferire sempre montante o rinforzo quando disponibile.",
+        };
+      }
+
+      return {
+        hardwareFamily: "load_distribution_bar",
+        suggestedHardware: ["Barra distribuzione carico", "Ancoraggio su montante", "Rinforzo interno cartongesso", "Verifica installatore"],
+        fixingStrategy: "Non affidare carichi importanti al solo cartongesso; cercare montanti o predisporre rinforzo strutturale.",
+      };
+    }
+
+    if (wallType === "concrete") {
+      return {
+        hardwareFamily: "structural_anchor",
+        suggestedHardware: ["Tassello meccanico per calcestruzzo", "Ancorante certificato", "Barra sospensione per pensili"],
+        fixingStrategy: "Usare fissaggi strutturali dimensionati in base al peso e distribuire il carico sui punti previsti.",
+      };
+    }
+
+    if (wallType === "wood") {
+      return {
+        hardwareFamily: "wood_screw",
+        suggestedHardware: ["Viti strutturali per legno", "Pre-foro controllato", "Rondelle o piastra di ripartizione"],
+        fixingStrategy: "Ancorare su elemento pieno/strutturale e verificare spessore reale del supporto.",
+      };
+    }
+
+    if (wallType === "technical") {
+      return {
+        hardwareFamily: "site_survey_required",
+        suggestedHardware: ["Verifica stratigrafia parete tecnica", "Fissaggio su struttura interna", "Piastra di ripartizione"],
+        fixingStrategy: "Trattare la parete tecnica come supporto da verificare: servono stratigrafia e punti strutturali.",
+      };
+    }
+
+    return {
+      hardwareFamily: "nylon_plug",
+      suggestedHardware: loadPerFixingKg > 12
+        ? ["Tassello nylon maggiorato", "Barra distribuzione carico", "Fissaggio multiplo"]
+        : ["Tassello nylon 8/10 mm", "Viti adeguate al supporto", "Fissaggi multipli"],
+      fixingStrategy: "Distribuire il carico sulla muratura e usare diametro/lunghezza tassello coerenti con peso e supporto.",
+    };
+  };
+
+  const recommendations = params.loadAnalyzerV33.loadTargets.map((target): WallIntelligenceV34FixingRecommendation => {
+    const confidenceCard = confidenceById.get(target.linkedWallCardId);
+    const wallType = confidenceCard?.wallType || "unknown";
+    const base = getBaseRecommendation(wallType, target.category, target.loadPerFixingKg);
+
+    const reasons: string[] = [];
+    const warnings = [...target.warnings];
+
+    reasons.push(`Parete: ${wallType}`);
+    reasons.push(`Carico per fissaggio: ${target.loadPerFixingKg} kg`);
+    reasons.push(`Confidenza dati parete: ${target.confidenceScore}%`);
+
+    if (target.risk === "critical") {
+      warnings.push("Rischio carico critico da Wall Load Analyzer V3.3.");
+    }
+
+    if (target.confidenceScore <= 40) {
+      warnings.push("Confidenza bassa: raccomandazione solo preliminare.");
+    }
+
+    if (wallType === "drywall") {
+      warnings.push("Cartongesso: verificare sempre montante/rinforzo prima di carichi sospesi.");
+    }
+
+    if (target.category === "suspended_cabinet") {
+      reasons.push("Pensile/mobile sospeso: richiede distribuzione carico e fissaggi ridondanti.");
+    }
+
+    if (target.category === "shelf") {
+      reasons.push("Mensola caricata: controllare momento e profondità, non solo peso verticale.");
+    }
+
+    const minimumFixingPoints = Math.max(2, target.fixingPoints);
+    const recommendedFixingPoints = target.risk === "critical" || wallType === "drywall"
+      ? Math.max(minimumFixingPoints + 2, 4)
+      : target.risk === "review"
+        ? Math.max(minimumFixingPoints + 1, 3)
+        : minimumFixingPoints;
+
+    const installerRequired =
+      target.risk === "critical" ||
+      target.confidenceScore <= 70 ||
+      wallType === "unknown" ||
+      wallType === "technical" ||
+      (wallType === "drywall" && target.category !== "mirror");
+
+    const status: WallIntelligenceV34RecommendationStatus =
+      target.risk === "critical" || wallType === "unknown"
+        ? "critical"
+        : installerRequired || target.risk === "review" || warnings.length > 0
+          ? "warning"
+          : "safe";
+
+    return {
+      id: `v3-4-fixing-${target.id}`,
+      sourceLoadTargetId: target.id,
+      label: target.label,
+      category: target.category,
+      wallType,
+      status,
+      hardwareFamily: base.hardwareFamily,
+      suggestedHardware: base.suggestedHardware,
+      fixingStrategy: base.fixingStrategy,
+      minimumFixingPoints,
+      recommendedFixingPoints,
+      loadPerFixingKg: target.loadPerFixingKg,
+      confidenceScore: target.confidenceScore,
+      installerRequired,
+      reasons,
+      warnings: Array.from(new Set(warnings)),
+    };
+  });
+
+  const critical = recommendations.filter((item) => item.status === "critical").length;
+  const warning = recommendations.filter((item) => item.status === "warning").length;
+
+  return {
+    schema: "bagastudio-wall-intelligence-fixing-recommendation-v3-4",
+    version: "3.4",
+    generatedAt: new Date().toISOString(),
+    status: critical > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : warning > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceLoadAnalyzerSchema: params.loadAnalyzerV33.schema,
+    recommendationPrinciples: {
+      clientDescriptionFirst: true,
+      fixingDependsOnWallType: true,
+      lowConfidenceRequiresInstallerVerification: true,
+      recommendationIsPreliminary: true,
+    },
+    recommendations,
+    totals: {
+      recommendations: recommendations.length,
+      safe: recommendations.filter((item) => item.status === "safe").length,
+      warning,
+      critical,
+      installerRequired: recommendations.filter((item) => item.installerRequired).length,
+      drywallWarnings: recommendations.filter((item) => item.wallType === "drywall").length,
+    },
+    nextActions: [
+      "Collegare il Fixing Recommendation Engine alle schede tecniche parete PDF/DXF/CAD.",
+      "Aggiungere in Admin una libreria ferramenta fissaggi editabile e JSON-driven.",
+      "Preparare V3.5: Mirror & Shelf Validator con regole specifiche per specchi, mensole e pensili.",
+      "In futuro aumentare la confidenza tramite foto, DWG/DXF o nota installatore senza rifare il profilo parete.",
+    ],
+  };
+}
+
+const wallIntelligenceFixingRecommendationV34Report = useMemo(() => {
+  return buildWallIntelligenceFixingRecommendationV34Report({
+    loadAnalyzerV33: wallIntelligenceLoadAnalyzerV33Report,
+    confidenceEngineV32: wallIntelligenceConfidenceEngineV32Report,
+  });
+}, [wallIntelligenceLoadAnalyzerV33Report, wallIntelligenceConfidenceEngineV32Report]);
+
+function downloadWallIntelligenceFixingRecommendationV34Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-fixing-recommendation-v3-4-${Date.now()}.json`, wallIntelligenceFixingRecommendationV34Report);
+}
+
+
+type WallIntelligenceV35ValidationStatus = "ready" | "review" | "blocked";
+type WallIntelligenceV35MountingClass = "mirror" | "shelf" | "suspended_cabinet" | "other";
+
+type WallIntelligenceV35ValidatedItem = {
+  id: string;
+  sourceRecommendationId: string;
+  label: string;
+  mountingClass: WallIntelligenceV35MountingClass;
+  wallType: WallIntelligenceV30WallType;
+  status: WallIntelligenceV35ValidationStatus;
+  minimumSpacingCm: number | null;
+  recommendedFixingPoints: number;
+  loadPerFixingKg: number;
+  confidenceScore: number;
+  checks: Array<{
+    code: string;
+    label: string;
+    passed: boolean;
+    severity: "info" | "warning" | "error";
+    message: string;
+  }>;
+  installationNotes: string[];
+};
+
+type WallIntelligenceMirrorShelfValidatorV35Report = {
+  schema: "bagastudio-wall-intelligence-mirror-shelf-validator-v3-5";
+  version: "3.5";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceFixingRecommendationSchema: WallIntelligenceFixingRecommendationV34Report["schema"];
+  validatorPrinciples: {
+    mirrorsFollowStationSpacing: boolean;
+    shelvesRequireLoadAndDepthReview: boolean;
+    suspendedCabinetsRequireRedundantFixings: boolean;
+    clientWallDescriptionStillPrimary: boolean;
+  };
+  items: WallIntelligenceV35ValidatedItem[];
+  totals: {
+    items: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    mirrorItems: number;
+    shelfItems: number;
+    suspendedCabinets: number;
+    failedChecks: number;
+  };
+  nextActions: string[];
+};
+
+function resolveWallIntelligenceV35MountingClass(category: WallIntelligenceV33LoadCategory): WallIntelligenceV35MountingClass {
+  if (category === "mirror") return "mirror";
+  if (category === "shelf") return "shelf";
+  if (category === "suspended_cabinet") return "suspended_cabinet";
+  return "other";
+}
+
+function buildWallIntelligenceMirrorShelfValidatorV35Report(params: {
+  fixingRecommendationV34: WallIntelligenceFixingRecommendationV34Report;
+  spacingV25: LayoutRoomIntelligenceV25Report;
+}): WallIntelligenceMirrorShelfValidatorV35Report {
+  const hasBarberSpacingErrors = params.spacingV25.stationSpacingChecks.some((item) => item.stationType === "barber" && !item.passed && item.severity === "critical");
+  const hasBeautySpacingErrors = params.spacingV25.stationSpacingChecks.some((item) => item.stationType === "esthetician" && !item.passed && item.severity === "critical");
+
+  const items = params.fixingRecommendationV34.recommendations
+    .filter((recommendation) => ["mirror", "shelf", "suspended_cabinet"].includes(recommendation.category))
+    .map((recommendation): WallIntelligenceV35ValidatedItem => {
+      const mountingClass = resolveWallIntelligenceV35MountingClass(recommendation.category);
+      const checks: WallIntelligenceV35ValidatedItem["checks"] = [];
+      const installationNotes: string[] = [];
+
+      if (mountingClass === "mirror") {
+        const spacingWarning = hasBarberSpacingErrors || hasBeautySpacingErrors;
+        checks.push({
+          code: "MIRROR_STATION_SPACING_LINK",
+          label: "Interasse specchio/postazione",
+          passed: !spacingWarning,
+          severity: spacingWarning ? "error" : "info",
+          message: spacingWarning
+            ? "Almeno uno specchio/postazione non rispetta gli interassi minimi: barber 150 cm, estetista 120 cm."
+            : "Specchi collegati alle regole interasse postazioni: barber 150 cm, estetista 120 cm.",
+        });
+        checks.push({
+          code: "MIRROR_FIXING_REDUNDANCY",
+          label: "Fissaggi specchio",
+          passed: recommendation.recommendedFixingPoints >= 2,
+          severity: recommendation.recommendedFixingPoints >= 2 ? "info" : "error",
+          message: `Specchio con ${recommendation.recommendedFixingPoints} fissaggi consigliati.`,
+        });
+        installationNotes.push("Allineare specchio alla postazione collegata e mantenere interasse minimo della tipologia servizio.");
+      }
+
+      if (mountingClass === "shelf") {
+        const shelfLoadOk = recommendation.loadPerFixingKg <= 8 || recommendation.wallType === "concrete" || recommendation.wallType === "masonry";
+        checks.push({
+          code: "SHELF_LOAD_PER_FIXING",
+          label: "Carico mensola per fissaggio",
+          passed: shelfLoadOk,
+          severity: shelfLoadOk ? "info" : "warning",
+          message: shelfLoadOk
+            ? "Carico mensola compatibile con controllo preliminare V3.5."
+            : "Mensola con carico/fissaggio da verificare: valutare staffe rinforzate o barra/traversa.",
+        });
+        checks.push({
+          code: "SHELF_WALL_TYPE_COMPATIBILITY",
+          label: "Supporto parete mensola",
+          passed: recommendation.wallType !== "unknown" && recommendation.wallType !== "technical",
+          severity: recommendation.wallType === "unknown" ? "error" : "warning",
+          message: recommendation.wallType === "unknown"
+            ? "Parete sconosciuta: non validare mensole sospese senza descrizione o sopralluogo."
+            : "Parete identificata ma da verificare rispetto a profondità, carico e staffe.",
+        });
+        installationNotes.push("Per mensole profonde o caricate controllare momento, profondità, staffe e supporto, non solo peso verticale.");
+      }
+
+      if (mountingClass === "suspended_cabinet") {
+        checks.push({
+          code: "CABINET_REDUNDANT_FIXING",
+          label: "Fissaggi ridondanti pensile",
+          passed: recommendation.recommendedFixingPoints >= 4,
+          severity: recommendation.recommendedFixingPoints >= 4 ? "info" : "error",
+          message: `Pensile/mobile sospeso con ${recommendation.recommendedFixingPoints} fissaggi consigliati: minimo operativo V3.5 = 4.`,
+        });
+        checks.push({
+          code: "CABINET_WALL_SUPPORT",
+          label: "Supporto parete pensile",
+          passed: ["masonry", "concrete", "wood"].includes(recommendation.wallType),
+          severity: ["unknown", "drywall", "technical"].includes(recommendation.wallType) ? "error" : "warning",
+          message: ["unknown", "drywall", "technical"].includes(recommendation.wallType)
+            ? "Pensile su parete non strutturale/sconosciuta: richiesta verifica installatore o rinforzo."
+            : "Parete preliminarmente compatibile: dimensionare barra/staffe e verificare carico reale.",
+        });
+        installationNotes.push("Usare barra di sospensione/staffe rinforzate e distribuire il carico su più punti.");
+      }
+
+      checks.push({
+        code: "CONFIDENCE_MINIMUM",
+        label: "Confidenza parete",
+        passed: recommendation.confidenceScore >= 70,
+        severity: recommendation.confidenceScore >= 70 ? "info" : recommendation.confidenceScore >= 41 ? "warning" : "error",
+        message: `Confidence score ${recommendation.confidenceScore}%. ${recommendation.confidenceScore < 70 ? "Richiesta verifica prima della validazione tecnica." : "Dati parete sufficienti per validazione preliminare."}`,
+      });
+
+      checks.push({
+        code: "FIXING_ENGINE_STATUS",
+        label: "Esito fissaggio V3.4",
+        passed: recommendation.status !== "critical",
+        severity: recommendation.status === "critical" ? "error" : recommendation.status === "warning" ? "warning" : "info",
+        message: `Fixing Recommendation V3.4: ${recommendation.status}.`,
+      });
+
+      const hasErrors = checks.some((check) => check.severity === "error" && !check.passed);
+      const hasWarnings = checks.some((check) => check.severity === "warning" && !check.passed) || recommendation.installerRequired;
+      const status: WallIntelligenceV35ValidationStatus = hasErrors ? "blocked" : hasWarnings ? "review" : "ready";
+
+      return {
+        id: `v3-5-validator-${recommendation.id}`,
+        sourceRecommendationId: recommendation.id,
+        label: recommendation.label,
+        mountingClass,
+        wallType: recommendation.wallType,
+        status,
+        minimumSpacingCm: mountingClass === "mirror" ? (hasBarberSpacingErrors ? 150 : hasBeautySpacingErrors ? 120 : null) : null,
+        recommendedFixingPoints: recommendation.recommendedFixingPoints,
+        loadPerFixingKg: recommendation.loadPerFixingKg,
+        confidenceScore: recommendation.confidenceScore,
+        checks,
+        installationNotes: Array.from(new Set([
+          ...installationNotes,
+          ...(recommendation.installerRequired ? ["Verifica installatore richiesta prima di confermare posa/fissaggi."] : []),
+        ])),
+      };
+    });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+
+  return {
+    schema: "bagastudio-wall-intelligence-mirror-shelf-validator-v3-5",
+    version: "3.5",
+    generatedAt: new Date().toISOString(),
+    status: blocked > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : review > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceFixingRecommendationSchema: params.fixingRecommendationV34.schema,
+    validatorPrinciples: {
+      mirrorsFollowStationSpacing: true,
+      shelvesRequireLoadAndDepthReview: true,
+      suspendedCabinetsRequireRedundantFixings: true,
+      clientWallDescriptionStillPrimary: true,
+    },
+    items,
+    totals: {
+      items: items.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      mirrorItems: items.filter((item) => item.mountingClass === "mirror").length,
+      shelfItems: items.filter((item) => item.mountingClass === "shelf").length,
+      suspendedCabinets: items.filter((item) => item.mountingClass === "suspended_cabinet").length,
+      failedChecks: items.reduce((sum, item) => sum + item.checks.filter((check) => !check.passed).length, 0),
+    },
+    nextActions: [
+      "Collegare V3.5 alle schede tecniche parete per mostrare specchi, mensole, pensili e alert fissaggio.",
+      "Aggiungere nel Product Package campi peso reale, profondità mensola, larghezza specchio e punti fissaggio reali.",
+      "Preparare V3.6: Technical Wall Report con riepilogo installatore e output PDF/DXF/CAD.",
+      "In futuro far confermare o correggere questi controlli tramite foto/DWG/DXF e note installatore.",
+    ],
+  };
+}
+
+const wallIntelligenceMirrorShelfValidatorV35Report = useMemo(() => {
+  return buildWallIntelligenceMirrorShelfValidatorV35Report({
+    fixingRecommendationV34: wallIntelligenceFixingRecommendationV34Report,
+    spacingV25: layoutRoomIntelligenceV25Report,
+  });
+}, [wallIntelligenceFixingRecommendationV34Report, layoutRoomIntelligenceV25Report]);
+
+function downloadWallIntelligenceMirrorShelfValidatorV35Report() {
+  downloadJsonFile(`bagastudio-wall-intelligence-mirror-shelf-validator-v3-5-${Date.now()}.json`, wallIntelligenceMirrorShelfValidatorV35Report);
+}
+
+type WallTechnicalReportV36SectionStatus = "ready" | "review" | "blocked";
+
+type WallTechnicalReportV36Section = {
+  id: string;
+  title: string;
+  status: WallTechnicalReportV36SectionStatus;
+  summary: string;
+  exportLayer: "pdf" | "dxf" | "cad" | "installer";
+  items: string[];
+};
+
+type WallTechnicalReportV36Report = {
+  schema: "bagastudio-wall-technical-report-v3-6";
+  version: "3.6";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceReports: {
+    guidedWallDescription: string;
+    confidenceEngine: string;
+    loadAnalyzer: string;
+    fixingRecommendation: string;
+    mirrorShelfValidator: string;
+  };
+  reportPrinciples: {
+    clientDescriptionFirst: boolean;
+    installerReadable: boolean;
+    pdfDxfCadReady: boolean;
+    notStructuralCertification: boolean;
+  };
+  sections: WallTechnicalReportV36Section[];
+  totals: {
+    sections: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    installerNotes: number;
+    exportLayers: number;
+  };
+  installerChecklist: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function resolveWallTechnicalReportV36Status(sections: WallTechnicalReportV36Section[]): LayoutRoomIntelligenceV2Status {
+  if (sections.some((section) => section.status === "blocked")) return "LAYOUT_V2_BLOCKED";
+  if (sections.some((section) => section.status === "review")) return "LAYOUT_V2_REVIEW";
+  return "LAYOUT_V2_READY";
+}
+
+function buildWallTechnicalReportV36Report(params: {
+  wallEngineV30: WallIntelligenceEngineV30Report;
+  confidenceEngineV32: WallIntelligenceConfidenceEngineV32Report;
+  loadAnalyzerV33: WallIntelligenceLoadAnalyzerV33Report;
+  fixingRecommendationV34: WallIntelligenceFixingRecommendationV34Report;
+  mirrorShelfValidatorV35: WallIntelligenceMirrorShelfValidatorV35Report;
+}): WallTechnicalReportV36Report {
+  const confidenceReview = params.confidenceEngineV32.totals.low + params.confidenceEngineV32.totals.medium;
+  const loadBlocked = params.loadAnalyzerV33.totals.blocked;
+  const fixingCritical = params.fixingRecommendationV34.totals.critical;
+  const validatorBlocked = params.mirrorShelfValidatorV35.totals.blocked;
+
+  const sections: WallTechnicalReportV36Section[] = [
+    {
+      id: "wall-description",
+      title: "Descrizione parete cliente",
+      status: params.wallEngineV30.totals.unknownWalls > 0 ? "review" : "ready",
+      summary: "Riepilogo tipologia parete, spessore, note, vincoli e fonte descrittiva primaria.",
+      exportLayer: "pdf",
+      items: [
+        `Pareti analizzate: ${params.wallEngineV30.totals.walls}`,
+        `Pareti sconosciute: ${params.wallEngineV30.totals.unknownWalls}`,
+        "Foto/DWG restano evidenze future di conferma, non fonte primaria V3.",
+      ],
+    },
+    {
+      id: "confidence",
+      title: "Affidabilità informazioni",
+      status: confidenceReview > 0 ? "review" : "ready",
+      summary: "Valuta quanto sono affidabili le informazioni inserite dal cliente prima di generare schede tecniche.",
+      exportLayer: "installer",
+      items: [
+        `Confidence alta: ${params.confidenceEngineV32.totals.high}`,
+        `Confidence media/bassa: ${confidenceReview}`,
+        `Verifiche richieste: ${params.confidenceEngineV32.totals.needsVerification}`,
+      ],
+    },
+    {
+      id: "load-analysis",
+      title: "Carichi parete",
+      status: loadBlocked > 0 ? "blocked" : params.loadAnalyzerV33.totals.review > 0 ? "review" : "ready",
+      summary: "Controlla specchi, mensole e pensili rispetto a peso stimato, punti fissaggio e capacità parete.",
+      exportLayer: "pdf",
+      items: [
+        `Target carico: ${params.loadAnalyzerV33.totals.targets}`,
+        `Da revisionare: ${params.loadAnalyzerV33.totals.review}`,
+        `Critici/bloccanti: ${params.loadAnalyzerV33.totals.critical}/${params.loadAnalyzerV33.totals.blocked}`,
+      ],
+    },
+    {
+      id: "fixing-recommendations",
+      title: "Ferramenta e fissaggi suggeriti",
+      status: fixingCritical > 0 ? "blocked" : params.fixingRecommendationV34.totals.warning > 0 ? "review" : "ready",
+      summary: "Raccoglie ferramenta consigliata, numero fissaggi, strategia installazione e motivazioni tecniche.",
+      exportLayer: "dxf",
+      items: [
+        `Raccomandazioni: ${params.fixingRecommendationV34.totals.recommendations}`,
+        `Installatore richiesto: ${params.fixingRecommendationV34.totals.installerRequired}`,
+        `Warning cartongesso: ${params.fixingRecommendationV34.totals.drywallWarnings}`,
+      ],
+    },
+    {
+      id: "mirror-shelf-validator",
+      title: "Specchi, mensole e pensili",
+      status: validatorBlocked > 0 ? "blocked" : params.mirrorShelfValidatorV35.totals.review > 0 ? "review" : "ready",
+      summary: "Valida interassi specchi/postazioni, mensole, pensili sospesi, profondità, carichi e fissaggi.",
+      exportLayer: "cad",
+      items: [
+        `Elementi: ${params.mirrorShelfValidatorV35.totals.items}`,
+        `Specchi: ${params.mirrorShelfValidatorV35.totals.mirrorItems}`,
+        `Mensole/Pensili: ${params.mirrorShelfValidatorV35.totals.shelfItems}/${params.mirrorShelfValidatorV35.totals.suspendedCabinets}`,
+        `Check KO: ${params.mirrorShelfValidatorV35.totals.failedChecks}`,
+      ],
+    },
+  ];
+
+  const status = resolveWallTechnicalReportV36Status(sections);
+  const installerChecklist = [
+    "Confermare tipo parete prima del montaggio definitivo.",
+    "Verificare spessore reale e presenza montanti o rinforzi su cartongesso.",
+    "Controllare peso reale di specchi, mensole e pensili rispetto ai dati Product Package.",
+    "Confermare interasse specchi/postazioni: barber 150 cm, estetista 120 cm.",
+    "Verificare fissaggi suggeriti e aggiornare scheda tecnica se il supporto reale cambia.",
+  ];
+
+  return {
+    schema: "bagastudio-wall-technical-report-v3-6",
+    version: "3.6",
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceReports: {
+      guidedWallDescription: params.wallEngineV30.schema,
+      confidenceEngine: params.confidenceEngineV32.schema,
+      loadAnalyzer: params.loadAnalyzerV33.schema,
+      fixingRecommendation: params.fixingRecommendationV34.schema,
+      mirrorShelfValidator: params.mirrorShelfValidatorV35.schema,
+    },
+    reportPrinciples: {
+      clientDescriptionFirst: true,
+      installerReadable: true,
+      pdfDxfCadReady: true,
+      notStructuralCertification: true,
+    },
+    sections,
+    totals: {
+      sections: sections.length,
+      ready: sections.filter((section) => section.status === "ready").length,
+      review: sections.filter((section) => section.status === "review").length,
+      blocked: sections.filter((section) => section.status === "blocked").length,
+      installerNotes: installerChecklist.length,
+      exportLayers: new Set(sections.map((section) => section.exportLayer)).size,
+    },
+    installerChecklist,
+    exportTargets: ["PDF scheda tecnica parete", "DXF punti fissaggio", "CAD prospetto parete", "Checklist installatore"],
+    nextActions: [
+      "Generare layout stampabile PDF con sezioni parete, alert, fissaggi e checklist.",
+      "Collegare quote reali e layer DXF/CAD ai punti fissaggio del Technical Wall Report.",
+      "Preparare V3.7 Installation Risk Engine con rischio installazione e sopralluogo consigliato.",
+      "Far aumentare/diminuire confidence quando arrivano foto, DWG, DXF o note installatore.",
+    ],
+  };
+}
+
+const wallTechnicalReportV36Report = useMemo(() => {
+  return buildWallTechnicalReportV36Report({
+    wallEngineV30: wallIntelligenceEngineV30Report,
+    confidenceEngineV32: wallIntelligenceConfidenceEngineV32Report,
+    loadAnalyzerV33: wallIntelligenceLoadAnalyzerV33Report,
+    fixingRecommendationV34: wallIntelligenceFixingRecommendationV34Report,
+    mirrorShelfValidatorV35: wallIntelligenceMirrorShelfValidatorV35Report,
+  });
+}, [
+  wallIntelligenceEngineV30Report,
+  wallIntelligenceConfidenceEngineV32Report,
+  wallIntelligenceLoadAnalyzerV33Report,
+  wallIntelligenceFixingRecommendationV34Report,
+  wallIntelligenceMirrorShelfValidatorV35Report,
+]);
+
+function downloadWallTechnicalReportV36Report() {
+  downloadJsonFile(`bagastudio-wall-technical-report-v3-6-${Date.now()}.json`, wallTechnicalReportV36Report);
+}
+
+
+type InstallationRiskV37Level = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+type InstallationRiskV37Status = "installable" | "review" | "blocked";
+
+type InstallationRiskV37Factor = {
+  id: string;
+  label: string;
+  impact: number;
+  level: InstallationRiskV37Level;
+  reason: string;
+  recommendedAction: string;
+};
+
+type InstallationRiskV37Report = {
+  schema: "bagastudio-installation-risk-engine-v3-7";
+  version: "3.7";
+  generatedAt: string;
+  status: InstallationRiskV37Status;
+  installRiskLevel: InstallationRiskV37Level;
+  installBlocked: boolean;
+  installerRequired: boolean;
+  siteSurveyRequired: boolean;
+  riskScore: number;
+  sourceReports: {
+    confidenceEngine: string;
+    loadAnalyzer: string;
+    fixingRecommendation: string;
+    mirrorShelfValidator: string;
+    technicalWallReport: string;
+  };
+  totals: {
+    factors: number;
+    low: number;
+    medium: number;
+    high: number;
+    critical: number;
+    blockedSections: number;
+    reviewSections: number;
+  };
+  factors: InstallationRiskV37Factor[];
+  riskReasons: string[];
+  recommendedActions: string[];
+  installerChecklist: string[];
+  nextActions: string[];
+};
+
+function resolveInstallationRiskV37Level(score: number, hasCritical: boolean, hasHigh: boolean): InstallationRiskV37Level {
+  if (hasCritical || score >= 85) return "CRITICAL";
+  if (hasHigh || score >= 60) return "HIGH";
+  if (score >= 30) return "MEDIUM";
+  return "LOW";
+}
+
+function buildInstallationRiskEngineV37Report(params: {
+  confidenceEngineV32: WallIntelligenceConfidenceEngineV32Report;
+  loadAnalyzerV33: WallIntelligenceLoadAnalyzerV33Report;
+  fixingRecommendationV34: WallIntelligenceFixingRecommendationV34Report;
+  mirrorShelfValidatorV35: WallIntelligenceMirrorShelfValidatorV35Report;
+  technicalWallReportV36: WallTechnicalReportV36Report;
+}): InstallationRiskV37Report {
+  const factors: InstallationRiskV37Factor[] = [];
+
+  const pushFactor = (factor: InstallationRiskV37Factor) => {
+    if (factors.some((item) => item.id === factor.id)) return;
+    factors.push(factor);
+  };
+
+  if (params.confidenceEngineV32.totals.low > 0) {
+    pushFactor({
+      id: "low-confidence",
+      label: "Affidabilità parete bassa",
+      impact: 28,
+      level: "HIGH",
+      reason: `Confidence bassa su ${params.confidenceEngineV32.totals.low} parete/i: dati cliente insufficienti per montaggio sicuro.`,
+      recommendedAction: "Richiedere verifica installatore, foto o rilievo prima di confermare fissaggi e carichi.",
+    });
+  }
+
+  if (params.confidenceEngineV32.totals.medium > 0) {
+    pushFactor({
+      id: "medium-confidence",
+      label: "Affidabilità parete media",
+      impact: 14,
+      level: "MEDIUM",
+      reason: `Confidence media su ${params.confidenceEngineV32.totals.medium} parete/i: dati utilizzabili ma da confermare.`,
+      recommendedAction: "Segnare la parete come review e richiedere conferma su spessore, supporto e note installatore.",
+    });
+  }
+
+  if (params.loadAnalyzerV33.totals.blocked > 0 || params.loadAnalyzerV33.totals.critical > 0) {
+    pushFactor({
+      id: "critical-load",
+      label: "Carichi critici",
+      impact: 34,
+      level: "CRITICAL",
+      reason: `Load Analyzer V3.3 segnala ${params.loadAnalyzerV33.totals.critical} carichi critici e ${params.loadAnalyzerV33.totals.blocked} blocchi.`,
+      recommendedAction: "Bloccare installazione finché non vengono confermati parete, fissaggi, punti strutturali e peso reale.",
+    });
+  }
+
+  if (params.loadAnalyzerV33.totals.review > 0) {
+    pushFactor({
+      id: "load-review",
+      label: "Carichi da revisionare",
+      impact: 16,
+      level: "MEDIUM",
+      reason: `Load Analyzer V3.3 richiede review su ${params.loadAnalyzerV33.totals.review} elemento/i.`,
+      recommendedAction: "Controllare punti fissaggio e distribuzione carico prima della scheda tecnica definitiva.",
+    });
+  }
+
+  if (params.fixingRecommendationV34.totals.critical > 0) {
+    pushFactor({
+      id: "fixing-critical",
+      label: "Fissaggi critici",
+      impact: 30,
+      level: "CRITICAL",
+      reason: `Fixing Recommendation V3.4 segnala ${params.fixingRecommendationV34.totals.critical} raccomandazioni critiche.`,
+      recommendedAction: "Richiedere sopralluogo o alternativa di fissaggio prima di autorizzare montaggio.",
+    });
+  }
+
+  if (params.fixingRecommendationV34.totals.installerRequired > 0) {
+    pushFactor({
+      id: "installer-required",
+      label: "Installatore richiesto",
+      impact: 18,
+      level: "HIGH",
+      reason: `Sono presenti ${params.fixingRecommendationV34.totals.installerRequired} raccomandazioni che richiedono installatore.`,
+      recommendedAction: "Inserire installatore qualificato nel workflow e nel preventivo installazione.",
+    });
+  }
+
+  if (params.mirrorShelfValidatorV35.totals.blocked > 0 || params.mirrorShelfValidatorV35.totals.failedChecks > 0) {
+    pushFactor({
+      id: "mirror-shelf-blocked",
+      label: "Specchi/mensole/pensili non conformi",
+      impact: 26,
+      level: params.mirrorShelfValidatorV35.totals.blocked > 0 ? "CRITICAL" : "HIGH",
+      reason: `Mirror & Shelf Validator V3.5 segnala ${params.mirrorShelfValidatorV35.totals.failedChecks} check KO e ${params.mirrorShelfValidatorV35.totals.blocked} blocchi.`,
+      recommendedAction: "Correggere interassi, profondità, punti fissaggio o peso prima di generare PDF/DXF definitivo.",
+    });
+  }
+
+  if (params.technicalWallReportV36.totals.blocked > 0) {
+    pushFactor({
+      id: "technical-report-blocked",
+      label: "Report tecnico bloccante",
+      impact: 24,
+      level: "CRITICAL",
+      reason: `Technical Wall Report V3.6 contiene ${params.technicalWallReportV36.totals.blocked} sezione/i bloccante/i.`,
+      recommendedAction: "Non emettere scheda tecnica installativa fino alla chiusura dei blocchi.",
+    });
+  }
+
+  if (params.technicalWallReportV36.totals.review > 0) {
+    pushFactor({
+      id: "technical-report-review",
+      label: "Report tecnico in review",
+      impact: 12,
+      level: "MEDIUM",
+      reason: `Technical Wall Report V3.6 contiene ${params.technicalWallReportV36.totals.review} sezione/i da revisionare.`,
+      recommendedAction: "Mantenere scheda tecnica in bozza finché i dati parete non sono confermati.",
+    });
+  }
+
+  if (factors.length === 0) {
+    pushFactor({
+      id: "low-risk-baseline",
+      label: "Installazione preliminarmente compatibile",
+      impact: 8,
+      level: "LOW",
+      reason: "Nessun blocco rilevato dai moduli V3.2-V3.6.",
+      recommendedAction: "Procedere con scheda tecnica, mantenendo verifica installatore standard prima del montaggio.",
+    });
+  }
+
+  const riskScore = Math.min(100, factors.reduce((sum, factor) => sum + factor.impact, 0));
+  const hasCritical = factors.some((factor) => factor.level === "CRITICAL");
+  const hasHigh = factors.some((factor) => factor.level === "HIGH");
+  const installRiskLevel = resolveInstallationRiskV37Level(riskScore, hasCritical, hasHigh);
+  const installBlocked = installRiskLevel === "CRITICAL" || params.technicalWallReportV36.totals.blocked > 0;
+  const installerRequired = installBlocked || installRiskLevel === "HIGH" || params.fixingRecommendationV34.totals.installerRequired > 0;
+  const siteSurveyRequired = installBlocked || params.confidenceEngineV32.totals.low > 0 || params.loadAnalyzerV33.totals.blocked > 0;
+
+  const status: InstallationRiskV37Status = installBlocked
+    ? "blocked"
+    : installRiskLevel === "HIGH" || installRiskLevel === "MEDIUM"
+      ? "review"
+      : "installable";
+
+  const recommendedActions = Array.from(new Set(factors.map((factor) => factor.recommendedAction)));
+
+  return {
+    schema: "bagastudio-installation-risk-engine-v3-7",
+    version: "3.7",
+    generatedAt: new Date().toISOString(),
+    status,
+    installRiskLevel,
+    installBlocked,
+    installerRequired,
+    siteSurveyRequired,
+    riskScore,
+    sourceReports: {
+      confidenceEngine: params.confidenceEngineV32.schema,
+      loadAnalyzer: params.loadAnalyzerV33.schema,
+      fixingRecommendation: params.fixingRecommendationV34.schema,
+      mirrorShelfValidator: params.mirrorShelfValidatorV35.schema,
+      technicalWallReport: params.technicalWallReportV36.schema,
+    },
+    totals: {
+      factors: factors.length,
+      low: factors.filter((factor) => factor.level === "LOW").length,
+      medium: factors.filter((factor) => factor.level === "MEDIUM").length,
+      high: factors.filter((factor) => factor.level === "HIGH").length,
+      critical: factors.filter((factor) => factor.level === "CRITICAL").length,
+      blockedSections: params.technicalWallReportV36.totals.blocked,
+      reviewSections: params.technicalWallReportV36.totals.review,
+    },
+    factors,
+    riskReasons: factors.map((factor) => factor.reason),
+    recommendedActions,
+    installerChecklist: [
+      "Verificare supporto reale parete prima di fissare specchi, mensole o pensili.",
+      "Confermare carichi effettivi e numero punti fissaggio prima dell'installazione.",
+      "Se la parete è cartongesso, cercare montanti/rinforzi o usare barra distribuzione carico.",
+      "Se confidence è bassa, eseguire sopralluogo o richiedere foto/DWG/DXF integrativi.",
+      "Bloccare montaggio se Installation Risk Engine V3.7 restituisce CRITICAL.",
+    ],
+    nextActions: [
+      "Preparare V3.8 Installer Checklist Engine con checklist operativa stampabile.",
+      "Collegare rischio installazione al preventivo e ai costi sopralluogo/montaggio.",
+      "Far alimentare V3.7 dalle evidenze future foto, DWG, DXF e note installatore.",
+      "Integrare installRiskLevel nelle schede tecniche PDF/DXF/CAD.",
+    ],
+  };
+}
+
+const installationRiskEngineV37Report = useMemo(() => {
+  return buildInstallationRiskEngineV37Report({
+    confidenceEngineV32: wallIntelligenceConfidenceEngineV32Report,
+    loadAnalyzerV33: wallIntelligenceLoadAnalyzerV33Report,
+    fixingRecommendationV34: wallIntelligenceFixingRecommendationV34Report,
+    mirrorShelfValidatorV35: wallIntelligenceMirrorShelfValidatorV35Report,
+    technicalWallReportV36: wallTechnicalReportV36Report,
+  });
+}, [
+  wallIntelligenceConfidenceEngineV32Report,
+  wallIntelligenceLoadAnalyzerV33Report,
+  wallIntelligenceFixingRecommendationV34Report,
+  wallIntelligenceMirrorShelfValidatorV35Report,
+  wallTechnicalReportV36Report,
+]);
+
+function downloadInstallationRiskEngineV37Report() {
+  downloadJsonFile(`bagastudio-installation-risk-engine-v3-7-${Date.now()}.json`, installationRiskEngineV37Report);
+}
+
+
+type InstallerChecklistV38Priority = "mandatory" | "recommended" | "optional";
+type InstallerChecklistV38Status = "ready" | "review" | "blocked";
+
+type InstallerChecklistV38Item = {
+  id: string;
+  phase: "pre_installation" | "wall_verification" | "fixing" | "mounting" | "handover";
+  label: string;
+  priority: InstallerChecklistV38Priority;
+  status: InstallerChecklistV38Status;
+  reason: string;
+  requiredBy: string[];
+  evidenceRequired: boolean;
+  outputTarget: "PDF" | "DXF" | "CAD" | "INSTALLER";
+};
+
+type InstallerChecklistV38Report = {
+  schema: "bagastudio-installer-checklist-engine-v3-8";
+  version: "3.8";
+  generatedAt: string;
+  checklistStatus: "INSTALL_READY" | "INSTALL_REVIEW_REQUIRED" | "INSTALL_BLOCKED";
+  sourceRiskLevel: InstallationRiskV37Level;
+  sourceRiskScore: number;
+  installBlocked: boolean;
+  installerRequired: boolean;
+  siteSurveyRequired: boolean;
+  totals: {
+    items: number;
+    mandatory: number;
+    recommended: number;
+    optional: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    evidenceRequired: number;
+  };
+  phases: Record<string, number>;
+  items: InstallerChecklistV38Item[];
+  printableSections: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function buildInstallerChecklistEngineV38Report(params: {
+  installationRiskV37: InstallationRiskV37Report;
+  technicalWallReportV36: WallTechnicalReportV36Report;
+}): InstallerChecklistV38Report {
+  const items: InstallerChecklistV38Item[] = [];
+
+  const pushItem = (item: InstallerChecklistV38Item) => {
+    if (items.some((existingItem) => existingItem.id === item.id)) return;
+    items.push(item);
+  };
+
+  pushItem({
+    id: "verify-wall-profile",
+    phase: "pre_installation",
+    label: "Verificare profilo parete dichiarato dal cliente",
+    priority: "mandatory",
+    status: params.installationRiskV37.siteSurveyRequired ? "review" : "ready",
+    reason: params.installationRiskV37.siteSurveyRequired
+      ? "Il rischio installazione richiede sopralluogo o verifica aggiuntiva prima del montaggio."
+      : "Profilo parete sufficientemente affidabile per checklist preliminare.",
+    requiredBy: ["Wall Confidence Engine V3.2", "Installation Risk Engine V3.7"],
+    evidenceRequired: params.installationRiskV37.siteSurveyRequired,
+    outputTarget: "PDF",
+  });
+
+  pushItem({
+    id: "confirm-loads-and-weights",
+    phase: "wall_verification",
+    label: "Confermare pesi reali di specchi, mensole e pensili",
+    priority: "mandatory",
+    status: params.installationRiskV37.installBlocked ? "blocked" : params.installationRiskV37.installerRequired ? "review" : "ready",
+    reason: params.installationRiskV37.installBlocked
+      ? "Installazione bloccata: carichi o fissaggi non sono ancora autorizzabili."
+      : "I pesi devono essere confermati prima della scheda installativa definitiva.",
+    requiredBy: ["Wall Load Analyzer V3.3", "Mirror & Shelf Validator V3.5"],
+    evidenceRequired: params.installationRiskV37.installerRequired,
+    outputTarget: "INSTALLER",
+  });
+
+  pushItem({
+    id: "mark-fixing-points",
+    phase: "fixing",
+    label: "Marcatura punti fissaggio su parete e controllo interassi",
+    priority: "mandatory",
+    status: params.technicalWallReportV36.totals.blocked > 0 ? "blocked" : params.technicalWallReportV36.totals.review > 0 ? "review" : "ready",
+    reason: "I punti fissaggio devono rispettare prospetto parete, interassi e layer tecnici PDF/DXF/CAD.",
+    requiredBy: ["Technical Wall Report V3.6", "Rule Pack System V2.8"],
+    evidenceRequired: params.technicalWallReportV36.totals.review > 0 || params.technicalWallReportV36.totals.blocked > 0,
+    outputTarget: "DXF",
+  });
+
+  pushItem({
+    id: "select-fixing-hardware",
+    phase: "fixing",
+    label: "Preparare ferramenta consigliata per parete e carico",
+    priority: "mandatory",
+    status: params.installationRiskV37.installBlocked ? "blocked" : "ready",
+    reason: "La ferramenta deve seguire le raccomandazioni V3.4 e non può essere lasciata generica nei casi critici.",
+    requiredBy: ["Fixing Recommendation Engine V3.4"],
+    evidenceRequired: params.installationRiskV37.installBlocked || params.installationRiskV37.installerRequired,
+    outputTarget: "INSTALLER",
+  });
+
+  if (params.installationRiskV37.installerRequired) {
+    pushItem({
+      id: "qualified-installer-required",
+      phase: "mounting",
+      label: "Installatore qualificato richiesto",
+      priority: "mandatory",
+      status: params.installationRiskV37.installBlocked ? "blocked" : "review",
+      reason: "Il rischio installazione richiede intervento tecnico e non semplice montaggio cliente.",
+      requiredBy: ["Installation Risk Engine V3.7"],
+      evidenceRequired: true,
+      outputTarget: "INSTALLER",
+    });
+  }
+
+  if (params.installationRiskV37.siteSurveyRequired) {
+    pushItem({
+      id: "site-survey-required",
+      phase: "pre_installation",
+      label: "Sopralluogo o conferma fotografica/DWG prima del montaggio",
+      priority: "mandatory",
+      status: params.installationRiskV37.installBlocked ? "blocked" : "review",
+      reason: "Dati parete insufficienti o rischio alto: serve evidenza integrativa prima di produrre scheda definitiva.",
+      requiredBy: ["Wall Intelligence Engine V3", "Installation Risk Engine V3.7"],
+      evidenceRequired: true,
+      outputTarget: "PDF",
+    });
+  }
+
+  params.installationRiskV37.recommendedActions.slice(0, 8).forEach((action, index) => {
+    pushItem({
+      id: `risk-action-${index + 1}`,
+      phase: "handover",
+      label: action,
+      priority: params.installationRiskV37.installRiskLevel === "LOW" ? "recommended" : "mandatory",
+      status: params.installationRiskV37.installBlocked ? "blocked" : params.installationRiskV37.installRiskLevel === "LOW" ? "ready" : "review",
+      reason: "Azione derivata automaticamente dai fattori rischio V3.7.",
+      requiredBy: ["Installation Risk Engine V3.7"],
+      evidenceRequired: params.installationRiskV37.installRiskLevel !== "LOW",
+      outputTarget: "PDF",
+    });
+  });
+
+  params.technicalWallReportV36.installerChecklist.slice(0, 8).forEach((check, index) => {
+    pushItem({
+      id: `technical-wall-check-${index + 1}`,
+      phase: "mounting",
+      label: check,
+      priority: "recommended",
+      status: params.technicalWallReportV36.totals.blocked > 0 ? "blocked" : params.technicalWallReportV36.totals.review > 0 ? "review" : "ready",
+      reason: "Voce importata dal Technical Wall Report V3.6 per scheda installatore.",
+      requiredBy: ["Technical Wall Report V3.6"],
+      evidenceRequired: params.technicalWallReportV36.totals.review > 0,
+      outputTarget: "INSTALLER",
+    });
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const checklistStatus = blocked > 0
+    ? "INSTALL_BLOCKED"
+    : review > 0
+      ? "INSTALL_REVIEW_REQUIRED"
+      : "INSTALL_READY";
+
+  const phases = items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.phase] = (acc[item.phase] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    schema: "bagastudio-installer-checklist-engine-v3-8",
+    version: "3.8",
+    generatedAt: new Date().toISOString(),
+    checklistStatus,
+    sourceRiskLevel: params.installationRiskV37.installRiskLevel,
+    sourceRiskScore: params.installationRiskV37.riskScore,
+    installBlocked: params.installationRiskV37.installBlocked,
+    installerRequired: params.installationRiskV37.installerRequired,
+    siteSurveyRequired: params.installationRiskV37.siteSurveyRequired,
+    totals: {
+      items: items.length,
+      mandatory: items.filter((item) => item.priority === "mandatory").length,
+      recommended: items.filter((item) => item.priority === "recommended").length,
+      optional: items.filter((item) => item.priority === "optional").length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      evidenceRequired: items.filter((item) => item.evidenceRequired).length,
+    },
+    phases,
+    items,
+    printableSections: [
+      "Dati parete e livello affidabilità",
+      "Rischio installazione e blocchi",
+      "Punti fissaggio e layer tecnici",
+      "Ferramenta consigliata",
+      "Checklist installatore",
+      "Evidenze richieste prima del montaggio",
+    ],
+    exportTargets: ["PDF installatore", "DXF punti fissaggio", "CAD prospetto parete", "JSON checklist V3.8"],
+    nextActions: [
+      "Preparare V3.9 Technical Approval Workflow con stati bozza/review/approvato/bloccato.",
+      "Collegare checklist al preventivo installazione e ai costi sopralluogo.",
+      "Predisporre campi firma installatore/cliente nella scheda PDF.",
+      "Far aggiornare checklist quando arrivano foto, DWG, DXF o note tecniche.",
+    ],
+  };
+}
+
+const installerChecklistEngineV38Report = useMemo(() => {
+  return buildInstallerChecklistEngineV38Report({
+    installationRiskV37: installationRiskEngineV37Report,
+    technicalWallReportV36: wallTechnicalReportV36Report,
+  });
+}, [installationRiskEngineV37Report, wallTechnicalReportV36Report]);
+
+function downloadInstallerChecklistEngineV38Report() {
+  downloadJsonFile(`bagastudio-installer-checklist-engine-v3-8-${Date.now()}.json`, installerChecklistEngineV38Report);
+}
+
+
+type TechnicalApprovalV39Status = "PENDING" | "REVIEW_REQUIRED" | "APPROVED" | "REJECTED";
+type TechnicalApprovalV39Gate = "pass" | "review" | "blocked";
+
+type TechnicalApprovalV39Item = {
+  id: string;
+  label: string;
+  gate: TechnicalApprovalV39Gate;
+  source: string;
+  reason: string;
+  requiredAction: string;
+};
+
+type TechnicalApprovalWorkflowV39Report = {
+  schema: "bagastudio-technical-approval-workflow-v3-9";
+  version: "3.9";
+  generatedAt: string;
+  approvalStatus: TechnicalApprovalV39Status;
+  installAllowed: boolean;
+  approvalLocked: boolean;
+  approvedBy: string | null;
+  approvedDate: string | null;
+  approvalNotes: string[];
+  siteSurveyRequired: boolean;
+  siteSurveyCompleted: boolean;
+  siteSurveyNotes: string[];
+  sourceRiskLevel: InstallationRiskV37Level;
+  checklistStatus: InstallerChecklistV38Report["checklistStatus"];
+  totals: {
+    gates: number;
+    pass: number;
+    review: number;
+    blocked: number;
+    requiredActions: number;
+  };
+  gates: TechnicalApprovalV39Item[];
+  workflowSteps: string[];
+  requiredActions: string[];
+  approvalConditions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function buildTechnicalApprovalWorkflowV39Report(params: {
+  installationRiskV37: InstallationRiskV37Report;
+  installerChecklistV38: InstallerChecklistV38Report;
+  technicalWallReportV36: WallTechnicalReportV36Report;
+}): TechnicalApprovalWorkflowV39Report {
+  const gates: TechnicalApprovalV39Item[] = [];
+
+  const pushGate = (gate: TechnicalApprovalV39Item) => {
+    if (gates.some((existingGate) => existingGate.id === gate.id)) return;
+    gates.push(gate);
+  };
+
+  pushGate({
+    id: "installation-risk-approval",
+    label: "Rischio installazione",
+    gate: params.installationRiskV37.installBlocked
+      ? "blocked"
+      : params.installationRiskV37.installRiskLevel === "HIGH" || params.installationRiskV37.installRiskLevel === "CRITICAL"
+        ? "review"
+        : "pass",
+    source: "Installation Risk Engine V3.7",
+    reason: `Livello rischio ${params.installationRiskV37.installRiskLevel} con score ${params.installationRiskV37.riskScore}/100.`,
+    requiredAction: params.installationRiskV37.installBlocked
+      ? "Bloccare approvazione tecnica e richiedere correzione/sopralluogo."
+      : params.installationRiskV37.installRiskLevel === "HIGH" || params.installationRiskV37.installRiskLevel === "CRITICAL"
+        ? "Richiedere revisione tecnica prima dell'approvazione."
+        : "Rischio compatibile con approvazione tecnica automatica.",
+  });
+
+  pushGate({
+    id: "installer-checklist-approval",
+    label: "Checklist installatore",
+    gate: params.installerChecklistV38.checklistStatus === "INSTALL_BLOCKED"
+      ? "blocked"
+      : params.installerChecklistV38.checklistStatus === "INSTALL_REVIEW_REQUIRED"
+        ? "review"
+        : "pass",
+    source: "Installer Checklist Engine V3.8",
+    reason: `${params.installerChecklistV38.totals.blocked} voci bloccate, ${params.installerChecklistV38.totals.review} in review, ${params.installerChecklistV38.totals.evidenceRequired} evidenze richieste.`,
+    requiredAction: params.installerChecklistV38.checklistStatus === "INSTALL_BLOCKED"
+      ? "Completare o correggere le voci bloccanti della checklist."
+      : params.installerChecklistV38.checklistStatus === "INSTALL_REVIEW_REQUIRED"
+        ? "Far validare checklist da tecnico/installatore."
+        : "Checklist pronta per approvazione.",
+  });
+
+  pushGate({
+    id: "technical-wall-report-approval",
+    label: "Report tecnico parete",
+    gate: params.technicalWallReportV36.totals.blocked > 0
+      ? "blocked"
+      : params.technicalWallReportV36.totals.review > 0
+        ? "review"
+        : "pass",
+    source: "Technical Wall Report V3.6",
+    reason: `${params.technicalWallReportV36.totals.blocked} sezioni bloccanti e ${params.technicalWallReportV36.totals.review} sezioni da revisionare.`,
+    requiredAction: params.technicalWallReportV36.totals.blocked > 0
+      ? "Correggere sezioni bloccanti prima di generare scheda approvata."
+      : params.technicalWallReportV36.totals.review > 0
+        ? "Revisionare report tecnico parete prima della conferma finale."
+        : "Report parete pronto per allegato tecnico.",
+  });
+
+  pushGate({
+    id: "site-survey-approval",
+    label: "Sopralluogo / evidenze integrative",
+    gate: params.installationRiskV37.siteSurveyRequired ? "review" : "pass",
+    source: "Wall Intelligence Engine V3 + futuro V4 Photo/DWG",
+    reason: params.installationRiskV37.siteSurveyRequired
+      ? "Il sistema richiede sopralluogo, foto, DWG/DXF o conferma installatore prima dell'approvazione definitiva."
+      : "Nessun sopralluogo obbligatorio richiesto dai dati attuali.",
+    requiredAction: params.installationRiskV37.siteSurveyRequired
+      ? "Allegare evidenza o completare sopralluogo prima dello stato APPROVED."
+      : "Nessuna azione aggiuntiva richiesta.",
+  });
+
+  const blocked = gates.filter((gate) => gate.gate === "blocked").length;
+  const review = gates.filter((gate) => gate.gate === "review").length;
+  const approvalStatus: TechnicalApprovalV39Status = blocked > 0
+    ? "REJECTED"
+    : review > 0
+      ? "REVIEW_REQUIRED"
+      : gates.length === 0
+        ? "PENDING"
+        : "APPROVED";
+
+  const siteSurveyRequired = params.installationRiskV37.siteSurveyRequired;
+  const siteSurveyCompleted = !siteSurveyRequired;
+  const installAllowed = approvalStatus === "APPROVED";
+  const approvalLocked = approvalStatus === "REJECTED" || approvalStatus === "APPROVED";
+
+  const requiredActions = gates
+    .filter((gate) => gate.gate !== "pass")
+    .map((gate) => `${gate.label}: ${gate.requiredAction}`);
+
+  if (requiredActions.length === 0) {
+    requiredActions.push("Nessuna azione bloccante: progetto approvabile per installazione secondo V3.9.");
+  }
+
+  const approvalNotes = [
+    approvalStatus === "APPROVED"
+      ? "Approvazione tecnica automatica pronta: nessun gate bloccante o in review."
+      : approvalStatus === "REJECTED"
+        ? "Approvazione tecnica respinta: almeno un gate risulta bloccante."
+        : approvalStatus === "REVIEW_REQUIRED"
+          ? "Approvazione tecnica sospesa: serve revisione tecnico/installatore."
+          : "Workflow in attesa di dati tecnici sufficienti.",
+    "V3.9 non sostituisce la responsabilità del tecnico: prepara lo stato e le evidenze per PDF/DXF/CAD e installazione.",
+  ];
+
+  return {
+    schema: "bagastudio-technical-approval-workflow-v3-9",
+    version: "3.9",
+    generatedAt: new Date().toISOString(),
+    approvalStatus,
+    installAllowed,
+    approvalLocked,
+    approvedBy: installAllowed ? "BagaStudio Core · Technical Approval Workflow V3.9" : null,
+    approvedDate: installAllowed ? new Date().toISOString() : null,
+    approvalNotes,
+    siteSurveyRequired,
+    siteSurveyCompleted,
+    siteSurveyNotes: siteSurveyRequired
+      ? ["Sopralluogo/foto/DWG richiesti prima di stato APPROVED definitivo.", "Quando V4 Photo/DWG sarà attivo, le evidenze aggiorneranno automaticamente confidence e approval gate."]
+      : ["Sopralluogo non obbligatorio dai dati attuali."],
+    sourceRiskLevel: params.installationRiskV37.installRiskLevel,
+    checklistStatus: params.installerChecklistV38.checklistStatus,
+    totals: {
+      gates: gates.length,
+      pass: gates.filter((gate) => gate.gate === "pass").length,
+      review,
+      blocked,
+      requiredActions: requiredActions.length,
+    },
+    gates,
+    workflowSteps: [
+      "Descrizione parete cliente",
+      "Analisi confidence e carichi",
+      "Raccomandazione fissaggi",
+      "Validazione specchi/mensole/pensili",
+      "Report tecnico parete",
+      "Checklist installatore",
+      "Approvazione tecnica V3.9",
+      "Installazione / PDF approvato",
+    ],
+    requiredActions,
+    approvalConditions: [
+      "Nessun gate bloccante attivo.",
+      "Checklist installatore pronta o revisionata.",
+      "Sopralluogo completato quando richiesto.",
+      "Report tecnico parete senza sezioni critiche.",
+      "Fissaggi e carichi confermati per la tipologia parete dichiarata.",
+    ],
+    exportTargets: [
+      "PDF scheda approvazione tecnica",
+      "PDF checklist installatore firmabile",
+      "DXF/CAD prospetto parete con stato approvazione",
+      "JSON Technical Approval V3.9",
+      "Preventivo installazione con eventuale sopralluogo",
+    ],
+    nextActions: [
+      "Fare Git checkpoint dopo V3.9 se il progetto compila.",
+      "Preparare V4.0 Photo/DWG Assisted Recognition come conferma del profilo parete.",
+      "Collegare approvalStatus a export PDF finale approvato/non approvato.",
+      "Predisporre firma tecnico/installatore e note sopralluogo nel futuro Admin Rules/Approval Manager.",
+    ],
+  };
+}
+
+const technicalApprovalWorkflowV39Report = useMemo(() => {
+  return buildTechnicalApprovalWorkflowV39Report({
+    installationRiskV37: installationRiskEngineV37Report,
+    installerChecklistV38: installerChecklistEngineV38Report,
+    technicalWallReportV36: wallTechnicalReportV36Report,
+  });
+}, [installationRiskEngineV37Report, installerChecklistEngineV38Report, wallTechnicalReportV36Report]);
+
+function downloadTechnicalApprovalWorkflowV39Report() {
+  downloadJsonFile(`bagastudio-technical-approval-workflow-v3-9-${Date.now()}.json`, technicalApprovalWorkflowV39Report);
+}
 
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
@@ -14974,6 +17156,1269 @@ function downloadImporterDiagnosticJson() {
                 <ul className="mt-3 space-y-2 text-sm text-slate-300">
                   {dynamicRuleConflictResolverV29Report.nextActions.map((item, index) => (
                     <li key={`dynamic-rule-conflict-v2-9-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-emerald-400/15 bg-[#061b16]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-200">Layout / Room Intelligence V3.0</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Wall Intelligence Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prima fase basata sulla descrizione guidata del cliente. Foto e DWG/DXF restano predisposti come prove future per confermare o correggere il profilo parete.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceEngineV30Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceEngineV30Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceEngineV30Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceEngineV30Report}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-3 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/20"
+              >
+                Esporta Wall Intelligence V3.0
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pareti</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceEngineV30Report.totals.walls}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Sconosciute</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceEngineV30Report.totals.unknownWalls}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Elementi</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{wallIntelligenceEngineV30Report.totals.targets}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceEngineV30Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceEngineV30Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceEngineV30Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Profili parete da descrizione cliente</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceEngineV30Report.wallProfiles.map((wall) => (
+                  <div key={wall.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{wall.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{wall.wallType} · fonte: {wall.inputSource.replace(/_/g, " ")} · confidenza: {wall.confidence}</p>
+                      </div>
+                      <span className={
+                        wall.wallType === "unknown"
+                          ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                          : "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-100"
+                      }>
+                        {wall.acceptedForPreliminaryLayout ? "Layout preliminare" : "Bloccata"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-300">{wall.customerDescription}</p>
+                    <p className="mt-2 text-xs text-slate-500">Spessore: {wall.thicknessMm ? `${wall.thicknessMm} mm` : "da definire"} · Carico stimato: {wall.estimatedMaxLoadKg ? `${wall.estimatedMaxLoadKg} kg` : "da verificare"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Strategia V3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceEngineV30Report.strategy.mergePolicy.map((item, index) => (
+                    <li key={`wall-intelligence-v3-merge-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Fissaggi e ferramenta suggerita</p>
+                <div className="mt-3 grid gap-3">
+                  {wallIntelligenceEngineV30Report.fixingTargets.map((target) => (
+                    <div key={target.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-white">{target.label}</p>
+                          <p className="mt-1 text-xs text-slate-500">{target.category.replace(/_/g, " ")} · {target.estimatedWeightKg} kg · fissaggi min. {target.minimumRecommendedFixingPoints}</p>
+                        </div>
+                        <span className={
+                          target.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : target.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {target.status}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-300">{target.warning}</p>
+                      <p className="mt-2 text-xs text-slate-500">Hardware: {target.suggestedHardware.join(" · ")}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Prossime azioni V3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceEngineV30Report.nextActions.map((item, index) => (
+                    <li key={`wall-intelligence-v3-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+
+        <section className="rounded-[28px] border border-lime-400/15 bg-[#101b06]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-lime-200">Layout / Room Intelligence V3.1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Guided Wall Description</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Struttura la descrizione cliente della parete in una scheda guidata: tipo parete, spessore, carico, ostacoli e prove future foto/DWG.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceGuidedDescriptionV31Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceGuidedDescriptionV31Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceGuidedDescriptionV31Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceGuidedDescriptionV31Report}
+                className="rounded-2xl border border-lime-400/25 bg-lime-400/10 px-5 py-3 text-sm font-black text-lime-100 transition hover:bg-lime-400/20"
+              >
+                Esporta Wall Description V3.1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Schede</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceGuidedDescriptionV31Report.totals.cards}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Complete</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceGuidedDescriptionV31Report.totals.completed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Incomplete</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceGuidedDescriptionV31Report.totals.incomplete}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Domande</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{wallIntelligenceGuidedDescriptionV31Report.totals.questions}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Mancanti</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceGuidedDescriptionV31Report.totals.missingRequired}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceGuidedDescriptionV31Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-lime-200">Schede parete cliente</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceGuidedDescriptionV31Report.clientWallCards.map((card) => (
+                  <div key={card.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{card.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{card.wallType} · confidenza {card.confidence} · completamento {card.completionPercent}%</p>
+                      </div>
+                      <span className={
+                        card.validatorDecision === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : card.validatorDecision === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {card.validatorDecision}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-300">{card.note}</p>
+                    {card.missingRequiredFields.length > 0 && (
+                      <p className="mt-2 text-xs text-yellow-100">Campi richiesti mancanti: {card.missingRequiredFields.join(" · ")}</p>
+                    )}
+                    <div className="mt-3 grid gap-2 text-xs text-slate-400 md:grid-cols-2">
+                      {card.guidedQuestions.map((question) => (
+                        <div key={question.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                          <p className="font-black text-white">{question.label}</p>
+                          <p className="mt-1">Default: {question.defaultValue}</p>
+                          <p className="mt-1 text-lime-100">{question.status.replace(/_/g, " ")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-lime-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-lime-200">Principio V3.1</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Descrizione cliente come fonte primaria iniziale</li>
+                  <li>• Foto e DWG/DXF come prove successive</li>
+                  <li>• Parete sconosciuta ammessa solo per layout preliminare</li>
+                  <li>• Fissaggi critici sempre soggetti a verifica installatore</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-lime-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-lime-200">Prossime azioni V3.1</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceGuidedDescriptionV31Report.nextActions.map((item, index) => (
+                    <li key={`wall-guided-description-v3-1-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-amber-400/15 bg-[#1d1405]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-200">Layout / Room Intelligence V3.2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Wall Confidence Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Calcola quanto è affidabile la descrizione cliente della parete e decide se servono verifiche prima di fissaggi, mensole, specchi o pensili.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceConfidenceEngineV32Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceConfidenceEngineV32Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceConfidenceEngineV32Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceConfidenceEngineV32Report}
+                className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-5 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-400/20"
+              >
+                Esporta Confidence V3.2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Schede</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceConfidenceEngineV32Report.totals.cards}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Alta</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceConfidenceEngineV32Report.totals.high}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Media</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceConfidenceEngineV32Report.totals.medium}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Bassa</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceConfidenceEngineV32Report.totals.low}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Verifiche</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{wallIntelligenceConfidenceEngineV32Report.totals.needsVerification}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceConfidenceEngineV32Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceConfidenceEngineV32Report.totals.errors}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Confidenza pareti</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceConfidenceEngineV32Report.confidenceCards.map((card) => (
+                  <div key={card.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{card.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{card.wallType} · score {card.confidenceScore}% · confidenza {card.confidenceLevel}</p>
+                      </div>
+                      <span className={
+                        card.confidenceLevel === "alta"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : card.confidenceLevel === "media"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {card.confidenceLevel}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-300">{card.verificationReason}</p>
+                    <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                      <div className="rounded-xl border border-emerald-400/10 bg-emerald-400/5 p-3 text-emerald-100">
+                        <p className="font-black uppercase tracking-[0.12em]">Segnali positivi</p>
+                        <p className="mt-1 text-slate-300">{card.positiveSignals.length ? card.positiveSignals.join(" · ") : "Nessun segnale forte"}</p>
+                      </div>
+                      <div className="rounded-xl border border-yellow-400/10 bg-yellow-400/5 p-3 text-yellow-100">
+                        <p className="font-black uppercase tracking-[0.12em]">Mancanze</p>
+                        <p className="mt-1 text-slate-300">{card.missingSignals.length ? card.missingSignals.join(" · ") : "Nessuna mancanza critica"}</p>
+                      </div>
+                    </div>
+                    {card.alerts.length > 0 && (
+                      <div className="mt-3 grid gap-2">
+                        {card.alerts.map((alert) => (
+                          <div key={alert.id} className={
+                            alert.severity === "error"
+                              ? "rounded-xl border border-red-400/10 bg-red-400/5 p-3 text-xs text-red-100"
+                              : alert.severity === "warning"
+                                ? "rounded-xl border border-yellow-400/10 bg-yellow-400/5 p-3 text-xs text-yellow-100"
+                                : "rounded-xl border border-cyan-400/10 bg-cyan-400/5 p-3 text-xs text-cyan-100"
+                          }>
+                            <p className="font-black">{alert.label}</p>
+                            <p className="mt-1 text-slate-300">{alert.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Soglie V3.2</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• 0–40%: confidenza bassa</li>
+                  <li>• 41–70%: confidenza media</li>
+                  <li>• 71–100%: confidenza alta</li>
+                  <li>• Foto/DWG/note aumentano la confidenza senza sostituire la descrizione cliente</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Prossime azioni V3.2</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceConfidenceEngineV32Report.nextActions.map((item, index) => (
+                    <li key={`wall-confidence-v3-2-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-rose-400/15 bg-[#210914]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-200">Layout / Room Intelligence V3.3</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Wall Load Analyzer</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Analizza carichi, peso stimato, punti fissaggio e capacità parete prima di confermare specchi, mensole e pensili.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceLoadAnalyzerV33Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceLoadAnalyzerV33Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceLoadAnalyzerV33Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceLoadAnalyzerV33Report}
+                className="rounded-2xl border border-rose-400/25 bg-rose-400/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-400/20"
+              >
+                Esporta Load Analyzer V3.3
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Target</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceLoadAnalyzerV33Report.totals.targets}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Safe</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceLoadAnalyzerV33Report.totals.safe}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceLoadAnalyzerV33Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critical</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceLoadAnalyzerV33Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceLoadAnalyzerV33Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{wallIntelligenceLoadAnalyzerV33Report.totals.warnings}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Analisi carichi parete</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceLoadAnalyzerV33Report.loadTargets.slice(0, 9).map((target) => (
+                  <div key={target.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{target.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {target.category} · peso {target.estimatedWeightKg} kg · proiezione {target.projectedLoadKg} kg · {target.fixingPoints} fissaggi
+                        </p>
+                      </div>
+                      <span className={
+                        target.risk === "safe"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : target.risk === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {target.risk}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-slate-300">
+                        <p className="font-black text-white">Carico/fissaggio</p>
+                        <p className="mt-1">{target.loadPerFixingKg} kg</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-slate-300">
+                        <p className="font-black text-white">Capacità parete</p>
+                        <p className="mt-1">{target.wallCapacityKg === null ? "sconosciuta" : `${target.wallCapacityKg} kg`}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-slate-300">
+                        <p className="font-black text-white">Confidenza</p>
+                        <p className="mt-1">{target.confidenceScore}%</p>
+                      </div>
+                    </div>
+                    {target.warnings.length > 0 && (
+                      <div className="mt-3 rounded-xl border border-yellow-400/10 bg-yellow-400/5 p-3 text-xs text-yellow-100">
+                        <p className="font-black uppercase tracking-[0.12em]">Warning</p>
+                        <p className="mt-1 text-slate-300">{target.warnings.join(" · ")}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-rose-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Principi V3.3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• La descrizione cliente resta la fonte primaria iniziale</li>
+                  <li>• Il confidence score influenza il rischio carico</li>
+                  <li>• Carichi critici richiedono verifica installatore</li>
+                  <li>• Il sistema non certifica la sicurezza strutturale, ma blocca errori evidenti</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-rose-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Prossime azioni V3.3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceLoadAnalyzerV33Report.nextActions.map((item, index) => (
+                    <li key={`wall-load-analyzer-v3-3-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-orange-400/15 bg-[#211008]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Layout / Room Intelligence V3.4</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Fixing Recommendation Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Suggerisce ferramenta, strategia di fissaggio e verifica installatore incrociando parete, carico, punti fissaggio e confidence score.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceFixingRecommendationV34Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceFixingRecommendationV34Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceFixingRecommendationV34Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceFixingRecommendationV34Report}
+                className="rounded-2xl border border-orange-400/25 bg-orange-400/10 px-5 py-3 text-sm font-black text-orange-100 transition hover:bg-orange-400/20"
+              >
+                Esporta Fixing V3.4
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Raccomandazioni</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceFixingRecommendationV34Report.totals.recommendations}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Safe</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceFixingRecommendationV34Report.totals.safe}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceFixingRecommendationV34Report.totals.warning}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critical</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceFixingRecommendationV34Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Installatore</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{wallIntelligenceFixingRecommendationV34Report.totals.installerRequired}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Cartongesso</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{wallIntelligenceFixingRecommendationV34Report.totals.drywallWarnings}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-200">Suggerimenti fissaggio</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceFixingRecommendationV34Report.recommendations.slice(0, 8).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Parete {item.wallType} · {item.recommendedFixingPoints} fissaggi consigliati · {item.loadPerFixingKg} kg/fissaggio
+                        </p>
+                      </div>
+                      <span className={
+                        item.status === "safe"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "warning"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-orange-400/10 bg-orange-400/5 p-3 text-xs text-orange-50">
+                      <p className="font-black uppercase tracking-[0.12em]">Ferramenta suggerita</p>
+                      <p className="mt-1 text-slate-300">{item.suggestedHardware.join(" · ")}</p>
+                    </div>
+
+                    <p className="mt-3 text-xs text-slate-400">{item.fixingStrategy}</p>
+
+                    {item.warnings.length > 0 && (
+                      <div className="mt-3 rounded-xl border border-yellow-400/10 bg-yellow-400/5 p-3 text-xs text-yellow-100">
+                        <p className="font-black uppercase tracking-[0.12em]">Warning</p>
+                        <p className="mt-1 text-slate-300">{item.warnings.join(" · ")}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-orange-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-200">Principi V3.4</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• La descrizione cliente resta la base iniziale</li>
+                  <li>• Il tipo parete condiziona la ferramenta suggerita</li>
+                  <li>• Cartongesso e pareti sconosciute richiedono verifica</li>
+                  <li>• Il suggerimento è preliminare, non certificazione strutturale</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-orange-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-200">Prossime azioni V3.4</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceFixingRecommendationV34Report.nextActions.map((item, index) => (
+                    <li key={`fixing-recommendation-v3-4-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#17081f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V3.5</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Mirror & Shelf Validator</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Valida specchi, mensole e pensili usando interassi postazioni, parete, carichi, fissaggi e livello di confidenza.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallIntelligenceMirrorShelfValidatorV35Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallIntelligenceMirrorShelfValidatorV35Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallIntelligenceMirrorShelfValidatorV35Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallIntelligenceMirrorShelfValidatorV35Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Validator V3.5
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Elementi</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallIntelligenceMirrorShelfValidatorV35Report.totals.items}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Specchi</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.mirrorItems}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Mensole</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.shelfItems}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Check KO</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{wallIntelligenceMirrorShelfValidatorV35Report.totals.failedChecks}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Validazione elementi sospesi</p>
+              <div className="mt-3 grid gap-3">
+                {wallIntelligenceMirrorShelfValidatorV35Report.items.slice(0, 8).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.mountingClass} · parete {item.wallType} · {item.recommendedFixingPoints} fissaggi · confidence {item.confidenceScore}%
+                        </p>
+                      </div>
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                      {item.checks.slice(0, 4).map((check) => (
+                        <div key={`${item.id}-${check.code}`} className="rounded-xl border border-white/10 bg-black/20 p-3 text-slate-300">
+                          <p className="font-black text-white">{check.label}</p>
+                          <p className={check.passed ? "mt-1 text-emerald-200" : check.severity === "error" ? "mt-1 text-red-200" : "mt-1 text-yellow-200"}>
+                            {check.passed ? "OK" : "DA VERIFICARE"}
+                          </p>
+                          <p className="mt-1 text-slate-500">{check.message}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {item.installationNotes.length > 0 && (
+                      <div className="mt-3 rounded-xl border border-fuchsia-400/10 bg-fuchsia-400/5 p-3 text-xs text-fuchsia-100">
+                        <p className="font-black uppercase tracking-[0.12em]">Note installazione</p>
+                        <p className="mt-1 text-slate-300">{item.installationNotes.join(" · ")}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Regole V3.5</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Gli specchi seguono l’interasse della postazione collegata</li>
+                  <li>• Barber: interasse minimo 150 cm</li>
+                  <li>• Estetista: interasse minimo 120 cm</li>
+                  <li>• Mensole e pensili richiedono controllo carico, profondità e parete</li>
+                  <li>• Cartongesso/sconosciuto attivano verifica installatore</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Prossime azioni V3.5</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallIntelligenceMirrorShelfValidatorV35Report.nextActions.map((item, index) => (
+                    <li key={`mirror-shelf-validator-v3-5-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061922]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V3.6</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Technical Wall Report</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Report tecnico parete per installatore: descrizione cliente, confidence, carichi, fissaggi, specchi, mensole, pensili e output PDF/DXF/CAD.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallTechnicalReportV36Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallTechnicalReportV36Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallTechnicalReportV36Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallTechnicalReportV36Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Report V3.6
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Sezioni</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallTechnicalReportV36Report.totals.sections}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallTechnicalReportV36Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallTechnicalReportV36Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallTechnicalReportV36Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Layer export</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{wallTechnicalReportV36Report.totals.exportLayers}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Checklist</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{wallTechnicalReportV36Report.totals.installerNotes}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Sezioni report parete</p>
+              <div className="mt-3 grid gap-3">
+                {wallTechnicalReportV36Report.sections.map((section) => (
+                  <div key={section.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{section.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">Layer {section.exportLayer.toUpperCase()} · {section.summary}</p>
+                      </div>
+                      <span className={
+                        section.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : section.status === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {section.status}
+                      </span>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-xs text-slate-300">
+                      {section.items.map((item, index) => (
+                        <li key={`${section.id}-item-${index}`}>• {item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Checklist installatore</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallTechnicalReportV36Report.installerChecklist.map((item, index) => (
+                    <li key={`wall-report-v3-6-check-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Export target</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallTechnicalReportV36Report.exportTargets.map((item, index) => (
+                    <li key={`wall-report-v3-6-export-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Prossime azioni V3.6</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallTechnicalReportV36Report.nextActions.map((item, index) => (
+                    <li key={`wall-report-v3-6-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-red-400/15 bg-[#21070b]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-red-200">Layout / Room Intelligence V3.7</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Installation Risk Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Valuta rischio reale di installazione usando confidence parete, carichi, fissaggi, validator specchi/mensole/pensili e report tecnico parete.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                installationRiskEngineV37Report.installRiskLevel === "LOW"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : installationRiskEngineV37Report.installRiskLevel === "MEDIUM"
+                    ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+                    : installationRiskEngineV37Report.installRiskLevel === "HIGH"
+                      ? "rounded-full border border-orange-400/20 bg-orange-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-orange-100"
+                      : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+              }>
+                {installationRiskEngineV37Report.installRiskLevel} · {installationRiskEngineV37Report.status}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadInstallationRiskEngineV37Report}
+                className="rounded-2xl border border-red-400/25 bg-red-400/10 px-5 py-3 text-sm font-black text-red-100 transition hover:bg-red-400/20"
+              >
+                Esporta Risk V3.7
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Risk score</p>
+              <p className="mt-1 text-2xl font-black text-white">{installationRiskEngineV37Report.riskScore}/100</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{installationRiskEngineV37Report.installBlocked ? "SI" : "NO"}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Installatore</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{installationRiskEngineV37Report.installerRequired ? "SI" : "NO"}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Sopralluogo</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{installationRiskEngineV37Report.siteSurveyRequired ? "SI" : "NO"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Fattori</p>
+              <p className="mt-1 text-2xl font-black text-white">{installationRiskEngineV37Report.totals.factors}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{installationRiskEngineV37Report.totals.critical}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Fattori di rischio installazione</p>
+              <div className="mt-3 grid gap-3">
+                {installationRiskEngineV37Report.factors.map((factor) => (
+                  <div key={factor.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{factor.label}</p>
+                        <p className="mt-1 text-xs text-slate-400">Impatto {factor.impact} · {factor.reason}</p>
+                      </div>
+                      <span className={
+                        factor.level === "LOW"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : factor.level === "MEDIUM"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : factor.level === "HIGH"
+                              ? "rounded-full bg-orange-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-orange-100"
+                              : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {factor.level}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-300">Azione: {factor.recommendedAction}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-red-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Azioni consigliate</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installationRiskEngineV37Report.recommendedActions.map((item, index) => (
+                    <li key={`risk-v3-7-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-red-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Checklist installazione</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installationRiskEngineV37Report.installerChecklist.map((item, index) => (
+                    <li key={`risk-v3-7-check-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-red-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Prossime azioni V3.7</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installationRiskEngineV37Report.nextActions.map((item, index) => (
+                    <li key={`risk-v3-7-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-amber-400/15 bg-[#221407]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-200">Layout / Room Intelligence V3.8</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Installer Checklist Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Trasforma il rischio installazione e il report tecnico parete in una checklist operativa per installatore, PDF, DXF e CAD.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                installerChecklistEngineV38Report.checklistStatus === "INSTALL_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : installerChecklistEngineV38Report.checklistStatus === "INSTALL_REVIEW_REQUIRED"
+                    ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+                    : "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+              }>
+                {installerChecklistEngineV38Report.checklistStatus}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadInstallerChecklistEngineV38Report}
+                className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-5 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-400/20"
+              >
+                Esporta Checklist V3.8
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Voci</p>
+              <p className="mt-1 text-2xl font-black text-white">{installerChecklistEngineV38Report.totals.items}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Bloccate</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{installerChecklistEngineV38Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{installerChecklistEngineV38Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Pronte</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{installerChecklistEngineV38Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Obbligatorie</p>
+              <p className="mt-1 text-2xl font-black text-white">{installerChecklistEngineV38Report.totals.mandatory}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Evidenze</p>
+              <p className="mt-1 text-2xl font-black text-amber-100">{installerChecklistEngineV38Report.totals.evidenceRequired}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Checklist operativa installatore</p>
+              <div className="mt-3 grid gap-3">
+                {installerChecklistEngineV38Report.items.slice(0, 10).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.label}</p>
+                        <p className="mt-1 text-xs text-slate-400">{item.phase} · {item.reason}</p>
+                      </div>
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {item.status} · {item.priority}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-300">Output: {item.outputTarget} · Evidenza richiesta: {item.evidenceRequired ? "SI" : "NO"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Sezioni stampabili</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installerChecklistEngineV38Report.printableSections.map((item, index) => (
+                    <li key={`installer-v3-8-print-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Export target</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installerChecklistEngineV38Report.exportTargets.map((item, index) => (
+                    <li key={`installer-v3-8-export-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Prossime azioni V3.8</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {installerChecklistEngineV38Report.nextActions.map((item, index) => (
+                    <li key={`installer-v3-8-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#140722]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Layout / Room Intelligence V3.9</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Technical Approval Workflow</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Chiude il ciclo tecnico parete: rischio, checklist, report installatore e stato finale approvato/non approvato per installazione.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                technicalApprovalWorkflowV39Report.approvalStatus === "APPROVED"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : technicalApprovalWorkflowV39Report.approvalStatus === "REVIEW_REQUIRED"
+                    ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+                    : technicalApprovalWorkflowV39Report.approvalStatus === "REJECTED"
+                      ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                      : "rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-200"
+              }>
+                {technicalApprovalWorkflowV39Report.approvalStatus}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadTechnicalApprovalWorkflowV39Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta Approval V3.9
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Gate</p>
+              <p className="mt-1 text-2xl font-black text-white">{technicalApprovalWorkflowV39Report.totals.gates}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Pass</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{technicalApprovalWorkflowV39Report.totals.pass}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{technicalApprovalWorkflowV39Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{technicalApprovalWorkflowV39Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Installazione</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{technicalApprovalWorkflowV39Report.installAllowed ? "OK" : "NO"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Sopralluogo</p>
+              <p className="mt-1 text-2xl font-black text-white">{technicalApprovalWorkflowV39Report.siteSurveyRequired ? "SI" : "NO"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Gate approvazione tecnica</p>
+              <div className="mt-3 grid gap-3">
+                {technicalApprovalWorkflowV39Report.gates.map((gate) => (
+                  <div key={gate.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{gate.label}</p>
+                        <p className="mt-1 text-xs text-slate-400">{gate.source} · {gate.reason}</p>
+                      </div>
+                      <span className={
+                        gate.gate === "pass"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : gate.gate === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                      }>
+                        {gate.gate}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-300">Azione: {gate.requiredAction}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {technicalApprovalWorkflowV39Report.requiredActions.map((item, index) => (
+                    <li key={`approval-v3-9-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Workflow</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {technicalApprovalWorkflowV39Report.workflowSteps.map((item, index) => (
+                    <li key={`approval-v3-9-step-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Export target</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {technicalApprovalWorkflowV39Report.exportTargets.map((item, index) => (
+                    <li key={`approval-v3-9-export-${index}`}>• {item}</li>
                   ))}
                 </ul>
               </div>
