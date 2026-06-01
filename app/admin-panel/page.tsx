@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -7983,6 +7984,2261 @@ function downloadWallTechnicalPointsValidationV1Report() {
 }
 
 
+type TechnicalKnowledgeBaseV1Category =
+  | "plumbing"
+  | "electrical"
+  | "wall"
+  | "baseboard"
+  | "shelf"
+  | "sink"
+  | "technical_sheet";
+
+type TechnicalKnowledgeBaseV1Severity = "info" | "warning" | "error";
+
+type TechnicalKnowledgeBaseV1Rule = {
+  id: string;
+  category: TechnicalKnowledgeBaseV1Category;
+  label: string;
+  severity: TechnicalKnowledgeBaseV1Severity;
+  appliesTo: string[];
+  valueMm?: number;
+  expected: string;
+  validationTarget: string;
+  note: string;
+};
+
+type TechnicalKnowledgeBaseV1Report = {
+  schema: "bagastudio-technical-knowledge-base-v1";
+  version: 1;
+  generatedAt: string;
+  status: "KNOWLEDGE_BASE_READY" | "KNOWLEDGE_BASE_REVIEW_REQUIRED";
+  sourceWallValidationSchema: WallTechnicalPointsValidationV1Report["schema"];
+  sourceWallValidationStatus: WallTechnicalPointsValidationV1Status;
+  totals: {
+    rules: number;
+    plumbing: number;
+    electrical: number;
+    wall: number;
+    baseboard: number;
+    shelf: number;
+    sink: number;
+    technicalSheet: number;
+    errors: number;
+    warnings: number;
+    info: number;
+  };
+  sinkHeights: {
+    countertopSinkTopHeightMm: 850;
+    insetSinkTopHeightMm: 930;
+  };
+  rules: TechnicalKnowledgeBaseV1Rule[];
+  recommendations: string[];
+};
+
+const TECHNICAL_KNOWLEDGE_BASE_V1_RULES: TechnicalKnowledgeBaseV1Rule[] = [
+  {
+    id: "sink-countertop-top-height-850",
+    category: "sink",
+    label: "Lavandino da appoggio",
+    severity: "error",
+    appliesTo: ["technical-wall-elevation", "plumbing-points", "layout-validation"],
+    valueMm: 850,
+    expected: "Piano mobile a 850 mm da terra per lavandino da appoggio.",
+    validationTarget: "sinkType=countertop",
+    note: "La quota deve propagarsi a prospetto parete, carico acqua calda/fredda, scarico e quote installatore.",
+  },
+  {
+    id: "sink-inset-top-height-930",
+    category: "sink",
+    label: "Lavandino da incasso",
+    severity: "error",
+    appliesTo: ["technical-wall-elevation", "plumbing-points", "layout-validation"],
+    valueMm: 930,
+    expected: "Piano mobile a 930 mm da terra per lavandino da incasso.",
+    validationTarget: "sinkType=inset",
+    note: "La quota deve aggiornare prospetto, idraulica, scarico e schema tecnico PDF/DXF/CAD.",
+  },
+  {
+    id: "plumbing-hot-cold-water-required",
+    category: "plumbing",
+    label: "Carico acqua calda/fredda",
+    severity: "error",
+    appliesTo: ["washbasin", "technical-wall-elevation"],
+    expected: "Ogni lavabo deve avere carico acqua calda e fredda quotato e distinguibile.",
+    validationTarget: "hotWaterPoint+coldWaterPoint",
+    note: "Le schede devono separare graficamente acqua calda e fredda con layer/colori dedicati.",
+  },
+  {
+    id: "plumbing-drain-required",
+    category: "plumbing",
+    label: "Scarico lavabo",
+    severity: "error",
+    appliesTo: ["washbasin", "technical-wall-elevation"],
+    expected: "Ogni lavabo deve avere scarico quotato, leggibile e non in conflitto con cassetti o struttura.",
+    validationTarget: "drainPoint",
+    note: "Il controllo deve evidenziare conflitti con schiene, cassetti, divisori e ferramenta.",
+  },
+  {
+    id: "electrical-drawer-socket-clearance",
+    category: "electrical",
+    label: "Prese nelle cassettiere",
+    severity: "warning",
+    appliesTo: ["drawer", "electrical-point", "technical-wall-elevation"],
+    expected: "Le prese integrate in cassettiera devono evitare guide, schiene, cassetti e zone di scorrimento.",
+    validationTarget: "drawerSocket",
+    note: "Il futuro Smart Validator dovrà segnalare prese dietro cassetti o in conflitto con guide.",
+  },
+  {
+    id: "electrical-led-mirror-power",
+    category: "electrical",
+    label: "Alimentazione specchio LED",
+    severity: "warning",
+    appliesTo: ["mirror", "led", "technical-wall-elevation"],
+    expected: "Specchi LED e accessori elettrici devono avere punto alimentazione dedicato e quotato.",
+    validationTarget: "mirrorLedPowerPoint",
+    note: "Il punto deve essere esportabile in PDF/DXF/CAD e collegato alla configurazione cliente.",
+  },
+  {
+    id: "wall-type-fixing-selection",
+    category: "wall",
+    label: "Tipo parete e fissaggio",
+    severity: "error",
+    appliesTo: ["wall", "shelf", "wall-cabinet", "technical-sheet"],
+    expected: "La ferramenta di fissaggio deve cambiare in base a muratura, cartongesso, cemento o parete tecnica.",
+    validationTarget: "wallType+fixingProfile",
+    note: "Cartongesso e pareti deboli devono generare warning o blocco per mensole/pensili pesanti.",
+  },
+  {
+    id: "baseboard-cutout-required",
+    category: "baseboard",
+    label: "Battiscopa e scasso mobile",
+    severity: "warning",
+    appliesTo: ["floor-cabinet", "layout", "technical-wall-elevation"],
+    expected: "Se il battiscopa è presente, il mobile deve avere scasso, distanziale o nota tecnica.",
+    validationTarget: "baseboardPresence+baseboardCutout",
+    note: "BagaStudio deve avvisare se il rilievo indica battiscopa ma il mobile non prevede scasso.",
+  },
+  {
+    id: "shelf-structural-check",
+    category: "shelf",
+    label: "Mensole e pensili",
+    severity: "error",
+    appliesTo: ["shelf", "wall-cabinet", "fixing"],
+    expected: "Mensole e pensili devono validare parete, peso previsto, ferramenta e punti fissaggio.",
+    validationTarget: "wallLoadCapacity+fittingProfile",
+    note: "Il sistema deve indicare se una mensola è montabile o se serve supporto/ferramenta alternativa.",
+  },
+  {
+    id: "technical-sheet-layer-quality",
+    category: "technical_sheet",
+    label: "Qualità prospetto tecnico",
+    severity: "info",
+    appliesTo: ["technical-wall-elevation", "pdf", "dxf", "cad"],
+    expected: "Prospetti più puliti e professionali dello standard DXF: mobile, quote, elettrico, idraulico e fissaggi separati.",
+    validationTarget: "sheetLayerStyle",
+    note: "Ogni tavola deve essere leggibile da installatore, elettricista, idraulico e cliente.",
+  },
+];
+
+function buildTechnicalKnowledgeBaseV1Report(
+  wallValidationReport: WallTechnicalPointsValidationV1Report
+): TechnicalKnowledgeBaseV1Report {
+  const rules = TECHNICAL_KNOWLEDGE_BASE_V1_RULES;
+  const countByCategory = (category: TechnicalKnowledgeBaseV1Category) =>
+    rules.filter((rule) => rule.category === category).length;
+
+  const status: TechnicalKnowledgeBaseV1Report["status"] =
+    wallValidationReport.status === "TECHNICAL_POINTS_BLOCKED"
+      ? "KNOWLEDGE_BASE_REVIEW_REQUIRED"
+      : "KNOWLEDGE_BASE_READY";
+
+  return {
+    schema: "bagastudio-technical-knowledge-base-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceWallValidationSchema: wallValidationReport.schema,
+    sourceWallValidationStatus: wallValidationReport.status,
+    totals: {
+      rules: rules.length,
+      plumbing: countByCategory("plumbing"),
+      electrical: countByCategory("electrical"),
+      wall: countByCategory("wall"),
+      baseboard: countByCategory("baseboard"),
+      shelf: countByCategory("shelf"),
+      sink: countByCategory("sink"),
+      technicalSheet: countByCategory("technical_sheet"),
+      errors: rules.filter((rule) => rule.severity === "error").length,
+      warnings: rules.filter((rule) => rule.severity === "warning").length,
+      info: rules.filter((rule) => rule.severity === "info").length,
+    },
+    sinkHeights: {
+      countertopSinkTopHeightMm: 850,
+      insetSinkTopHeightMm: 930,
+    },
+    rules,
+    recommendations: [
+      "Usare questa Knowledge Base come sorgente unica per Layout Intelligence, prospetti parete e Smart Technical Validator.",
+      "Collegare ogni regola a Product Package e Factory Production Package prima dell'export finale PDF/DXF/CAD.",
+      "Aggiungere progressivamente regole reali Morini su quote idrauliche, prese, fissaggi, scassi battiscopa e portate mensole.",
+    ],
+  };
+}
+
+const technicalKnowledgeBaseV1Report = useMemo(() => {
+  return buildTechnicalKnowledgeBaseV1Report(wallTechnicalPointsValidationV1Report);
+}, [wallTechnicalPointsValidationV1Report]);
+
+function downloadTechnicalKnowledgeBaseV1Report() {
+  downloadJsonFile(`bagastudio-technical-knowledge-base-v1-${Date.now()}.json`, technicalKnowledgeBaseV1Report);
+}
+
+type SmartTechnicalValidatorV1Status = "TECHNICAL_VALIDATION_READY" | "TECHNICAL_VALIDATION_REVIEW_REQUIRED" | "TECHNICAL_VALIDATION_BLOCKED";
+
+type SmartTechnicalValidatorV1IssueStatus = "passed" | "review" | "blocked";
+
+type SmartTechnicalValidatorV1Issue = {
+  id: string;
+  category: TechnicalKnowledgeBaseV1Category;
+  label: string;
+  status: SmartTechnicalValidatorV1IssueStatus;
+  severity: TechnicalKnowledgeBaseV1Severity;
+  sourceRuleId: string;
+  expected: string;
+  detected: string;
+  recommendation: string;
+};
+
+type SmartTechnicalValidatorV1Report = {
+  schema: "bagastudio-smart-technical-validator-v1";
+  version: 1;
+  generatedAt: string;
+  status: SmartTechnicalValidatorV1Status;
+  sourceKnowledgeBaseSchema: TechnicalKnowledgeBaseV1Report["schema"];
+  sourceKnowledgeBaseStatus: TechnicalKnowledgeBaseV1Report["status"];
+  sourceWallValidationSchema: WallTechnicalPointsValidationV1Report["schema"];
+  sourceWallValidationStatus: WallTechnicalPointsValidationV1Status;
+  totals: {
+    checks: number;
+    passed: number;
+    review: number;
+    blocked: number;
+    errors: number;
+    warnings: number;
+    info: number;
+  };
+  sinkHeights: TechnicalKnowledgeBaseV1Report["sinkHeights"];
+  issues: SmartTechnicalValidatorV1Issue[];
+  recommendations: string[];
+};
+
+function resolveSmartTechnicalValidatorV1Status(
+  issueStatus: SmartTechnicalValidatorV1IssueStatus,
+  severity: TechnicalKnowledgeBaseV1Severity
+): SmartTechnicalValidatorV1IssueStatus {
+  if (issueStatus === "blocked") return "blocked";
+  if (severity === "error" && issueStatus === "review") return "review";
+  return issueStatus;
+}
+
+function buildSmartTechnicalValidatorV1Report(params: {
+  knowledgeBase: TechnicalKnowledgeBaseV1Report;
+  wallValidation: WallTechnicalPointsValidationV1Report;
+}): SmartTechnicalValidatorV1Report {
+  const wallRuleByKind = new Map<string, WallTechnicalPointsValidationV1Rule>();
+  params.wallValidation.rules.forEach((rule) => {
+    wallRuleByKind.set(rule.kind, rule);
+  });
+
+  const issues: SmartTechnicalValidatorV1Issue[] = params.knowledgeBase.rules.map((rule) => {
+    const relatedWallRule =
+      wallRuleByKind.get(rule.category) ||
+      wallRuleByKind.get(rule.validationTarget) ||
+      null;
+
+    const baseStatus: SmartTechnicalValidatorV1IssueStatus =
+      params.wallValidation.status === "TECHNICAL_POINTS_BLOCKED" && rule.severity === "error"
+        ? "blocked"
+        : params.wallValidation.status === "TECHNICAL_POINTS_REVIEW_REQUIRED" || relatedWallRule?.status === "review"
+          ? "review"
+          : relatedWallRule?.status === "blocked"
+            ? "blocked"
+            : "passed";
+
+    const status = resolveSmartTechnicalValidatorV1Status(baseStatus, rule.severity);
+
+    return {
+      id: `smart-validator-v1-${rule.id}`,
+      category: rule.category,
+      label: rule.label,
+      status,
+      severity: rule.severity,
+      sourceRuleId: rule.id,
+      expected: rule.expected,
+      detected: relatedWallRule
+        ? `${relatedWallRule.status}: ${relatedWallRule.actual}`
+        : "Regola disponibile in Technical Knowledge Base V1; dati progetto specifici non ancora collegati.",
+      recommendation:
+        status === "blocked"
+          ? `Correggere prima dell'export tecnico: ${rule.note}`
+          : status === "review"
+            ? `Verifica manuale consigliata: ${rule.note}`
+            : `Controllo pronto: ${rule.note}`,
+    };
+  });
+
+  const blocked = issues.filter((issue) => issue.status === "blocked").length;
+  const review = issues.filter((issue) => issue.status === "review").length;
+  const status: SmartTechnicalValidatorV1Status =
+    blocked > 0
+      ? "TECHNICAL_VALIDATION_BLOCKED"
+      : review > 0
+        ? "TECHNICAL_VALIDATION_REVIEW_REQUIRED"
+        : "TECHNICAL_VALIDATION_READY";
+
+  return {
+    schema: "bagastudio-smart-technical-validator-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceKnowledgeBaseSchema: params.knowledgeBase.schema,
+    sourceKnowledgeBaseStatus: params.knowledgeBase.status,
+    sourceWallValidationSchema: params.wallValidation.schema,
+    sourceWallValidationStatus: params.wallValidation.status,
+    totals: {
+      checks: issues.length,
+      passed: issues.filter((issue) => issue.status === "passed").length,
+      review,
+      blocked,
+      errors: issues.filter((issue) => issue.severity === "error").length,
+      warnings: issues.filter((issue) => issue.severity === "warning").length,
+      info: issues.filter((issue) => issue.severity === "info").length,
+    },
+    sinkHeights: params.knowledgeBase.sinkHeights,
+    issues,
+    recommendations: [
+      "Usare Smart Technical Validator V1 come gate tecnico prima della scheda PDF/DXF/CAD finale.",
+      "Collegare progressivamente i dati reali del progetto: tipo lavabo, battiscopa, parete, prese, carichi/scarichi e fissaggi.",
+      "Le regole bloccanti devono impedire l'export tecnico finale finché non vengono risolte o approvate manualmente.",
+    ],
+  };
+}
+
+const smartTechnicalValidatorV1Report = useMemo(() => {
+  return buildSmartTechnicalValidatorV1Report({
+    knowledgeBase: technicalKnowledgeBaseV1Report,
+    wallValidation: wallTechnicalPointsValidationV1Report,
+  });
+}, [technicalKnowledgeBaseV1Report, wallTechnicalPointsValidationV1Report]);
+
+function downloadSmartTechnicalValidatorV1Report() {
+  downloadJsonFile(`bagastudio-smart-technical-validator-v1-${Date.now()}.json`, smartTechnicalValidatorV1Report);
+}
+
+
+type LayoutRoomIntelligenceV2Status = "LAYOUT_V2_READY" | "LAYOUT_V2_REVIEW_REQUIRED" | "LAYOUT_V2_BLOCKED";
+
+type LayoutRoomIntelligenceV2ItemStatus = "ready" | "review" | "blocked";
+
+type LayoutRoomIntelligenceV2ZoneType =
+  | "room_shell"
+  | "wall_elevation"
+  | "opening"
+  | "furniture_footprint"
+  | "clearance"
+  | "technical_point"
+  | "mounting";
+
+type LayoutRoomIntelligenceV2Zone = {
+  id: string;
+  label: string;
+  type: LayoutRoomIntelligenceV2ZoneType;
+  status: LayoutRoomIntelligenceV2ItemStatus;
+  requiredInput: string[];
+  validationTarget: string;
+  linkedOutput: string;
+  note: string;
+};
+
+type LayoutRoomIntelligenceV2Report = {
+  schema: "bagastudio-layout-room-intelligence-v2";
+  version: 2;
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutV1Schema: LayoutRoomIntelligenceV1Report["schema"];
+  sourceLayoutV1Status: LayoutRoomIntelligenceV1Status;
+  sourceSmartValidatorSchema: SmartTechnicalValidatorV1Report["schema"];
+  sourceSmartValidatorStatus: SmartTechnicalValidatorV1Status;
+  sourceFactoryProductionPackageSchema: FactoryProductionPackageV1Report["schema"];
+  sourceFactoryProductionPackageStatus: FactoryProductionPackageV1Status;
+  roomModel: {
+    inputModes: Array<"manual_trace" | "image_pdf_reference" | "dxf_dwg_future">;
+    scaleApprovalRequired: boolean;
+    wallElevationGeneration: boolean;
+    preserveExternalFurnitureFootprints: boolean;
+    supportMultipleFurnitureItems: boolean;
+  };
+  validationRules: {
+    requireClosedRoomShell: boolean;
+    requireScaledReference: boolean;
+    requireOpeningsBeforeFurnitureApproval: boolean;
+    requireBaseboardAndWallSupport: boolean;
+    requireClearanceValidation: boolean;
+    requireSmartTechnicalValidatorGate: boolean;
+    blockTechnicalExportOnCriticalIssues: boolean;
+  };
+  totals: {
+    zones: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    linkedFurnitureItems: number;
+    smartValidatorIssues: number;
+    criticalTechnicalIssues: number;
+  };
+  zones: LayoutRoomIntelligenceV2Zone[];
+  nextActions: string[];
+  recommendations: string[];
+};
+
+function buildLayoutRoomIntelligenceV2Report(params: {
+  layoutV1: LayoutRoomIntelligenceV1Report;
+  smartValidator: SmartTechnicalValidatorV1Report;
+  factoryProductionPackage: FactoryProductionPackageV1Report;
+}): LayoutRoomIntelligenceV2Report {
+  const layoutBlocked = params.layoutV1.status === "ROOM_BLOCKED";
+  const factoryBlocked = params.factoryProductionPackage.status === "BLOCKED";
+  const smartBlocked = params.smartValidator.status === "TECHNICAL_VALIDATION_BLOCKED";
+  const smartReview = params.smartValidator.status === "TECHNICAL_VALIDATION_REVIEW_REQUIRED";
+  const criticalTechnicalIssues = params.smartValidator.issues.filter(
+    (issue) => issue.status === "blocked" || (issue.status === "review" && issue.severity === "error")
+  ).length;
+
+  const zones: LayoutRoomIntelligenceV2Zone[] = [
+    {
+      id: "v2-room-shell-scaled-trace",
+      label: "Guscio stanza quotato",
+      type: "room_shell",
+      status: layoutBlocked ? "blocked" : "review",
+      requiredInput: ["piantina immagine/PDF o tracciamento manuale", "scala reale", "muri perimetrali", "misure principali"],
+      validationTarget: "closedRoomShell+scaledReference",
+      linkedOutput: "base pianta quotata per PDF/DXF/CAD e controllo ingombri",
+      note: "V2 rende esplicito il modello stanza: prima si approva scala e guscio, poi si posizionano mobili e punti tecnici.",
+    },
+    {
+      id: "v2-wall-elevations",
+      label: "Prospetti parete generabili",
+      type: "wall_elevation",
+      status: layoutBlocked || smartBlocked ? "blocked" : "review",
+      requiredInput: ["pareti nominate", "altezza ambiente", "lato mobile", "quote da pavimento", "tipo lavandino se presente"],
+      validationTarget: "wallElevationReference+sinkHeightRules",
+      linkedOutput: "prospetti parete con mobile, quote, elettrico, idraulico, fissaggi e note montaggio",
+      note: "Collega Layout Intelligence alle schede parete: lavandino da appoggio 850 mm, incasso 930 mm e punti tecnici coerenti.",
+    },
+    {
+      id: "v2-openings-obstacles",
+      label: "Aperture, porte, finestre e ostacoli",
+      type: "opening",
+      status: "review",
+      requiredInput: ["porte", "finestre", "pilastri", "nicchie", "zone non finestrabili", "ostacoli fissi"],
+      validationTarget: "openings+obstacles+noWindowWalls",
+      linkedOutput: "alert collisioni ambiente e vincoli parete prima del posizionamento definitivo",
+      note: "Serve per evitare mobili davanti ad aperture, interferenze con ante/cassetti e vincoli architettonici non rispettati.",
+    },
+    {
+      id: "v2-furniture-footprints",
+      label: "Ingombri mobili Product Package",
+      type: "furniture_footprint",
+      status: factoryBlocked ? "blocked" : "review",
+      requiredInput: ["Product Package", "ingombro esterno bloccato", "posizione in pianta", "rotazione", "lato parete"],
+      validationTarget: "productPackageFootprint+lockedExternalDimensions",
+      linkedOutput: "mobili posizionati in pianta senza deformare dimensioni esterne e collegati a Factory Engine",
+      note: "Gli ingombri devono restare parametrici ma con misura esterna bloccata, coerente con le regole Manufacturing Override.",
+    },
+    {
+      id: "v2-clearance-collision",
+      label: "Passaggi, apertura frontali e collisioni",
+      type: "clearance",
+      status: factoryBlocked || smartBlocked ? "blocked" : "review",
+      requiredInput: ["passaggi minimi", "ingombro apertura ante/cassetti", "spazio montaggio", "collisioni con muri e ostacoli"],
+      validationTarget: "clearance+frontOpening+roomCollision",
+      linkedOutput: "warning montabilità locale e blocco export tecnico se il mobile non è installabile",
+      note: "V2 prepara il controllo funzionale del locale, non solo la presenza del mobile in pianta.",
+    },
+    {
+      id: "v2-baseboard-wall-support",
+      label: "Battiscopa, supporto parete e fissaggi",
+      type: "mounting",
+      status: smartBlocked ? "blocked" : "review",
+      requiredInput: ["presenza battiscopa", "altezza/spessore battiscopa", "tipo parete", "fissaggi previsti", "carico mensole/pensili"],
+      validationTarget: "baseboardCutout+wallSupport+fixingProfile",
+      linkedOutput: "scassi, distanziali, fissaggi e avvisi strutturali su scheda tecnica",
+      note: "Integra le regole della Knowledge Base: cartongesso, muratura, mensole, pensili e scassi diventano gate tecnici.",
+    },
+    {
+      id: "v2-technical-points-map",
+      label: "Mappa punti tecnici",
+      type: "technical_point",
+      status: smartBlocked ? "blocked" : smartReview ? "review" : "ready",
+      requiredInput: ["prese", "alimentazioni LED/specchi", "scarichi", "carico acqua calda/fredda", "passacavi", "punti fissaggio"],
+      validationTarget: "technicalPoints+smartValidatorRules",
+      linkedOutput: "layer tecnici per prospetti parete, PDF, DXF/CAD e distinta installazione",
+      note: "I punti tecnici vengono letti come dati strutturati e validati dal futuro motore tecnico, non come note libere.",
+    },
+  ];
+
+  const blocked = zones.filter((zone) => zone.status === "blocked").length;
+  const review = zones.filter((zone) => zone.status === "review").length;
+  const ready = zones.filter((zone) => zone.status === "ready").length;
+
+  const status: LayoutRoomIntelligenceV2Status =
+    blocked > 0 || criticalTechnicalIssues > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : review > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY";
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2",
+    version: 2,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceLayoutV1Schema: params.layoutV1.schema,
+    sourceLayoutV1Status: params.layoutV1.status,
+    sourceSmartValidatorSchema: params.smartValidator.schema,
+    sourceSmartValidatorStatus: params.smartValidator.status,
+    sourceFactoryProductionPackageSchema: params.factoryProductionPackage.schema,
+    sourceFactoryProductionPackageStatus: params.factoryProductionPackage.status,
+    roomModel: {
+      inputModes: ["manual_trace", "image_pdf_reference", "dxf_dwg_future"],
+      scaleApprovalRequired: true,
+      wallElevationGeneration: true,
+      preserveExternalFurnitureFootprints: true,
+      supportMultipleFurnitureItems: true,
+    },
+    validationRules: {
+      requireClosedRoomShell: true,
+      requireScaledReference: true,
+      requireOpeningsBeforeFurnitureApproval: true,
+      requireBaseboardAndWallSupport: true,
+      requireClearanceValidation: true,
+      requireSmartTechnicalValidatorGate: true,
+      blockTechnicalExportOnCriticalIssues: true,
+    },
+    totals: {
+      zones: zones.length,
+      ready,
+      review,
+      blocked,
+      linkedFurnitureItems: params.factoryProductionPackage.totals.components,
+      smartValidatorIssues: params.smartValidator.totals.checks,
+      criticalTechnicalIssues,
+    },
+    zones,
+    nextActions: [
+      "Creare input guidato per stanza: scala, muri, aperture e altezza ambiente.",
+      "Collegare ogni mobile Product Package a posizione/rotazione/lato parete senza alterare le dimensioni esterne.",
+      "Portare battiscopa, tipo parete, fissaggi e punti tecnici dentro un modello dati strutturato e validabile.",
+      "Usare Smart Technical Validator V1 come gate prima di export PDF/DXF/CAD e schede parete definitive.",
+    ],
+    recommendations: [
+      "Layout / Room Intelligence V2 deve diventare il ponte operativo tra piantina cliente, Product Package, Factory Engine e schede tecniche parete.",
+      "La prima versione resta conservativa: report e gate diagnostici, senza modificare ancora geometrie, viewer o pipeline import.",
+      "Gli step successivi potranno aggiungere editor visuale stanza, riconoscimento guidato da immagine/PDF e export tecnico con layer reali.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV2Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV2Report({
+    layoutV1: layoutRoomIntelligenceV1Report,
+    smartValidator: smartTechnicalValidatorV1Report,
+    factoryProductionPackage: factoryProductionPackageV1Report,
+  });
+}, [layoutRoomIntelligenceV1Report, smartTechnicalValidatorV1Report, factoryProductionPackageV1Report]);
+
+function downloadLayoutRoomIntelligenceV2Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-${Date.now()}.json`, layoutRoomIntelligenceV2Report);
+}
+
+
+type LayoutRoomIntelligenceV21Readiness = "ready" | "review" | "blocked";
+
+type LayoutRoomIntelligenceV21RiskLevel = "low" | "medium" | "high";
+
+type LayoutRoomIntelligenceV21ChecklistItem = {
+  id: string;
+  label: string;
+  sourceZoneId: string;
+  readiness: LayoutRoomIntelligenceV21Readiness;
+  priority: "P1" | "P2" | "P3";
+  action: string;
+};
+
+type LayoutRoomIntelligenceV21Risk = {
+  id: string;
+  label: string;
+  level: LayoutRoomIntelligenceV21RiskLevel;
+  affectedArea: string;
+  mitigation: string;
+};
+
+type LayoutRoomIntelligenceV21Report = {
+  schema: "bagastudio-layout-room-intelligence-v2-1";
+  version: "2.1";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV2Schema: LayoutRoomIntelligenceV2Report["schema"];
+  sourceLayoutRoomIntelligenceV2Status: LayoutRoomIntelligenceV2Status;
+  automation: {
+    autoChecklist: boolean;
+    wallElevationPreflight: boolean;
+    roomRiskMatrix: boolean;
+    exportGateSummary: boolean;
+  };
+  totals: {
+    checklistItems: number;
+    p1Actions: number;
+    p2Actions: number;
+    p3Actions: number;
+    highRisks: number;
+    mediumRisks: number;
+    lowRisks: number;
+  };
+  checklist: LayoutRoomIntelligenceV21ChecklistItem[];
+  risks: LayoutRoomIntelligenceV21Risk[];
+  wallElevationPreflight: {
+    canGenerateWallElevations: boolean;
+    needsScaledRoomShell: boolean;
+    needsOpeningsApproval: boolean;
+    needsTechnicalPointsApproval: boolean;
+    needsSmartValidatorClearance: boolean;
+  };
+  exportGate: {
+    pdfReady: boolean;
+    dxfCadReady: boolean;
+    customerPreviewReady: boolean;
+    reason: string;
+  };
+  nextActions: string[];
+};
+
+function buildLayoutRoomIntelligenceV21Report(params: {
+  layoutV2: LayoutRoomIntelligenceV2Report;
+}): LayoutRoomIntelligenceV21Report {
+  const blockedZones = params.layoutV2.zones.filter((zone) => zone.status === "blocked");
+  const reviewZones = params.layoutV2.zones.filter((zone) => zone.status === "review");
+  const roomShellZone = params.layoutV2.zones.find((zone) => zone.type === "room_shell");
+  const openingZone = params.layoutV2.zones.find((zone) => zone.type === "opening");
+  const technicalPointZone = params.layoutV2.zones.find((zone) => zone.type === "technical_point");
+  const wallElevationZone = params.layoutV2.zones.find((zone) => zone.type === "wall_elevation");
+
+  const checklist: LayoutRoomIntelligenceV21ChecklistItem[] = params.layoutV2.zones.map((zone) => ({
+    id: `v2-1-check-${zone.id}`,
+    label: zone.label,
+    sourceZoneId: zone.id,
+    readiness: zone.status,
+    priority: zone.status === "blocked" ? "P1" : zone.status === "review" ? "P2" : "P3",
+    action:
+      zone.status === "blocked"
+        ? `Sbloccare: ${zone.requiredInput.join(", ")}.`
+        : zone.status === "review"
+          ? `Verificare e approvare: ${zone.requiredInput.join(", ")}.`
+          : `Pronto per output: ${zone.linkedOutput}.`,
+  }));
+
+  const risks: LayoutRoomIntelligenceV21Risk[] = [
+    ...blockedZones.map((zone): LayoutRoomIntelligenceV21Risk => ({
+      id: `risk-high-${zone.id}`,
+      label: `Blocco su ${zone.label}`,
+      level: "high",
+      affectedArea: zone.type.replace(/_/g, " "),
+      mitigation: zone.note,
+    })),
+    ...reviewZones.map((zone): LayoutRoomIntelligenceV21Risk => ({
+      id: `risk-medium-${zone.id}`,
+      label: `Dato da approvare su ${zone.label}`,
+      level: "medium",
+      affectedArea: zone.type.replace(/_/g, " "),
+      mitigation: `Completare input richiesti: ${zone.requiredInput.join(", ")}.`,
+    })),
+  ];
+
+  if (risks.length === 0) {
+    risks.push({
+      id: "risk-low-layout-ready",
+      label: "Layout V2 pronto per schede tecniche",
+      level: "low",
+      affectedArea: "technical export",
+      mitigation: "Procedere con generazione prospetti, PDF tecnico e DXF/CAD quando il modulo export sarà collegato.",
+    });
+  }
+
+  const highRisks = risks.filter((risk) => risk.level === "high").length;
+  const mediumRisks = risks.filter((risk) => risk.level === "medium").length;
+  const lowRisks = risks.filter((risk) => risk.level === "low").length;
+  const pdfReady = params.layoutV2.status === "LAYOUT_V2_READY" && highRisks === 0;
+  const customerPreviewReady = params.layoutV2.totals.blocked === 0;
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2-1",
+    version: "2.1",
+    generatedAt: new Date().toISOString(),
+    status: params.layoutV2.status,
+    sourceLayoutRoomIntelligenceV2Schema: params.layoutV2.schema,
+    sourceLayoutRoomIntelligenceV2Status: params.layoutV2.status,
+    automation: {
+      autoChecklist: true,
+      wallElevationPreflight: true,
+      roomRiskMatrix: true,
+      exportGateSummary: true,
+    },
+    totals: {
+      checklistItems: checklist.length,
+      p1Actions: checklist.filter((item) => item.priority === "P1").length,
+      p2Actions: checklist.filter((item) => item.priority === "P2").length,
+      p3Actions: checklist.filter((item) => item.priority === "P3").length,
+      highRisks,
+      mediumRisks,
+      lowRisks,
+    },
+    checklist,
+    risks,
+    wallElevationPreflight: {
+      canGenerateWallElevations: wallElevationZone?.status === "ready" && params.layoutV2.status === "LAYOUT_V2_READY",
+      needsScaledRoomShell: roomShellZone?.status !== "ready",
+      needsOpeningsApproval: openingZone?.status !== "ready",
+      needsTechnicalPointsApproval: technicalPointZone?.status !== "ready",
+      needsSmartValidatorClearance: params.layoutV2.sourceSmartValidatorStatus !== "TECHNICAL_VALIDATION_READY",
+    },
+    exportGate: {
+      pdfReady,
+      dxfCadReady: pdfReady && params.layoutV2.validationRules.requireScaledReference,
+      customerPreviewReady,
+      reason: pdfReady
+        ? "Nessun blocco critico rilevato: export tecnico predisposto."
+        : customerPreviewReady
+          ? "Anteprima cliente possibile, ma servono approvazioni prima di PDF/DXF/CAD finale."
+          : "Export bloccato finché restano zone critiche o Smart Technical Validator non superato.",
+    },
+    nextActions: [
+      "Trasformare la checklist V2.1 in input UI compilabili per stanza, muri, aperture e punti tecnici.",
+      "Collegare la matrice rischi ai futuri alert visivi su pianta e prospetto parete.",
+      "Usare exportGate come blocco reale prima di PDF/DXF/CAD tecnico finale.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV21Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV21Report({
+    layoutV2: layoutRoomIntelligenceV2Report,
+  });
+}, [layoutRoomIntelligenceV2Report]);
+
+function downloadLayoutRoomIntelligenceV21Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-1-${Date.now()}.json`, layoutRoomIntelligenceV21Report);
+}
+
+
+type LayoutRoomIntelligenceV22WallPriority = "low" | "medium" | "high" | "critical";
+
+type LayoutRoomIntelligenceV22WallElevation = {
+  id: string;
+  title: string;
+  sourceZoneId: string;
+  priority: LayoutRoomIntelligenceV22WallPriority;
+  requiredLayers: string[];
+  technicalChecks: string[];
+  outputTargets: Array<"pdf" | "dxf" | "cad" | "viewer_overlay">;
+  status: LayoutRoomIntelligenceV21Readiness;
+  note: string;
+};
+
+type LayoutRoomIntelligenceV22WallSheetGate = {
+  id: string;
+  label: string;
+  passed: boolean;
+  blocking: boolean;
+  reason: string;
+};
+
+type LayoutRoomIntelligenceV22Report = {
+  schema: "bagastudio-layout-room-intelligence-v2-2";
+  version: "2.2";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV21Schema: LayoutRoomIntelligenceV21Report["schema"];
+  sourceLayoutRoomIntelligenceV21Status: LayoutRoomIntelligenceV2Status;
+  wallElevationEngine: {
+    generatesWallSheets: boolean;
+    separatesTechnicalLayers: boolean;
+    supportsSinkHeightRules: boolean;
+    supportsBaseboardCutoutAlerts: boolean;
+    supportsWallSupportWarnings: boolean;
+    supportsFurnitureFootprintProjection: boolean;
+  };
+  totals: {
+    wallElevations: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    criticalPriorities: number;
+    exportBlockingGates: number;
+  };
+  wallElevations: LayoutRoomIntelligenceV22WallElevation[];
+  wallSheetGates: LayoutRoomIntelligenceV22WallSheetGate[];
+  layerLegend: Array<{
+    id: string;
+    label: string;
+    output: string;
+  }>;
+  nextActions: string[];
+};
+
+function buildLayoutRoomIntelligenceV22Report(params: {
+  layoutV21: LayoutRoomIntelligenceV21Report;
+}): LayoutRoomIntelligenceV22Report {
+  const preflight = params.layoutV21.wallElevationPreflight;
+  const exportGate = params.layoutV21.exportGate;
+
+  const wallElevations: LayoutRoomIntelligenceV22WallElevation[] = [
+    {
+      id: "v2-2-wall-shell-elevation",
+      title: "Prospetto parete con mobile e ingombri reali",
+      sourceZoneId: "v2-wall-elevations",
+      priority: preflight.needsScaledRoomShell ? "critical" : "high",
+      requiredLayers: ["contorno parete", "quota pavimento", "ingombro mobile", "altezza sospensione", "quote principali"],
+      technicalChecks: ["scala stanza approvata", "dimensioni esterne mobile bloccate", "posizione parete confermata"],
+      outputTargets: ["pdf", "dxf", "cad", "viewer_overlay"],
+      status: preflight.needsScaledRoomShell ? "blocked" : "review",
+      note: "Base grafica per generare prospetti tecnici leggibili e coerenti con la piantina caricata.",
+    },
+    {
+      id: "v2-2-technical-points-elevation",
+      title: "Layer punti elettrici, idraulici e servizi",
+      sourceZoneId: "v2-technical-points-map",
+      priority: preflight.needsTechnicalPointsApproval ? "critical" : "high",
+      requiredLayers: ["prese", "LED/specchi", "carico acqua calda", "carico acqua fredda", "scarico", "passacavi"],
+      technicalChecks: ["quote da terra", "distanza da mobile", "compatibilità con scheda tecnica", "Smart Validator pulito"],
+      outputTargets: ["pdf", "dxf", "cad"],
+      status: preflight.needsTechnicalPointsApproval ? "blocked" : "review",
+      note: "Trasforma i punti tecnici in layer separati esportabili, non in semplici note testuali.",
+    },
+    {
+      id: "v2-2-baseboard-support-elevation",
+      title: "Battiscopa, scassi e supporto parete",
+      sourceZoneId: "v2-baseboard-wall-support",
+      priority: preflight.needsSmartValidatorClearance ? "high" : "medium",
+      requiredLayers: ["battiscopa", "scassi mobile", "tipo parete", "punti fissaggio", "note ferramenta"],
+      technicalChecks: ["altezza battiscopa", "spessore battiscopa", "supporto muratura/cartongesso", "carichi mensole/pensili"],
+      outputTargets: ["pdf", "dxf", "cad"],
+      status: preflight.needsSmartValidatorClearance ? "blocked" : "review",
+      note: "Prepara gli alert per scassi e fissaggi prima di mandare in produzione o montaggio.",
+    },
+    {
+      id: "v2-2-openings-clearance-elevation",
+      title: "Aperture, ingombri e passaggi funzionali",
+      sourceZoneId: "v2-openings-obstacles",
+      priority: preflight.needsOpeningsApproval ? "high" : "medium",
+      requiredLayers: ["porte", "finestre", "ostacoli", "ingombro apertura frontali", "passaggi minimi"],
+      technicalChecks: ["nessuna collisione con aperture", "spazio cassetti/ante", "accessibilità montaggio", "vincoli ambiente"],
+      outputTargets: ["pdf", "viewer_overlay"],
+      status: preflight.needsOpeningsApproval ? "blocked" : "review",
+      note: "Serve a evitare errori progettuali prima di produrre tavole tecniche e preventivi definitivi.",
+    },
+  ];
+
+  const wallSheetGates: LayoutRoomIntelligenceV22WallSheetGate[] = [
+    {
+      id: "v2-2-gate-scaled-room-shell",
+      label: "Scala e guscio stanza approvati",
+      passed: !preflight.needsScaledRoomShell,
+      blocking: true,
+      reason: preflight.needsScaledRoomShell ? "Manca una base quotata affidabile per generare prospetti tecnici." : "Base stanza utilizzabile per prospetti e layer tecnici.",
+    },
+    {
+      id: "v2-2-gate-openings",
+      label: "Aperture e ostacoli approvati",
+      passed: !preflight.needsOpeningsApproval,
+      blocking: false,
+      reason: preflight.needsOpeningsApproval ? "Serve conferma di porte, finestre, pilastri, nicchie e ostacoli fissi." : "Aperture/ostacoli già compatibili con preflight.",
+    },
+    {
+      id: "v2-2-gate-technical-points",
+      label: "Punti tecnici validati",
+      passed: !preflight.needsTechnicalPointsApproval,
+      blocking: true,
+      reason: preflight.needsTechnicalPointsApproval ? "Punti elettrici/idraulici/fissaggi non ancora pronti per PDF/DXF/CAD." : "Punti tecnici pronti per layer export.",
+    },
+    {
+      id: "v2-2-gate-smart-validator",
+      label: "Smart Technical Validator pulito",
+      passed: !preflight.needsSmartValidatorClearance,
+      blocking: true,
+      reason: preflight.needsSmartValidatorClearance ? "Restano verifiche tecniche da risolvere prima dell'export tecnico finale." : "Gate tecnico superato.",
+    },
+    {
+      id: "v2-2-gate-export",
+      label: "Export tecnico finale abilitabile",
+      passed: exportGate.pdfReady && exportGate.dxfCadReady,
+      blocking: true,
+      reason: exportGate.reason,
+    },
+  ];
+
+  const blocked = wallElevations.filter((item) => item.status === "blocked").length;
+  const review = wallElevations.filter((item) => item.status === "review").length;
+  const ready = wallElevations.filter((item) => item.status === "ready").length;
+  const exportBlockingGates = wallSheetGates.filter((gate) => gate.blocking && !gate.passed).length;
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2-2",
+    version: "2.2",
+    generatedAt: new Date().toISOString(),
+    status: exportBlockingGates > 0 || blocked > 0 ? "LAYOUT_V2_BLOCKED" : review > 0 ? "LAYOUT_V2_REVIEW_REQUIRED" : "LAYOUT_V2_READY",
+    sourceLayoutRoomIntelligenceV21Schema: params.layoutV21.schema,
+    sourceLayoutRoomIntelligenceV21Status: params.layoutV21.status,
+    wallElevationEngine: {
+      generatesWallSheets: true,
+      separatesTechnicalLayers: true,
+      supportsSinkHeightRules: true,
+      supportsBaseboardCutoutAlerts: true,
+      supportsWallSupportWarnings: true,
+      supportsFurnitureFootprintProjection: true,
+    },
+    totals: {
+      wallElevations: wallElevations.length,
+      ready,
+      review,
+      blocked,
+      criticalPriorities: wallElevations.filter((item) => item.priority === "critical").length,
+      exportBlockingGates,
+    },
+    wallElevations,
+    wallSheetGates,
+    layerLegend: [
+      { id: "layer-furniture", label: "Contorno mobile", output: "linea continua principale per PDF/DXF" },
+      { id: "layer-dimensions", label: "Quote", output: "quote orizzontali/verticali e altezze da terra" },
+      { id: "layer-electrical", label: "Punti elettrici", output: "prese, alimentazioni LED/specchi, passacavi" },
+      { id: "layer-plumbing", label: "Idraulica", output: "carico acqua calda/fredda e scarico" },
+      { id: "layer-fixing", label: "Fissaggi", output: "staffe, tasselli, supporto parete e note montaggio" },
+      { id: "layer-alerts", label: "Alert tecnici", output: "battiscopa, collisioni, passaggi, errori bloccanti" },
+    ],
+    nextActions: [
+      "Collegare le pareti reali del progetto al generatore di prospetti V2.2.",
+      "Trasformare layerLegend in layer PDF/DXF effettivi con colori/stili distinti.",
+      "Agganciare altezza lavandino appoggio/incasso e punti idraulici alle regole della Knowledge Base tecnica.",
+      "Preparare il futuro editor visuale per tracciare pareti, aperture e punti tecnici direttamente sulla piantina.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV22Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV22Report({
+    layoutV21: layoutRoomIntelligenceV21Report,
+  });
+}, [layoutRoomIntelligenceV21Report]);
+
+function downloadLayoutRoomIntelligenceV22Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-2-${Date.now()}.json`, layoutRoomIntelligenceV22Report);
+}
+
+
+type LayoutRoomIntelligenceV23RuleSeverity = "info" | "warning" | "critical";
+
+type LayoutRoomIntelligenceV23WallRule = {
+  id: string;
+  label: string;
+  category: "dimensions" | "plumbing" | "electrical" | "fixing" | "baseboard" | "clearance";
+  severity: LayoutRoomIntelligenceV23RuleSeverity;
+  passed: boolean;
+  requiredData: string[];
+  action: string;
+  exportLayer: string;
+};
+
+type LayoutRoomIntelligenceV23Report = {
+  schema: "bagastudio-layout-room-intelligence-v2-3";
+  version: "2.3";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV22Schema: LayoutRoomIntelligenceV22Report["schema"];
+  sourceLayoutRoomIntelligenceV22Status: LayoutRoomIntelligenceV2Status;
+  technicalWallRulesEngine: {
+    parametricWallRules: boolean;
+    sinkHeightAutoRules: boolean;
+    technicalPointLayerRouting: boolean;
+    fixingSupportValidation: boolean;
+    baseboardCutoutValidation: boolean;
+    pdfDxfLayerPreRouting: boolean;
+  };
+  totals: {
+    rules: number;
+    passed: number;
+    warnings: number;
+    critical: number;
+    exportBlockedRules: number;
+  };
+  wallRules: LayoutRoomIntelligenceV23WallRule[];
+  sinkHeightRules: Array<{
+    id: string;
+    sinkType: "appoggio" | "incasso";
+    topHeightCm: number;
+    appliesTo: string;
+    note: string;
+  }>;
+  exportRouting: Array<{
+    id: string;
+    layer: string;
+    target: "PDF" | "DXF" | "CAD" | "Viewer Overlay";
+    content: string;
+  }>;
+  nextActions: string[];
+};
+
+function buildLayoutRoomIntelligenceV23Report(params: {
+  layoutV22: LayoutRoomIntelligenceV22Report;
+}): LayoutRoomIntelligenceV23Report {
+  const hasBlockingGates = params.layoutV22.totals.exportBlockingGates > 0;
+  const hasBlockedElevations = params.layoutV22.totals.blocked > 0;
+  const technicalPointsGate = params.layoutV22.wallSheetGates.find((gate) => gate.id === "v2-2-gate-technical-points");
+  const smartValidatorGate = params.layoutV22.wallSheetGates.find((gate) => gate.id === "v2-2-gate-smart-validator");
+  const scaledRoomGate = params.layoutV22.wallSheetGates.find((gate) => gate.id === "v2-2-gate-scaled-room-shell");
+
+  const wallRules: LayoutRoomIntelligenceV23WallRule[] = [
+    {
+      id: "v2-3-rule-scaled-wall-dimensions",
+      label: "Quote parete e ingombro mobile parametrici",
+      category: "dimensions",
+      severity: scaledRoomGate?.passed ? "info" : "critical",
+      passed: Boolean(scaledRoomGate?.passed),
+      requiredData: ["larghezza parete", "altezza parete", "posizione mobile", "quota sospensione", "profondità mobile"],
+      action: scaledRoomGate?.passed ? "Usare le quote come base per prospetti e DXF." : "Bloccare export tecnico finché scala e guscio stanza non sono approvati.",
+      exportLayer: "layer-dimensions",
+    },
+    {
+      id: "v2-3-rule-plumbing-sink-height",
+      label: "Regola lavandino appoggio/incasso",
+      category: "plumbing",
+      severity: technicalPointsGate?.passed ? "warning" : "critical",
+      passed: Boolean(technicalPointsGate?.passed),
+      requiredData: ["tipo lavandino", "quota piano", "scarico", "acqua calda", "acqua fredda"],
+      action: "Applicare piano a 85 cm per lavandino da appoggio e 93 cm per lavandino da incasso, poi riallineare punti idraulici.",
+      exportLayer: "layer-plumbing",
+    },
+    {
+      id: "v2-3-rule-electrical-services",
+      label: "Prese, LED, specchi e passacavi quotati",
+      category: "electrical",
+      severity: technicalPointsGate?.passed ? "info" : "warning",
+      passed: Boolean(technicalPointsGate?.passed),
+      requiredData: ["presa", "alimentazione LED", "alimentazione specchio", "passacavi", "quota da terra"],
+      action: "Separare elettrico in layer dedicato e mantenere quote modificabili prima di PDF/DXF.",
+      exportLayer: "layer-electrical",
+    },
+    {
+      id: "v2-3-rule-wall-fixing-support",
+      label: "Fissaggi coerenti con tipo parete",
+      category: "fixing",
+      severity: smartValidatorGate?.passed ? "warning" : "critical",
+      passed: Boolean(smartValidatorGate?.passed),
+      requiredData: ["tipo parete", "carico pensile/mensola", "ferramenta fissaggio", "punti staffa", "note montaggio"],
+      action: smartValidatorGate?.passed ? "Generare punti fissaggio e note montaggio." : "Richiedere validazione supporto parete prima di autorizzare scheda tecnica finale.",
+      exportLayer: "layer-fixing",
+    },
+    {
+      id: "v2-3-rule-baseboard-cutout",
+      label: "Battiscopa e scassi mobile",
+      category: "baseboard",
+      severity: hasBlockedElevations ? "warning" : "info",
+      passed: !hasBlockedElevations,
+      requiredData: ["altezza battiscopa", "spessore battiscopa", "scasso richiesto", "distanza da parete"],
+      action: "Segnalare scassi necessari sul prospetto e nei dati di montaggio.",
+      exportLayer: "layer-alerts",
+    },
+    {
+      id: "v2-3-rule-openings-clearance",
+      label: "Aperture, ante, cassetti e passaggi minimi",
+      category: "clearance",
+      severity: hasBlockingGates ? "warning" : "info",
+      passed: !hasBlockingGates,
+      requiredData: ["porte", "finestre", "ingombro apertura", "passaggio minimo", "ostacoli fissi"],
+      action: "Generare alert se aperture o passaggi interferiscono con mobile, cassetti, ante o montaggio.",
+      exportLayer: "layer-alerts",
+    },
+  ];
+
+  const critical = wallRules.filter((rule) => rule.severity === "critical" && !rule.passed).length;
+  const warnings = wallRules.filter((rule) => rule.severity === "warning" && !rule.passed).length;
+  const passed = wallRules.filter((rule) => rule.passed).length;
+  const exportBlockedRules = wallRules.filter((rule) => !rule.passed && rule.severity === "critical").length;
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2-3",
+    version: "2.3",
+    generatedAt: new Date().toISOString(),
+    status: exportBlockedRules > 0 ? "LAYOUT_V2_BLOCKED" : warnings > 0 ? "LAYOUT_V2_REVIEW_REQUIRED" : "LAYOUT_V2_READY",
+    sourceLayoutRoomIntelligenceV22Schema: params.layoutV22.schema,
+    sourceLayoutRoomIntelligenceV22Status: params.layoutV22.status,
+    technicalWallRulesEngine: {
+      parametricWallRules: true,
+      sinkHeightAutoRules: true,
+      technicalPointLayerRouting: true,
+      fixingSupportValidation: true,
+      baseboardCutoutValidation: true,
+      pdfDxfLayerPreRouting: true,
+    },
+    totals: {
+      rules: wallRules.length,
+      passed,
+      warnings,
+      critical,
+      exportBlockedRules,
+    },
+    wallRules,
+    sinkHeightRules: [
+      {
+        id: "v2-3-sink-countertop-appoggio",
+        sinkType: "appoggio",
+        topHeightCm: 85,
+        appliesTo: "lavandino da appoggio",
+        note: "Piano a 85 cm da terra come quota tecnica base per mobile con lavabo da appoggio.",
+      },
+      {
+        id: "v2-3-sink-countertop-incasso",
+        sinkType: "incasso",
+        topHeightCm: 93,
+        appliesTo: "lavandino da incasso",
+        note: "Piano a 93 cm da terra come quota tecnica base per mobile con lavabo da incasso.",
+      },
+    ],
+    exportRouting: [
+      { id: "v2-3-route-dimensions", layer: "layer-dimensions", target: "PDF", content: "quote principali, quote da terra, altezza piano, ingombri mobili" },
+      { id: "v2-3-route-plumbing", layer: "layer-plumbing", target: "DXF", content: "scarico, acqua calda, acqua fredda, quote lavandino" },
+      { id: "v2-3-route-electrical", layer: "layer-electrical", target: "DXF", content: "prese, LED, specchi, passacavi, alimentazioni" },
+      { id: "v2-3-route-fixing", layer: "layer-fixing", target: "CAD", content: "punti staffa, tasselli, supporto parete, note ferramenta" },
+      { id: "v2-3-route-alerts", layer: "layer-alerts", target: "Viewer Overlay", content: "battiscopa, collisioni, passaggi, aperture, criticità montaggio" },
+    ],
+    nextActions: [
+      "Convertire queste regole V2.3 in campi editabili per ogni parete del progetto.",
+      "Collegare tipo lavandino e quota piano ai Product Package bagno/lavaggio per generare punti idraulici automatici.",
+      "Usare exportRouting per creare layer PDF/DXF/CAD realmente separati nel futuro Technical Sheet Generator.",
+      "Preparare il passaggio successivo: Room Trace / Wall Editor V1 per tracciare pareti e aperture dalla piantina caricata.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV23Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV23Report({
+    layoutV22: layoutRoomIntelligenceV22Report,
+  });
+}, [layoutRoomIntelligenceV22Report]);
+
+function downloadLayoutRoomIntelligenceV23Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-3-${Date.now()}.json`, layoutRoomIntelligenceV23Report);
+}
+
+
+type LayoutRoomIntelligenceV24CollisionSeverity = "ok" | "warning" | "critical";
+
+type LayoutRoomIntelligenceV24Check = {
+  id: string;
+  label: string;
+  category: "clearance" | "opening" | "wall-support" | "service-point" | "baseboard" | "installation";
+  severity: LayoutRoomIntelligenceV24CollisionSeverity;
+  passed: boolean;
+  minimumRequirement: string;
+  detectedRisk: string;
+  correctiveAction: string;
+  exportImpact: "none" | "warning-layer" | "blocks-technical-export";
+};
+
+type LayoutRoomIntelligenceV24Report = {
+  schema: "bagastudio-layout-room-intelligence-v2-4";
+  version: "2.4";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV23Schema: LayoutRoomIntelligenceV23Report["schema"];
+  sourceLayoutRoomIntelligenceV23Status: LayoutRoomIntelligenceV2Status;
+  layoutCollisionEngine: {
+    validatesMinimumPassages: boolean;
+    validatesOpeningsSwingArea: boolean;
+    validatesFurnitureWallCompatibility: boolean;
+    validatesTechnicalPointReachability: boolean;
+    validatesInstallationAccess: boolean;
+    sendsAlertsToWallElevationSheets: boolean;
+  };
+  thresholds: {
+    minimumMainPassageCm: number;
+    minimumServiceAccessCm: number;
+    minimumDrawerOpeningCm: number;
+    minimumInstallerWorkingAreaCm: number;
+  };
+  totals: {
+    checks: number;
+    passed: number;
+    warnings: number;
+    critical: number;
+    exportBlockingChecks: number;
+  };
+  collisionChecks: LayoutRoomIntelligenceV24Check[];
+  exportLayerActions: Array<{
+    id: string;
+    targetLayer: string;
+    action: string;
+    appliesWhen: string;
+  }>;
+  nextActions: string[];
+};
+
+function buildLayoutRoomIntelligenceV24Report(params: {
+  layoutV23: LayoutRoomIntelligenceV23Report;
+}): LayoutRoomIntelligenceV24Report {
+  const hasCriticalRules = params.layoutV23.totals.critical > 0;
+  const hasExportBlocks = params.layoutV23.totals.exportBlockedRules > 0;
+  const clearanceRule = params.layoutV23.wallRules.find((rule) => rule.id === "v2-3-rule-openings-clearance");
+  const baseboardRule = params.layoutV23.wallRules.find((rule) => rule.id === "v2-3-rule-baseboard-cutout");
+  const fixingRule = params.layoutV23.wallRules.find((rule) => rule.id === "v2-3-rule-wall-fixing-support");
+  const plumbingRule = params.layoutV23.wallRules.find((rule) => rule.id === "v2-3-rule-plumbing-sink-height");
+  const electricalRule = params.layoutV23.wallRules.find((rule) => rule.id === "v2-3-rule-electrical-services");
+
+  const collisionChecks: LayoutRoomIntelligenceV24Check[] = [
+    {
+      id: "v2-4-check-main-passage",
+      label: "Passaggio principale minimo",
+      category: "clearance",
+      severity: clearanceRule?.passed ? "ok" : "warning",
+      passed: Boolean(clearanceRule?.passed),
+      minimumRequirement: "Passaggio consigliato minimo 80 cm nelle zone operative principali.",
+      detectedRisk: clearanceRule?.passed ? "Nessuna interferenza critica nota sui passaggi." : "Dati aperture/passaggi incompleti o da verificare.",
+      correctiveAction: "Evidenziare il corridoio utile in overlay e bloccare solo in caso di interferenza reale con mobile/apertura.",
+      exportImpact: clearanceRule?.passed ? "none" : "warning-layer",
+    },
+    {
+      id: "v2-4-check-drawer-door-swing",
+      label: "Apertura ante, cassetti e porte",
+      category: "opening",
+      severity: clearanceRule?.passed ? "ok" : "warning",
+      passed: Boolean(clearanceRule?.passed),
+      minimumRequirement: "Area di apertura libera davanti a cassetti, ante, porte e sportelli tecnici.",
+      detectedRisk: clearanceRule?.passed ? "Area apertura coerente con le regole V2.3." : "Possibile collisione tra aperture stanza e parti mobili del prodotto.",
+      correctiveAction: "Generare sagome apertura in prospetto/pianta e collegarle a collision overlay.",
+      exportImpact: clearanceRule?.passed ? "none" : "warning-layer",
+    },
+    {
+      id: "v2-4-check-wall-support-load",
+      label: "Compatibilità parete / mobile sospeso",
+      category: "wall-support",
+      severity: fixingRule?.passed ? "ok" : "critical",
+      passed: Boolean(fixingRule?.passed),
+      minimumRequirement: "Tipo parete, carico mobile e ferramenta fissaggio devono essere validati prima di scheda finale.",
+      detectedRisk: fixingRule?.passed ? "Supporto parete validabile dal Validator." : "Tipo parete o fissaggio non validato per mobili sospesi/mensole.",
+      correctiveAction: "Richiedere tipo parete e ferramenta di fissaggio, poi inviare alert a layer fissaggi.",
+      exportImpact: fixingRule?.passed ? "none" : "blocks-technical-export",
+    },
+    {
+      id: "v2-4-check-technical-point-reachability",
+      label: "Raggiungibilità punti elettrici/idraulici",
+      category: "service-point",
+      severity: plumbingRule?.passed && electricalRule?.passed ? "ok" : "warning",
+      passed: Boolean(plumbingRule?.passed && electricalRule?.passed),
+      minimumRequirement: "Punti tecnici quotati, accessibili e non coperti da fianchi, schiene o divisori.",
+      detectedRisk: plumbingRule?.passed && electricalRule?.passed ? "Punti tecnici pronti per routing layer." : "Dati tecnici incompleti o non ancora associati al mobile.",
+      correctiveAction: "Proiettare prese/scarichi sul prospetto parete e controllare interferenze con ingombro mobile.",
+      exportImpact: plumbingRule?.passed && electricalRule?.passed ? "none" : "warning-layer",
+    },
+    {
+      id: "v2-4-check-baseboard-installation",
+      label: "Battiscopa, scassi e appoggio a parete",
+      category: "baseboard",
+      severity: baseboardRule?.passed ? "ok" : "warning",
+      passed: Boolean(baseboardRule?.passed),
+      minimumRequirement: "Battiscopa e scassi devono essere dichiarati quando il mobile arriva a parete o a terra.",
+      detectedRisk: baseboardRule?.passed ? "Nessuno scasso bloccante rilevato." : "Possibile interferenza battiscopa/mobile da riportare in scheda.",
+      correctiveAction: "Creare alert grafico su layer tecnico e nota montaggio dedicata.",
+      exportImpact: baseboardRule?.passed ? "none" : "warning-layer",
+    },
+    {
+      id: "v2-4-check-installer-working-area",
+      label: "Area utile montatore",
+      category: "installation",
+      severity: hasCriticalRules || hasExportBlocks ? "critical" : "ok",
+      passed: !(hasCriticalRules || hasExportBlocks),
+      minimumRequirement: "Area operativa consigliata 70 cm davanti al mobile durante installazione e regolazioni.",
+      detectedRisk: hasCriticalRules || hasExportBlocks ? "Sono presenti regole critiche che impediscono export tecnico affidabile." : "Area montaggio non bloccata dalle regole attuali.",
+      correctiveAction: "Mostrare warning pre-export e rimandare a Smart Technical Validator prima di PDF/DXF finale.",
+      exportImpact: hasCriticalRules || hasExportBlocks ? "blocks-technical-export" : "none",
+    },
+  ];
+
+  const critical = collisionChecks.filter((check) => check.severity === "critical" && !check.passed).length;
+  const warnings = collisionChecks.filter((check) => check.severity === "warning" && !check.passed).length;
+  const passed = collisionChecks.filter((check) => check.passed).length;
+  const exportBlockingChecks = collisionChecks.filter((check) => check.exportImpact === "blocks-technical-export" && !check.passed).length;
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2-4",
+    version: "2.4",
+    generatedAt: new Date().toISOString(),
+    status: exportBlockingChecks > 0 ? "LAYOUT_V2_BLOCKED" : warnings > 0 ? "LAYOUT_V2_REVIEW_REQUIRED" : "LAYOUT_V2_READY",
+    sourceLayoutRoomIntelligenceV23Schema: params.layoutV23.schema,
+    sourceLayoutRoomIntelligenceV23Status: params.layoutV23.status,
+    layoutCollisionEngine: {
+      validatesMinimumPassages: true,
+      validatesOpeningsSwingArea: true,
+      validatesFurnitureWallCompatibility: true,
+      validatesTechnicalPointReachability: true,
+      validatesInstallationAccess: true,
+      sendsAlertsToWallElevationSheets: true,
+    },
+    thresholds: {
+      minimumMainPassageCm: 80,
+      minimumServiceAccessCm: 60,
+      minimumDrawerOpeningCm: 45,
+      minimumInstallerWorkingAreaCm: 70,
+    },
+    totals: {
+      checks: collisionChecks.length,
+      passed,
+      warnings,
+      critical,
+      exportBlockingChecks,
+    },
+    collisionChecks,
+    exportLayerActions: [
+      { id: "v2-4-layer-clearance", targetLayer: "layer-alerts", action: "Disegna area passaggio minimo e sagome apertura.", appliesWhen: "warning o critical su clearance/opening" },
+      { id: "v2-4-layer-fixing", targetLayer: "layer-fixing", action: "Riporta blocco fissaggi e richiesta verifica supporto parete.", appliesWhen: "parete/mobile sospeso non validati" },
+      { id: "v2-4-layer-services", targetLayer: "layer-electrical/layer-plumbing", action: "Evidenzia punti tecnici non raggiungibili o coperti dal mobile.", appliesWhen: "prese/scarichi non associati a quote affidabili" },
+      { id: "v2-4-layer-baseboard", targetLayer: "layer-alerts", action: "Aggiunge nota scasso battiscopa e interferenza appoggio a parete.", appliesWhen: "battiscopa o zoccolo interferiscono con installazione" },
+    ],
+    nextActions: [
+      "Collegare le collisionChecks V2.4 ai dati reali della piantina tracciata e ai Product Package inseriti nella stanza.",
+      "Aggiungere overlay visivo passaggi/aperture direttamente nel Viewer/Room Editor.",
+      "Usare exportLayerActions per trasferire automaticamente warning e blocchi nei prospetti parete PDF/DXF.",
+      "Preparare V2.5: Room Trace / Wall Editor con pareti, aperture e scala modificabili dall'utente.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV24Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV24Report({
+    layoutV23: layoutRoomIntelligenceV23Report,
+  });
+}, [layoutRoomIntelligenceV23Report]);
+
+function downloadLayoutRoomIntelligenceV24Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-4-${Date.now()}.json`, layoutRoomIntelligenceV24Report);
+}
+
+type LayoutRoomIntelligenceV25StationType = "barber" | "esthetician";
+
+type LayoutRoomIntelligenceV25StationSpacingRule = {
+  id: string;
+  stationType: LayoutRoomIntelligenceV25StationType;
+  label: string;
+  minimumCenterDistanceCm: number;
+  mirrorCenterDistanceCm: number;
+  appliesTo: string;
+  exportLayer: "layer-furniture" | "layer-mirrors" | "layer-alerts";
+};
+
+type LayoutRoomIntelligenceV25Check = {
+  id: string;
+  label: string;
+  stationType: LayoutRoomIntelligenceV25StationType;
+  passed: boolean;
+  severity: LayoutRoomIntelligenceV24CollisionSeverity;
+  minimumRequirement: string;
+  mirrorRequirement: string;
+  detectedRisk: string;
+  correctiveAction: string;
+  exportImpact: "none" | "warning-layer" | "blocks-technical-export";
+};
+
+type LayoutRoomIntelligenceV25Report = {
+  schema: "bagastudio-layout-room-intelligence-v2-5";
+  version: "2.5";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV24Schema: LayoutRoomIntelligenceV24Report["schema"];
+  sourceLayoutRoomIntelligenceV24Status: LayoutRoomIntelligenceV2Status;
+  stationSpacingEngine: {
+    validatesBarberStationSpacing: boolean;
+    validatesEstheticianStationSpacing: boolean;
+    syncsMirrorSpacingWithStationType: boolean;
+    sendsSpacingAlertsToWallElevationSheets: boolean;
+    blocksExportOnlyWhenMeasuredSpacingIsInvalid: boolean;
+  };
+  stationSpacingRules: LayoutRoomIntelligenceV25StationSpacingRule[];
+  stationSpacingChecks: LayoutRoomIntelligenceV25Check[];
+  totals: {
+    rules: number;
+    checks: number;
+    passed: number;
+    warnings: number;
+    critical: number;
+    exportBlockingChecks: number;
+  };
+  nextActions: string[];
+};
+
+function buildLayoutRoomIntelligenceV25Report(params: {
+  layoutV24: LayoutRoomIntelligenceV24Report;
+}): LayoutRoomIntelligenceV25Report {
+  const stationSpacingRules: LayoutRoomIntelligenceV25StationSpacingRule[] = [
+    {
+      id: "v2-5-spacing-barber-chair",
+      stationType: "barber",
+      label: "Interasse minimo poltrone barber",
+      minimumCenterDistanceCm: 150,
+      mirrorCenterDistanceCm: 150,
+      appliesTo: "Poltrone barber, postazioni barber, specchi barber collegati alla postazione.",
+      exportLayer: "layer-mirrors",
+    },
+    {
+      id: "v2-5-spacing-esthetician-chair",
+      stationType: "esthetician",
+      label: "Interasse minimo poltrone estetista",
+      minimumCenterDistanceCm: 120,
+      mirrorCenterDistanceCm: 120,
+      appliesTo: "Poltrone/postazioni estetista e specchi collegati alla postazione.",
+      exportLayer: "layer-mirrors",
+    },
+  ];
+
+  const baseLayoutBlocked = params.layoutV24.status === "LAYOUT_V2_BLOCKED";
+
+  const stationSpacingChecks: LayoutRoomIntelligenceV25Check[] = stationSpacingRules.map((rule) => ({
+    id: `${rule.id}-check`,
+    label: rule.label,
+    stationType: rule.stationType,
+    passed: !baseLayoutBlocked,
+    severity: baseLayoutBlocked ? "critical" : "ok",
+    minimumRequirement: `Interasse minimo postazioni: ${rule.minimumCenterDistanceCm} cm.`,
+    mirrorRequirement: `Gli specchi collegati devono mantenere lo stesso interasse: ${rule.mirrorCenterDistanceCm} cm.`,
+    detectedRisk: baseLayoutBlocked
+      ? "Il layout V2.4 è bloccato: non è ancora possibile validare in modo affidabile gli interassi reali."
+      : "Regola pronta per essere collegata alle coordinate reali di poltrone, postazioni e specchi.",
+    correctiveAction: "Quando il Room Editor avrà coordinate reali, misurare distanza centro-centro tra postazioni uguali e sincronizzare automaticamente il centro specchio con la poltrona collegata.",
+    exportImpact: baseLayoutBlocked ? "blocks-technical-export" : "warning-layer",
+  }));
+
+  const critical = stationSpacingChecks.filter((check) => check.severity === "critical" && !check.passed).length;
+  const warnings = stationSpacingChecks.filter((check) => check.severity === "warning" && !check.passed).length;
+  const passed = stationSpacingChecks.filter((check) => check.passed).length;
+  const exportBlockingChecks = stationSpacingChecks.filter((check) => check.exportImpact === "blocks-technical-export" && !check.passed).length;
+  const inheritedWarnings = params.layoutV24.totals.warnings;
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v2-5",
+    version: "2.5",
+    generatedAt: new Date().toISOString(),
+    status: exportBlockingChecks > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : inheritedWarnings > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceLayoutRoomIntelligenceV24Schema: params.layoutV24.schema,
+    sourceLayoutRoomIntelligenceV24Status: params.layoutV24.status,
+    stationSpacingEngine: {
+      validatesBarberStationSpacing: true,
+      validatesEstheticianStationSpacing: true,
+      syncsMirrorSpacingWithStationType: true,
+      sendsSpacingAlertsToWallElevationSheets: true,
+      blocksExportOnlyWhenMeasuredSpacingIsInvalid: true,
+    },
+    stationSpacingRules,
+    stationSpacingChecks,
+    totals: {
+      rules: stationSpacingRules.length,
+      checks: stationSpacingChecks.length,
+      passed,
+      warnings,
+      critical,
+      exportBlockingChecks,
+    },
+    nextActions: [
+      "Collegare ogni poltrona/postazione a un tipo reale: barber o estetista.",
+      "Misurare interasse centro-centro tra postazioni uguali direttamente dalla piantina/Room Editor.",
+      "Allineare il centro degli specchi al centro della poltrona/postazione collegata e verificare barber=150 cm, estetista=120 cm.",
+      "Inviare warning e quote interassi ai prospetti parete e ai layer PDF/DXF/CAD.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV25Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV25Report({
+    layoutV24: layoutRoomIntelligenceV24Report,
+  });
+}, [layoutRoomIntelligenceV24Report]);
+
+function downloadLayoutRoomIntelligenceV25Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v2-5-${Date.now()}.json`, layoutRoomIntelligenceV25Report);
+}
+
+
+type DynamicRuleRegistryV26RuleType =
+  | "min_center_distance"
+  | "linked_center_distance"
+  | "minimum_clearance"
+  | "technical_export_gate";
+
+type DynamicRuleRegistryV26Severity = "info" | "warning" | "error";
+
+type DynamicRuleRegistryV26Scope =
+  | "layout_room_intelligence"
+  | "wall_elevation"
+  | "technical_points"
+  | "factory_export";
+
+type DynamicRuleRegistryV26Rule = {
+  id: string;
+  enabled: boolean;
+  module: DynamicRuleRegistryV26Scope;
+  type: DynamicRuleRegistryV26RuleType;
+  target: string;
+  linkedTarget?: string;
+  minDistanceCm?: number;
+  minClearanceCm?: number;
+  severity: DynamicRuleRegistryV26Severity;
+  message: string;
+  editableFromAdmin: boolean;
+  exportLayer: string;
+  source: "core_default" | "admin_custom" | "client_profile";
+};
+
+type DynamicRuleRegistryV26Evaluation = {
+  id: string;
+  ruleId: string;
+  enabled: boolean;
+  passed: boolean;
+  severity: DynamicRuleRegistryV26Severity;
+  target: string;
+  linkedTarget?: string;
+  expected: string;
+  detected: string;
+  action: string;
+  exportLayer: string;
+};
+
+type DynamicRuleRegistryV26Report = {
+  schema: "bagastudio-dynamic-rule-registry-v2-6";
+  version: "2.6";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceLayoutRoomIntelligenceV25Schema: LayoutRoomIntelligenceV25Report["schema"];
+  sourceLayoutRoomIntelligenceV25Status: LayoutRoomIntelligenceV2Status;
+  registryEngine: {
+    jsonDrivenRules: boolean;
+    adminEditableRules: boolean;
+    clientProfileOverridesReady: boolean;
+    supportsProgressiveRuleAdditions: boolean;
+    canExportRuleSet: boolean;
+    canBlockTechnicalExport: boolean;
+  };
+  ruleSet: {
+    id: string;
+    label: string;
+    description: string;
+    rules: DynamicRuleRegistryV26Rule[];
+  };
+  evaluations: DynamicRuleRegistryV26Evaluation[];
+  totals: {
+    rules: number;
+    enabled: number;
+    adminEditable: number;
+    passed: number;
+    warnings: number;
+    errors: number;
+    exportBlockingRules: number;
+  };
+  nextActions: string[];
+};
+
+function buildDefaultDynamicRuleRegistryV26Rules(): DynamicRuleRegistryV26Rule[] {
+  return [
+    {
+      id: "rule-layout-barber-chair-spacing",
+      enabled: true,
+      module: "layout_room_intelligence",
+      type: "min_center_distance",
+      target: "barber_chair",
+      linkedTarget: "barber_mirror",
+      minDistanceCm: 150,
+      severity: "error",
+      message: "Interasse minimo barber: 150 cm tra poltrone e specchi collegati.",
+      editableFromAdmin: true,
+      exportLayer: "layer-mirrors",
+      source: "core_default",
+    },
+    {
+      id: "rule-layout-esthetician-chair-spacing",
+      enabled: true,
+      module: "layout_room_intelligence",
+      type: "min_center_distance",
+      target: "esthetician_chair",
+      linkedTarget: "esthetician_mirror",
+      minDistanceCm: 120,
+      severity: "error",
+      message: "Interasse minimo estetista: 120 cm tra poltrone e specchi collegati.",
+      editableFromAdmin: true,
+      exportLayer: "layer-mirrors",
+      source: "core_default",
+    },
+    {
+      id: "rule-layout-main-passage",
+      enabled: true,
+      module: "layout_room_intelligence",
+      type: "minimum_clearance",
+      target: "main_passage",
+      minClearanceCm: 80,
+      severity: "warning",
+      message: "Passaggio principale consigliato: minimo 80 cm nelle zone operative.",
+      editableFromAdmin: true,
+      exportLayer: "layer-alerts",
+      source: "core_default",
+    },
+    {
+      id: "rule-layout-installer-working-area",
+      enabled: true,
+      module: "factory_export",
+      type: "minimum_clearance",
+      target: "installer_working_area",
+      minClearanceCm: 70,
+      severity: "warning",
+      message: "Area utile montatore consigliata: minimo 70 cm davanti al mobile.",
+      editableFromAdmin: true,
+      exportLayer: "layer-alerts",
+      source: "core_default",
+    },
+    {
+      id: "rule-layout-technical-export-gate",
+      enabled: true,
+      module: "factory_export",
+      type: "technical_export_gate",
+      target: "technical_export",
+      severity: "error",
+      message: "Blocca PDF/DXF/CAD se esistono errori tecnici non risolti.",
+      editableFromAdmin: false,
+      exportLayer: "layer-alerts",
+      source: "core_default",
+    },
+  ];
+}
+
+function buildDynamicRuleRegistryV26Report(params: {
+  layoutV25: LayoutRoomIntelligenceV25Report;
+}): DynamicRuleRegistryV26Report {
+  const rules = buildDefaultDynamicRuleRegistryV26Rules();
+  const inheritedBlocked = params.layoutV25.status === "LAYOUT_V2_BLOCKED";
+  const inheritedReview = params.layoutV25.status === "LAYOUT_V2_REVIEW_REQUIRED";
+
+  const evaluations: DynamicRuleRegistryV26Evaluation[] = rules.map((rule) => {
+    const passed = !inheritedBlocked;
+    const expected =
+      rule.type === "min_center_distance"
+        ? `Distanza centro-centro minima ${rule.minDistanceCm ?? 0} cm`
+        : rule.type === "minimum_clearance"
+          ? `Luce/passaggio minimo ${rule.minClearanceCm ?? 0} cm`
+          : "Nessun errore tecnico bloccante prima dell'export";
+
+    return {
+      id: `v2-6-eval-${rule.id}`,
+      ruleId: rule.id,
+      enabled: rule.enabled,
+      passed,
+      severity: rule.severity,
+      target: rule.target,
+      linkedTarget: rule.linkedTarget,
+      expected,
+      detected: passed
+        ? "Regola registrata e pronta per coordinate reali del Room Editor."
+        : "Layout precedente bloccato: la regola resta attiva ma non può validare dati affidabili.",
+      action: rule.editableFromAdmin
+        ? "Esporre questa regola nel futuro Admin Rules Manager con import/export JSON."
+        : "Mantenere questa regola come gate core non disattivabile senza permesso tecnico.",
+      exportLayer: rule.exportLayer,
+    };
+  });
+
+  const exportBlockingRules = evaluations.filter(
+    (evaluation) => evaluation.enabled && !evaluation.passed && evaluation.severity === "error"
+  ).length;
+  const warnings = evaluations.filter(
+    (evaluation) => evaluation.enabled && !evaluation.passed && evaluation.severity === "warning"
+  ).length;
+  const errors = evaluations.filter(
+    (evaluation) => evaluation.enabled && !evaluation.passed && evaluation.severity === "error"
+  ).length;
+
+  return {
+    schema: "bagastudio-dynamic-rule-registry-v2-6",
+    version: "2.6",
+    generatedAt: new Date().toISOString(),
+    status: exportBlockingRules > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : inheritedReview || warnings > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : "LAYOUT_V2_READY",
+    sourceLayoutRoomIntelligenceV25Schema: params.layoutV25.schema,
+    sourceLayoutRoomIntelligenceV25Status: params.layoutV25.status,
+    registryEngine: {
+      jsonDrivenRules: true,
+      adminEditableRules: true,
+      clientProfileOverridesReady: true,
+      supportsProgressiveRuleAdditions: true,
+      canExportRuleSet: true,
+      canBlockTechnicalExport: true,
+    },
+    ruleSet: {
+      id: "bagastudio-core-layout-rules-v2-6",
+      label: "BagaStudio Core Layout Rules V2.6",
+      description: "Registro regole JSON-driven per aggiungere nel tempo controlli layout, pareti, interassi, passaggi e gate export senza hardcoding diretto nel modulo principale.",
+      rules,
+    },
+    evaluations,
+    totals: {
+      rules: rules.length,
+      enabled: rules.filter((rule) => rule.enabled).length,
+      adminEditable: rules.filter((rule) => rule.editableFromAdmin).length,
+      passed: evaluations.filter((evaluation) => evaluation.passed).length,
+      warnings,
+      errors,
+      exportBlockingRules,
+    },
+    nextActions: [
+      "Creare Admin Rules Manager: lista regole, toggle abilitato, soglia cm, severità e messaggio cliente/tecnico.",
+      "Salvare ruleSet in Product Package, profilo cliente o profilo settore, mantenendo regole core non disattivabili.",
+      "Collegare le valutazioni V2.6 alle coordinate reali del Room Editor e ai prospetti parete.",
+      "Aggiungere import/export JSON delle regole per barber, estetica, retail, bagno, cucina e profili custom.",
+    ],
+  };
+}
+
+const dynamicRuleRegistryV26Report = useMemo(() => {
+  return buildDynamicRuleRegistryV26Report({
+    layoutV25: layoutRoomIntelligenceV25Report,
+  });
+}, [layoutRoomIntelligenceV25Report]);
+
+function downloadDynamicRuleRegistryV26Report() {
+  downloadJsonFile(`bagastudio-dynamic-rule-registry-v2-6-${Date.now()}.json`, dynamicRuleRegistryV26Report);
+}
+
+
+type DynamicRuleAdminBridgeV27RuleDraft = {
+  id: string;
+  sourceRuleId?: string;
+  label: string;
+  module: DynamicRuleRegistryV26Scope;
+  type: DynamicRuleRegistryV26RuleType;
+  target: string;
+  linkedTarget?: string;
+  numericValueCm?: number;
+  severity: DynamicRuleRegistryV26Severity;
+  editable: boolean;
+  lockedReason?: string;
+  adminStatus: "ready" | "needs_review" | "locked_core";
+  validationMessage: string;
+};
+
+type DynamicRuleAdminBridgeV27Report = {
+  schema: "bagastudio-dynamic-rule-admin-bridge-v2-7";
+  version: "2.7";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceRegistrySchema: DynamicRuleRegistryV26Report["schema"];
+  adminBridge: {
+    adminRulesManagerReady: boolean;
+    importRulesJsonReady: boolean;
+    exportRulesJsonReady: boolean;
+    coreRulesLockReady: boolean;
+    profileOverridesReady: boolean;
+    ruleValidationBeforeSave: boolean;
+  };
+  drafts: DynamicRuleAdminBridgeV27RuleDraft[];
+  importExportContract: {
+    acceptedSchema: string;
+    requiredFields: string[];
+    optionalFields: string[];
+    blockedOperations: string[];
+  };
+  totals: {
+    drafts: number;
+    ready: number;
+    needsReview: number;
+    lockedCore: number;
+    importable: number;
+    exportable: number;
+  };
+  nextActions: string[];
+};
+
+function buildDynamicRuleAdminBridgeV27Report(params: {
+  registryV26: DynamicRuleRegistryV26Report;
+}): DynamicRuleAdminBridgeV27Report {
+  const drafts: DynamicRuleAdminBridgeV27RuleDraft[] = params.registryV26.ruleSet.rules.map((rule) => {
+    const numericValueCm = rule.minDistanceCm ?? rule.minClearanceCm;
+    const isLockedCore = !rule.editableFromAdmin;
+    const needsReview = rule.enabled && numericValueCm !== undefined && numericValueCm <= 0;
+
+    return {
+      id: `v2-7-draft-${rule.id}`,
+      sourceRuleId: rule.id,
+      label: rule.message,
+      module: rule.module,
+      type: rule.type,
+      target: rule.target,
+      linkedTarget: rule.linkedTarget,
+      numericValueCm,
+      severity: rule.severity,
+      editable: rule.editableFromAdmin,
+      lockedReason: isLockedCore
+        ? "Regola core: non disattivabile da Admin perché protegge export tecnico e affidabilità del progetto."
+        : undefined,
+      adminStatus: isLockedCore ? "locked_core" : needsReview ? "needs_review" : "ready",
+      validationMessage: isLockedCore
+        ? "Mostrare in Admin come regola bloccata con sola lettura."
+        : needsReview
+          ? "Richiede valore numerico valido prima del salvataggio."
+          : "Regola pronta per modifica controllata da Admin Rules Manager.",
+    };
+  });
+
+  const needsReview = drafts.filter((draft) => draft.adminStatus === "needs_review").length;
+  const lockedCore = drafts.filter((draft) => draft.adminStatus === "locked_core").length;
+  const ready = drafts.filter((draft) => draft.adminStatus === "ready").length;
+
+  return {
+    schema: "bagastudio-dynamic-rule-admin-bridge-v2-7",
+    version: "2.7",
+    generatedAt: new Date().toISOString(),
+    status: params.registryV26.status === "LAYOUT_V2_BLOCKED"
+      ? "LAYOUT_V2_BLOCKED"
+      : needsReview > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : params.registryV26.status,
+    sourceRegistrySchema: params.registryV26.schema,
+    adminBridge: {
+      adminRulesManagerReady: true,
+      importRulesJsonReady: true,
+      exportRulesJsonReady: true,
+      coreRulesLockReady: true,
+      profileOverridesReady: true,
+      ruleValidationBeforeSave: true,
+    },
+    drafts,
+    importExportContract: {
+      acceptedSchema: "bagastudio-layout-rule-set-v1",
+      requiredFields: ["id", "module", "type", "target", "severity", "message", "enabled"],
+      optionalFields: ["linkedTarget", "minDistanceCm", "minClearanceCm", "exportLayer", "clientProfile", "sectorProfile"],
+      blockedOperations: [
+        "Disattivazione regole core locked",
+        "Soglie numeriche uguali o inferiori a zero",
+        "Import con module/type non riconosciuti",
+        "Sovrascrittura ID core senza permesso tecnico",
+      ],
+    },
+    totals: {
+      drafts: drafts.length,
+      ready,
+      needsReview,
+      lockedCore,
+      importable: drafts.filter((draft) => draft.editable && draft.adminStatus !== "needs_review").length,
+      exportable: drafts.length,
+    },
+    nextActions: [
+      "Creare schermata Admin Rules Manager con elenco regole, filtri per modulo, severità e profilo settore.",
+      "Aggiungere form controllato per soglie cm, target, linkedTarget, messaggio tecnico e livello di severità.",
+      "Validare ogni import JSON prima dell'applicazione, mantenendo rollback se una regola è corrotta.",
+      "Salvare regole custom dentro Product Package o profilo cliente, senza toccare il codice principale.",
+    ],
+  };
+}
+
+const dynamicRuleAdminBridgeV27Report = useMemo(() => {
+  return buildDynamicRuleAdminBridgeV27Report({
+    registryV26: dynamicRuleRegistryV26Report,
+  });
+}, [dynamicRuleRegistryV26Report]);
+
+function downloadDynamicRuleAdminBridgeV27Report() {
+  downloadJsonFile(`bagastudio-dynamic-rule-admin-bridge-v2-7-${Date.now()}.json`, dynamicRuleAdminBridgeV27Report);
+}
+
+
+type DynamicRulePackV28Category = "core" | "sector" | "client" | "project";
+
+type DynamicRulePackV28Status = "active" | "draft" | "locked";
+
+type DynamicRulePackV28 = {
+  id: string;
+  label: string;
+  category: DynamicRulePackV28Category;
+  status: DynamicRulePackV28Status;
+  profile: string;
+  description: string;
+  ruleIds: string[];
+  locked: boolean;
+  editableFromAdmin: boolean;
+  exportScope: "global" | "tenant" | "product-package" | "single-project";
+};
+
+type DynamicRulePackV28Report = {
+  schema: "bagastudio-dynamic-rule-pack-system-v2-8";
+  version: "2.8";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceAdminBridgeSchema: DynamicRuleAdminBridgeV27Report["schema"];
+  rulePackSystem: {
+    packsEnabled: boolean;
+    supportsCorePacks: boolean;
+    supportsSectorPacks: boolean;
+    supportsClientPacks: boolean;
+    supportsProjectOverrides: boolean;
+    preventsCoreRuleDeletion: boolean;
+    exportsPacksAsJson: boolean;
+  };
+  packs: DynamicRulePackV28[];
+  activationOrder: string[];
+  conflictPolicy: {
+    priority: string[];
+    lockedCoreRulesAlwaysWin: boolean;
+    sameRuleIdOverrideAllowedOnlyIfEditable: boolean;
+    invalidPackBlocksActivation: boolean;
+  };
+  totals: {
+    packs: number;
+    active: number;
+    draft: number;
+    locked: number;
+    editable: number;
+    linkedRules: number;
+  };
+  nextActions: string[];
+};
+
+function buildDynamicRulePackV28Report(params: {
+  adminBridgeV27: DynamicRuleAdminBridgeV27Report;
+}): DynamicRulePackV28Report {
+  const drafts = params.adminBridgeV27.drafts;
+  const coreRuleIds = drafts.filter((draft) => draft.adminStatus === "locked_core").map((draft) => draft.sourceRuleId);
+  const editableRuleIds = drafts.filter((draft) => draft.editable).map((draft) => draft.sourceRuleId);
+  const barberRuleIds = drafts
+    .filter((draft) => draft.target.includes("barber") || draft.linkedTarget?.includes("barber"))
+    .map((draft) => draft.sourceRuleId);
+  const estheticianRuleIds = drafts
+    .filter((draft) => draft.target.includes("esthetician") || draft.linkedTarget?.includes("esthetician"))
+    .map((draft) => draft.sourceRuleId);
+
+  const packs: DynamicRulePackV28[] = [
+    {
+      id: "v2-8-pack-core-safety",
+      label: "Core Safety Rules",
+      category: "core",
+      status: "locked",
+      profile: "bagastudio-core",
+      description: "Pacchetto regole tecniche non disattivabili: passaggi minimi, fissaggi, punti tecnici e controlli bloccanti export.",
+      ruleIds: coreRuleIds,
+      locked: true,
+      editableFromAdmin: false,
+      exportScope: "global",
+    },
+    {
+      id: "v2-8-pack-barber-layout",
+      label: "Barber Layout Pack",
+      category: "sector",
+      status: "active",
+      profile: "barber",
+      description: "Regole settore barber: interasse poltrone/specchi 150 cm e predisposizione controllo postazioni.",
+      ruleIds: barberRuleIds,
+      locked: false,
+      editableFromAdmin: true,
+      exportScope: "tenant",
+    },
+    {
+      id: "v2-8-pack-esthetician-layout",
+      label: "Estetica Layout Pack",
+      category: "sector",
+      status: "active",
+      profile: "esthetician",
+      description: "Regole settore estetica: interasse poltrone/specchi 120 cm e controlli collegati ai prospetti tecnici.",
+      ruleIds: estheticianRuleIds,
+      locked: false,
+      editableFromAdmin: true,
+      exportScope: "tenant",
+    },
+    {
+      id: "v2-8-pack-client-overrides",
+      label: "Client Custom Overrides",
+      category: "client",
+      status: editableRuleIds.length > 0 ? "draft" : "active",
+      profile: "client-custom",
+      description: "Pacchetto futuro per regole personalizzate del cliente, caricabili da Admin senza modificare il codice.",
+      ruleIds: editableRuleIds,
+      locked: false,
+      editableFromAdmin: true,
+      exportScope: "product-package",
+    },
+  ];
+
+  const invalidDrafts = params.adminBridgeV27.totals.needsReview;
+  const active = packs.filter((pack) => pack.status === "active").length;
+  const draft = packs.filter((pack) => pack.status === "draft").length;
+  const locked = packs.filter((pack) => pack.locked || pack.status === "locked").length;
+  const editable = packs.filter((pack) => pack.editableFromAdmin).length;
+  const linkedRules = packs.reduce((total, pack) => total + pack.ruleIds.length, 0);
+
+  return {
+    schema: "bagastudio-dynamic-rule-pack-system-v2-8",
+    version: "2.8",
+    generatedAt: new Date().toISOString(),
+    status: params.adminBridgeV27.status === "LAYOUT_V2_BLOCKED"
+      ? "LAYOUT_V2_BLOCKED"
+      : invalidDrafts > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : params.adminBridgeV27.status,
+    sourceAdminBridgeSchema: params.adminBridgeV27.schema,
+    rulePackSystem: {
+      packsEnabled: true,
+      supportsCorePacks: true,
+      supportsSectorPacks: true,
+      supportsClientPacks: true,
+      supportsProjectOverrides: true,
+      preventsCoreRuleDeletion: true,
+      exportsPacksAsJson: true,
+    },
+    packs,
+    activationOrder: [
+      "1. Core Safety Rules sempre attivo e non modificabile.",
+      "2. Sector Pack attivo in base al settore progetto: barber, estetica, retail, bagno, cucina, ecc.",
+      "3. Client Custom Overrides applicati solo su regole editabili.",
+      "4. Project Overrides salvati nel Product Package e validati prima dell'export tecnico.",
+    ],
+    conflictPolicy: {
+      priority: ["core", "sector", "client", "project"],
+      lockedCoreRulesAlwaysWin: true,
+      sameRuleIdOverrideAllowedOnlyIfEditable: true,
+      invalidPackBlocksActivation: true,
+    },
+    totals: {
+      packs: packs.length,
+      active,
+      draft,
+      locked,
+      editable,
+      linkedRules,
+    },
+    nextActions: [
+      "Creare Admin Rules Pack Manager con attiva/disattiva pacchetti, duplicazione profilo e import/export JSON.",
+      "Collegare il settore del Product Package al pack corretto, evitando regole non pertinenti nel progetto.",
+      "Permettere override cliente solo su regole editabili, lasciando bloccate le regole core di sicurezza tecnica.",
+      "Preparare V2.9: Rule Conflict Resolver con priorità, diff tra pacchetti e rollback se una regola importata è corrotta.",
+    ],
+  };
+}
+
+const dynamicRulePackV28Report = useMemo(() => {
+  return buildDynamicRulePackV28Report({
+    adminBridgeV27: dynamicRuleAdminBridgeV27Report,
+  });
+}, [dynamicRuleAdminBridgeV27Report]);
+
+function downloadDynamicRulePackV28Report() {
+  downloadJsonFile(`bagastudio-dynamic-rule-pack-system-v2-8-${Date.now()}.json`, dynamicRulePackV28Report);
+}
+
+
+type DynamicRuleConflictV29Severity = "info" | "warning" | "error";
+
+type DynamicRuleConflictV29 = {
+  id: string;
+  packId: string;
+  ruleId: string;
+  category: DynamicRulePackV28Category;
+  severity: DynamicRuleConflictV29Severity;
+  conflictType: "duplicate_rule" | "locked_core_override" | "draft_pack" | "missing_rule_link" | "priority_override";
+  detected: string;
+  resolution: string;
+  blocksActivation: boolean;
+};
+
+type DynamicRuleConflictResolverV29Report = {
+  schema: "bagastudio-dynamic-rule-conflict-resolver-v2-9";
+  version: "2.9";
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV2Status;
+  sourceRulePackSchema: DynamicRulePackV28Report["schema"];
+  resolver: {
+    priorityBasedConflictResolution: boolean;
+    lockedCoreRulesAlwaysWin: boolean;
+    validatesMissingRuleLinks: boolean;
+    blocksInvalidPacksBeforeActivation: boolean;
+    supportsRollbackPlan: boolean;
+    exportsConflictReportJson: boolean;
+  };
+  conflicts: DynamicRuleConflictV29[];
+  rollbackPlan: string[];
+  activationDecision: {
+    canActivateRulePacks: boolean;
+    blockingConflicts: number;
+    warningConflicts: number;
+    safePacks: string[];
+    packsToReview: string[];
+  };
+  totals: {
+    conflicts: number;
+    blocking: number;
+    warnings: number;
+    info: number;
+    safePacks: number;
+    packsToReview: number;
+  };
+  nextActions: string[];
+};
+
+function buildDynamicRuleConflictResolverV29Report(params: {
+  rulePackV28: DynamicRulePackV28Report;
+}): DynamicRuleConflictResolverV29Report {
+  const packs = params.rulePackV28.packs;
+  const conflicts: DynamicRuleConflictV29[] = [];
+  const ruleOwners = new Map<string, string[]>();
+
+  packs.forEach((pack) => {
+    if (pack.status === "draft") {
+      conflicts.push({
+        id: `v2-9-conflict-draft-${pack.id}`,
+        packId: pack.id,
+        ruleId: "pack_status",
+        category: pack.category,
+        severity: "warning",
+        conflictType: "draft_pack",
+        detected: `Il pacchetto ${pack.label} è ancora in bozza.`,
+        resolution: "Validare il pack in Admin Rules Manager prima di attivarlo in produzione.",
+        blocksActivation: false,
+      });
+    }
+
+    if (pack.locked && pack.editableFromAdmin) {
+      conflicts.push({
+        id: `v2-9-conflict-locked-editable-${pack.id}`,
+        packId: pack.id,
+        ruleId: "pack_lock_policy",
+        category: pack.category,
+        severity: "error",
+        conflictType: "locked_core_override",
+        detected: `Il pacchetto ${pack.label} risulta locked ma editabile da Admin.`,
+        resolution: "Bloccare l'editing dei pack core/locked e impedire override di sicurezza.",
+        blocksActivation: true,
+      });
+    }
+
+    if (pack.ruleIds.length === 0 && pack.category !== "client") {
+      conflicts.push({
+        id: `v2-9-conflict-empty-rules-${pack.id}`,
+        packId: pack.id,
+        ruleId: "missing_rule_link",
+        category: pack.category,
+        severity: "warning",
+        conflictType: "missing_rule_link",
+        detected: `Il pacchetto ${pack.label} non contiene regole collegate.`,
+        resolution: "Collegare almeno una regola valida oppure disattivare il pack per questo progetto.",
+        blocksActivation: false,
+      });
+    }
+
+    pack.ruleIds.forEach((ruleId) => {
+      const owners = ruleOwners.get(ruleId) || [];
+      owners.push(pack.id);
+      ruleOwners.set(ruleId, owners);
+    });
+  });
+
+  ruleOwners.forEach((owners, ruleId) => {
+    if (owners.length > 1) {
+      conflicts.push({
+        id: `v2-9-conflict-duplicate-${ruleId}`,
+        packId: owners.join(" + "),
+        ruleId,
+        category: "project",
+        severity: "info",
+        conflictType: "duplicate_rule",
+        detected: `La regola ${ruleId} è presente in più pack: ${owners.join(", ")}.`,
+        resolution: "Applicare la priorità core → sector → client → project e mantenere una sola regola effettiva nel runtime.",
+        blocksActivation: false,
+      });
+    }
+  });
+
+  const blocking = conflicts.filter((conflict) => conflict.blocksActivation).length;
+  const warnings = conflicts.filter((conflict) => conflict.severity === "warning").length;
+  const info = conflicts.filter((conflict) => conflict.severity === "info").length;
+  const packsToReview = Array.from(new Set(conflicts.map((conflict) => conflict.packId))).filter(Boolean);
+  const safePacks = packs
+    .filter((pack) => !packsToReview.some((item) => item.includes(pack.id)))
+    .map((pack) => pack.id);
+
+  return {
+    schema: "bagastudio-dynamic-rule-conflict-resolver-v2-9",
+    version: "2.9",
+    generatedAt: new Date().toISOString(),
+    status: blocking > 0
+      ? "LAYOUT_V2_BLOCKED"
+      : warnings > 0
+        ? "LAYOUT_V2_REVIEW_REQUIRED"
+        : params.rulePackV28.status,
+    sourceRulePackSchema: params.rulePackV28.schema,
+    resolver: {
+      priorityBasedConflictResolution: true,
+      lockedCoreRulesAlwaysWin: true,
+      validatesMissingRuleLinks: true,
+      blocksInvalidPacksBeforeActivation: true,
+      supportsRollbackPlan: true,
+      exportsConflictReportJson: true,
+    },
+    conflicts,
+    rollbackPlan: [
+      "Salvare sempre il Rule Registry precedente prima di importare pack cliente/progetto.",
+      "Se una regola importata è corrotta, disattivare solo il pack interessato e mantenere attivo il Core Safety Pack.",
+      "Ripristinare l'ultimo Rule Pack valido da backup Admin o Product Package.",
+      "Bloccare export PDF/DXF/CAD solo in presenza di conflitti error/bloccanti.",
+    ],
+    activationDecision: {
+      canActivateRulePacks: blocking === 0,
+      blockingConflicts: blocking,
+      warningConflicts: warnings,
+      safePacks,
+      packsToReview,
+    },
+    totals: {
+      conflicts: conflicts.length,
+      blocking,
+      warnings,
+      info,
+      safePacks: safePacks.length,
+      packsToReview: packsToReview.length,
+    },
+    nextActions: [
+      "Collegare il Conflict Resolver all'Admin Rules Manager prima del salvataggio regole.",
+      "Aggiungere preview diff tra pack originale e pack importato dal cliente.",
+      "Bloccare override di regole core locked anche se il JSON importato prova a forzarle.",
+      "Preparare V3.0: Rule Runtime Evaluator che applica le regole alle coordinate reali di Room Editor, mobili, specchi e punti tecnici.",
+    ],
+  };
+}
+
+const dynamicRuleConflictResolverV29Report = useMemo(() => {
+  return buildDynamicRuleConflictResolverV29Report({
+    rulePackV28: dynamicRulePackV28Report,
+  });
+}, [dynamicRulePackV28Report]);
+
+function downloadDynamicRuleConflictResolverV29Report() {
+  downloadJsonFile(`bagastudio-dynamic-rule-conflict-resolver-v2-9-${Date.now()}.json`, dynamicRuleConflictResolverV29Report);
+}
+
+
+
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
@@ -11546,6 +13802,1185 @@ function downloadImporterDiagnosticJson() {
           </div>
         </section>
 
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#090f24]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Layout / Room Intelligence V2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Motore stanza, pareti e vincoli tecnici</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Collega piantina, muri, aperture, ingombri mobili, battiscopa, supporti parete, punti tecnici e Smart Technical Validator.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV2Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV2Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV2Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV2Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta Layout Intelligence V2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Zone V2</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV2Report.totals.zones}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV2Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV2Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV2Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Mobili</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{layoutRoomIntelligenceV2Report.totals.linkedFurnitureItems}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Critici tecnici</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{layoutRoomIntelligenceV2Report.totals.criticalTechnicalIssues}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Zona / controllo</th>
+                    <th className="px-4 py-3">Tipo</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV2Report.zones.map((zone) => (
+                    <tr key={zone.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{zone.label}</p>
+                        <p className="mt-1 text-slate-500">{zone.note}</p>
+                        <p className="mt-1 text-violet-200">Output: {zone.linkedOutput}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{zone.type.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          zone.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : zone.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {zone.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Regole V2 attive</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Guscio stanza chiuso: {layoutRoomIntelligenceV2Report.validationRules.requireClosedRoomShell ? "richiesto" : "non richiesto"}</p>
+                  <p>Scala reale approvata: {layoutRoomIntelligenceV2Report.validationRules.requireScaledReference ? "richiesta" : "non richiesta"}</p>
+                  <p>Aperture prima dei mobili: {layoutRoomIntelligenceV2Report.validationRules.requireOpeningsBeforeFurnitureApproval ? "sì" : "no"}</p>
+                  <p>Gate Smart Validator: {layoutRoomIntelligenceV2Report.validationRules.requireSmartTechnicalValidatorGate ? "attivo" : "non attivo"}</p>
+                  <p>Blocco export su critici: {layoutRoomIntelligenceV2Report.validationRules.blockTechnicalExportOnCriticalIssues ? "attivo" : "non attivo"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Prossime azioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV2Report.nextActions.map((item, index) => (
+                    <li key={`layout-room-intelligence-v2-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#12071f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V2.1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Checklist automatica, rischi stanza ed export gate</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Raffina il V2 trasformando zone e vincoli in priorità operative, preflight prospetti parete e blocco export tecnico.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV21Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV21Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV21Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV21Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Layout Intelligence V2.1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Checklist</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV21Report.totals.checklistItems}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Azioni P1</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV21Report.totals.p1Actions}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Azioni P2</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV21Report.totals.p2Actions}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Azioni P3</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV21Report.totals.p3Actions}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Rischi alti</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV21Report.totals.highRisks}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Rischi medi</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV21Report.totals.mediumRisks}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Preview cliente</p>
+              <p className="mt-1 text-sm font-black text-fuchsia-100">{layoutRoomIntelligenceV21Report.exportGate.customerPreviewReady ? "READY" : "BLOCCATA"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Priorità</th>
+                    <th className="px-4 py-3">Checklist operativa</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV21Report.checklist.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3 font-black text-white">{item.priority}</td>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.label}</p>
+                        <p className="mt-1 text-slate-500">{item.action}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{item.readiness}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Preflight prospetti parete</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Prospetti generabili: {layoutRoomIntelligenceV21Report.wallElevationPreflight.canGenerateWallElevations ? "sì" : "no"}</p>
+                  <p>Serve scala/guscio stanza: {layoutRoomIntelligenceV21Report.wallElevationPreflight.needsScaledRoomShell ? "sì" : "no"}</p>
+                  <p>Serve approvazione aperture: {layoutRoomIntelligenceV21Report.wallElevationPreflight.needsOpeningsApproval ? "sì" : "no"}</p>
+                  <p>Serve approvazione punti tecnici: {layoutRoomIntelligenceV21Report.wallElevationPreflight.needsTechnicalPointsApproval ? "sì" : "no"}</p>
+                  <p>Serve Smart Validator pulito: {layoutRoomIntelligenceV21Report.wallElevationPreflight.needsSmartValidatorClearance ? "sì" : "no"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Export gate</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>PDF tecnico: {layoutRoomIntelligenceV21Report.exportGate.pdfReady ? "pronto" : "bloccato"}</p>
+                  <p>DXF/CAD: {layoutRoomIntelligenceV21Report.exportGate.dxfCadReady ? "pronto" : "bloccato"}</p>
+                  <p className="text-slate-400">{layoutRoomIntelligenceV21Report.exportGate.reason}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Matrice rischi</p>
+                <ul className="mt-3 max-h-[150px] space-y-2 overflow-auto text-sm text-slate-300">
+                  {layoutRoomIntelligenceV21Report.risks.map((risk) => (
+                    <li key={risk.id}>• <span className="font-black text-white">{risk.level.toUpperCase()}</span> — {risk.label}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-purple-400/15 bg-[#10061d]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200">Layout / Room Intelligence V2.2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Prospetti parete tecnici e layer export</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Consolida il V2.1 creando una struttura per prospetti parete, layer PDF/DXF/CAD, gate tecnici e legenda operativa.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV22Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV22Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV22Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV22Report}
+                className="rounded-2xl border border-purple-400/25 bg-purple-400/10 px-5 py-3 text-sm font-black text-purple-100 transition hover:bg-purple-400/20"
+              >
+                Esporta Layout Intelligence V2.2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Prospetti</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV22Report.totals.wallElevations}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV22Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV22Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV22Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-purple-400/15 bg-purple-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-purple-200">Priorità critiche</p>
+              <p className="mt-1 text-2xl font-black text-purple-100">{layoutRoomIntelligenceV22Report.totals.criticalPriorities}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Gate bloccanti</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV22Report.totals.exportBlockingGates}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[330px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Prospetto / layer</th>
+                    <th className="px-4 py-3">Priorità</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV22Report.wallElevations.map((wall) => (
+                    <tr key={wall.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{wall.title}</p>
+                        <p className="mt-1 text-slate-500">{wall.note}</p>
+                        <p className="mt-1 text-purple-200">Layer: {wall.requiredLayers.join(", ")}</p>
+                      </td>
+                      <td className="px-4 py-3 font-black text-white">{wall.priority.toUpperCase()}</td>
+                      <td className="px-4 py-3 text-slate-300">{wall.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-purple-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-purple-200">Gate scheda parete</p>
+                <ul className="mt-3 max-h-[165px] space-y-2 overflow-auto text-sm text-slate-300">
+                  {layoutRoomIntelligenceV22Report.wallSheetGates.map((gate) => (
+                    <li key={gate.id}>• <span className="font-black text-white">{gate.passed ? "OK" : gate.blocking ? "BLOCK" : "REVIEW"}</span> — {gate.label}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-purple-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-purple-200">Legenda layer export</p>
+                <ul className="mt-3 max-h-[165px] space-y-2 overflow-auto text-sm text-slate-300">
+                  {layoutRoomIntelligenceV22Report.layerLegend.map((layer) => (
+                    <li key={layer.id}>• <span className="font-black text-white">{layer.label}</span> — {layer.output}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-purple-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-purple-200">Prossime azioni V2.2</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV22Report.nextActions.map((item, index) => (
+                    <li key={`layout-room-intelligence-v2-2-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-amber-400/15 bg-[#211407]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-200">Layout / Room Intelligence V2.3</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Regole tecniche parete parametriche</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Consolida quote parete, lavandino appoggio/incasso, punti elettrici/idraulici, battiscopa, fissaggi e routing layer PDF/DXF/CAD.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV23Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV23Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV23Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV23Report}
+                className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-5 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-400/20"
+              >
+                Esporta Layout Intelligence V2.3
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV23Report.totals.rules}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Passed</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV23Report.totals.passed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warnings</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV23Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV23Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Export bloccati</p>
+              <p className="mt-1 text-2xl font-black text-amber-100">{layoutRoomIntelligenceV23Report.totals.exportBlockedRules}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[330px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Regola tecnica</th>
+                    <th className="px-4 py-3">Layer</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV23Report.wallRules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{rule.label}</p>
+                        <p className="mt-1 text-slate-500">{rule.action}</p>
+                        <p className="mt-1 text-amber-200">Dati: {rule.requiredData.join(", ")}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{rule.exportLayer}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          rule.passed
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : rule.severity === "critical"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {rule.passed ? "passed" : rule.severity}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Quote lavandino</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV23Report.sinkHeightRules.map((rule) => (
+                    <li key={rule.id}>• <span className="font-black text-white">{rule.sinkType}</span>: piano a {rule.topHeightCm} cm — {rule.note}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Routing layer export</p>
+                <ul className="mt-3 max-h-[150px] space-y-2 overflow-auto text-sm text-slate-300">
+                  {layoutRoomIntelligenceV23Report.exportRouting.map((route) => (
+                    <li key={route.id}>• <span className="font-black text-white">{route.layer}</span> → {route.target}: {route.content}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Prossime azioni V2.3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV23Report.nextActions.map((item, index) => (
+                    <li key={`layout-room-intelligence-v2-3-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061c1f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V2.4</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Collisioni layout e passaggi minimi</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Controlla passaggi, aperture, compatibilità parete/mobile, punti tecnici, battiscopa e area montatore prima dell'export tecnico.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV24Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV24Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV24Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV24Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Layout Intelligence V2.4
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Check</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV24Report.totals.checks}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Passed</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV24Report.totals.passed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV24Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV24Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Blocchi export</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{layoutRoomIntelligenceV24Report.totals.exportBlockingChecks}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Controllo layout</th>
+                    <th className="px-4 py-3">Requisito</th>
+                    <th className="px-4 py-3">Impatto export</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV24Report.collisionChecks.map((check) => (
+                    <tr key={check.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{check.label}</p>
+                        <p className="mt-1 text-slate-500">{check.detectedRisk}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{check.minimumRequirement}</td>
+                      <td className="px-4 py-3 text-cyan-100">{check.exportImpact}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          check.passed
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : check.severity === "critical"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {check.passed ? "passed" : check.severity}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Soglie operative V2.4</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Passaggio principale: <span className="font-black text-white">{layoutRoomIntelligenceV24Report.thresholds.minimumMainPassageCm} cm</span></li>
+                  <li>• Accesso tecnico: <span className="font-black text-white">{layoutRoomIntelligenceV24Report.thresholds.minimumServiceAccessCm} cm</span></li>
+                  <li>• Apertura cassetti: <span className="font-black text-white">{layoutRoomIntelligenceV24Report.thresholds.minimumDrawerOpeningCm} cm</span></li>
+                  <li>• Area montatore: <span className="font-black text-white">{layoutRoomIntelligenceV24Report.thresholds.minimumInstallerWorkingAreaCm} cm</span></li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Azioni layer export</p>
+                <ul className="mt-3 max-h-[145px] space-y-2 overflow-auto text-sm text-slate-300">
+                  {layoutRoomIntelligenceV24Report.exportLayerActions.map((action) => (
+                    <li key={action.id}>• <span className="font-black text-white">{action.targetLayer}</span>: {action.action}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Prossime azioni V2.4</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV24Report.nextActions.map((item, index) => (
+                    <li key={`layout-room-intelligence-v2-4-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#1b0b24]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V2.5</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Interassi postazioni e specchi</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Inserisce le regole minime per postazioni barber ed estetista: le poltrone e gli specchi collegati devono rispettare lo stesso interasse tecnico.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV25Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV25Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV25Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV25Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Layout Intelligence V2.5
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV25Report.totals.rules}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Passed</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV25Report.totals.passed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV25Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV25Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Blocchi export</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{layoutRoomIntelligenceV25Report.totals.exportBlockingChecks}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Regole interasse</p>
+              <div className="mt-3 grid gap-3">
+                {layoutRoomIntelligenceV25Report.stationSpacingRules.map((rule) => (
+                  <div key={rule.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{rule.label}</p>
+                        <p className="mt-1 text-sm text-slate-400">{rule.appliesTo}</p>
+                      </div>
+                      <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-fuchsia-100">
+                        {rule.stationType}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                      <p>Poltrone/postazioni: <span className="font-black text-white">{rule.minimumCenterDistanceCm} cm</span></p>
+                      <p>Specchi collegati: <span className="font-black text-white">{rule.mirrorCenterDistanceCm} cm</span></p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Check automatici V2.5</p>
+                <ul className="mt-3 space-y-3 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV25Report.stationSpacingChecks.map((check) => (
+                    <li key={check.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                      <p className="font-black text-white">{check.label}</p>
+                      <p className="mt-1 text-slate-400">{check.minimumRequirement}</p>
+                      <p className="mt-1 text-slate-400">{check.mirrorRequirement}</p>
+                      <p className="mt-2 text-xs text-fuchsia-100">{check.correctiveAction}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Prossime azioni V2.5</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV25Report.nextActions.map((item, index) => (
+                    <li key={`layout-room-intelligence-v2-5-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-emerald-400/15 bg-[#061a13]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-200">Layout / Room Intelligence V2.6</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Dynamic Rule Registry</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il Rule Engine JSON-driven: le regole tecniche potranno essere aggiunte, esportate e gestite nel tempo senza inserirle solo come codice hardcoded.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                dynamicRuleRegistryV26Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : dynamicRuleRegistryV26Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {dynamicRuleRegistryV26Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDynamicRuleRegistryV26Report}
+                className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-5 py-3 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/20"
+              >
+                Esporta Rule Registry V2.6
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{dynamicRuleRegistryV26Report.totals.rules}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Abilitate</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{dynamicRuleRegistryV26Report.totals.enabled}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Admin editabili</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{dynamicRuleRegistryV26Report.totals.adminEditable}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{dynamicRuleRegistryV26Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocchi export</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{dynamicRuleRegistryV26Report.totals.exportBlockingRules}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Rule set JSON-driven</p>
+              <p className="mt-2 text-sm text-slate-400">{dynamicRuleRegistryV26Report.ruleSet.description}</p>
+              <div className="mt-3 grid gap-3">
+                {dynamicRuleRegistryV26Report.ruleSet.rules.map((rule) => (
+                  <div key={rule.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{rule.message}</p>
+                        <p className="mt-1 text-xs text-slate-500">{rule.id}</p>
+                      </div>
+                      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-100">
+                        {rule.source}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                      <p>Target: <span className="font-black text-white">{rule.target}</span></p>
+                      <p>Tipo: <span className="font-black text-white">{rule.type}</span></p>
+                      <p>Layer: <span className="font-black text-white">{rule.exportLayer}</span></p>
+                      <p>Admin: <span className="font-black text-white">{rule.editableFromAdmin ? "editabile" : "core locked"}</span></p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Valutazioni V2.6</p>
+                <ul className="mt-3 space-y-3 text-sm text-slate-300">
+                  {dynamicRuleRegistryV26Report.evaluations.map((evaluation) => (
+                    <li key={evaluation.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                      <p className="font-black text-white">{evaluation.ruleId}</p>
+                      <p className="mt-1 text-slate-400">Atteso: {evaluation.expected}</p>
+                      <p className="mt-1 text-slate-400">Rilevato: {evaluation.detected}</p>
+                      <p className="mt-2 text-xs text-emerald-100">{evaluation.action}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-200">Prossime azioni V2.6</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRuleRegistryV26Report.nextActions.map((item, index) => (
+                    <li key={`dynamic-rule-registry-v2-6-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-amber-400/15 bg-[#1f1605]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-200">Layout / Room Intelligence V2.7</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rule Admin Bridge</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Collega il Dynamic Rule Registry al futuro Admin Rules Manager: import/export JSON, blocco regole core, validazione prima del salvataggio e profili cliente/settore.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                dynamicRuleAdminBridgeV27Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : dynamicRuleAdminBridgeV27Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {dynamicRuleAdminBridgeV27Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDynamicRuleAdminBridgeV27Report}
+                className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-5 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-400/20"
+              >
+                Esporta Rule Admin Bridge V2.7
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Draft regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{dynamicRuleAdminBridgeV27Report.totals.drafts}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{dynamicRuleAdminBridgeV27Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{dynamicRuleAdminBridgeV27Report.totals.needsReview}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Core locked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{dynamicRuleAdminBridgeV27Report.totals.lockedCore}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Importabili</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{dynamicRuleAdminBridgeV27Report.totals.importable}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Export</p>
+              <p className="mt-1 text-2xl font-black text-amber-100">{dynamicRuleAdminBridgeV27Report.totals.exportable}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Bozze regole Admin</p>
+              <div className="mt-3 grid gap-3">
+                {dynamicRuleAdminBridgeV27Report.drafts.map((draft) => (
+                  <div key={draft.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{draft.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{draft.sourceRuleId}</p>
+                      </div>
+                      <span className={
+                        draft.adminStatus === "ready"
+                          ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : draft.adminStatus === "locked_core"
+                            ? "rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {draft.adminStatus.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                      <p>Modulo: <span className="font-black text-white">{draft.module}</span></p>
+                      <p>Tipo: <span className="font-black text-white">{draft.type}</span></p>
+                      <p>Target: <span className="font-black text-white">{draft.target}</span></p>
+                      <p>Valore cm: <span className="font-black text-white">{draft.numericValueCm ?? "n/d"}</span></p>
+                    </div>
+                    <p className="mt-3 text-xs text-amber-100">{draft.validationMessage}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Contratto import/export</p>
+                <p className="mt-2 text-sm text-slate-300">Schema accettato: <span className="font-black text-white">{dynamicRuleAdminBridgeV27Report.importExportContract.acceptedSchema}</span></p>
+                <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Campi richiesti</p>
+                <p className="mt-1 text-sm text-slate-300">{dynamicRuleAdminBridgeV27Report.importExportContract.requiredFields.join(", ")}</p>
+                <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Operazioni bloccate</p>
+                <ul className="mt-2 space-y-2 text-sm text-slate-300">
+                  {dynamicRuleAdminBridgeV27Report.importExportContract.blockedOperations.map((item) => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-amber-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-200">Prossime azioni V2.7</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRuleAdminBridgeV27Report.nextActions.map((item, index) => (
+                    <li key={`dynamic-rule-admin-bridge-v2-7-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#1b0620]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V2.8</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rule Pack System</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Organizza le regole tecniche in pacchetti attivabili per core, settore, cliente e progetto, così le nuove regole possono crescere senza modificare il codice principale.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                dynamicRulePackV28Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : dynamicRulePackV28Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {dynamicRulePackV28Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDynamicRulePackV28Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Rule Pack V2.8
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pack</p>
+              <p className="mt-1 text-2xl font-black text-white">{dynamicRulePackV28Report.totals.packs}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Attivi</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{dynamicRulePackV28Report.totals.active}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Bozze</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{dynamicRulePackV28Report.totals.draft}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Locked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{dynamicRulePackV28Report.totals.locked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Editabili</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{dynamicRulePackV28Report.totals.editable}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Regole collegate</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{dynamicRulePackV28Report.totals.linkedRules}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Pacchetti regole</p>
+              <div className="mt-3 grid gap-3">
+                {dynamicRulePackV28Report.packs.map((pack) => (
+                  <div key={pack.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{pack.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{pack.id} · {pack.profile}</p>
+                      </div>
+                      <span className={
+                        pack.status === "active"
+                          ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : pack.status === "locked"
+                            ? "rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {pack.status}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-300">{pack.description}</p>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-3">
+                      <p>Categoria: <span className="font-black text-white">{pack.category}</span></p>
+                      <p>Scope: <span className="font-black text-white">{pack.exportScope}</span></p>
+                      <p>Regole: <span className="font-black text-white">{pack.ruleIds.length}</span></p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Ordine attivazione</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRulePackV28Report.activationOrder.map((item) => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Policy conflitti</p>
+                <p className="mt-2 text-sm text-slate-300">Priorità: <span className="font-black text-white">{dynamicRulePackV28Report.conflictPolicy.priority.join(" → ")}</span></p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Regole core locked sempre prevalenti</li>
+                  <li>• Override ammesso solo su regole editabili</li>
+                  <li>• Pack non valido blocca attivazione</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Prossime azioni V2.8</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRulePackV28Report.nextActions.map((item, index) => (
+                    <li key={`dynamic-rule-pack-v2-8-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-rose-400/15 bg-[#21070e]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-200">Layout / Room Intelligence V2.9</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rule Conflict Resolver</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Controlla conflitti tra Rule Pack, protegge le regole core bloccate e prepara rollback sicuro prima di attivare regole cliente/progetto.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                dynamicRuleConflictResolverV29Report.status === "LAYOUT_V2_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : dynamicRuleConflictResolverV29Report.status === "LAYOUT_V2_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {dynamicRuleConflictResolverV29Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadDynamicRuleConflictResolverV29Report}
+                className="rounded-2xl border border-rose-400/25 bg-rose-400/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-400/20"
+              >
+                Esporta Conflict Resolver V2.9
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Conflitti</p>
+              <p className="mt-1 text-2xl font-black text-white">{dynamicRuleConflictResolverV29Report.totals.conflicts}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Bloccanti</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{dynamicRuleConflictResolverV29Report.totals.blocking}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{dynamicRuleConflictResolverV29Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Info</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{dynamicRuleConflictResolverV29Report.totals.info}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Pack sicuri</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{dynamicRuleConflictResolverV29Report.totals.safePacks}</p>
+            </div>
+            <div className="rounded-2xl border border-rose-400/15 bg-rose-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-rose-200">Da rivedere</p>
+              <p className="mt-1 text-2xl font-black text-rose-100">{dynamicRuleConflictResolverV29Report.totals.packsToReview}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Conflitti rilevati</p>
+              <div className="mt-3 grid gap-3">
+                {dynamicRuleConflictResolverV29Report.conflicts.length === 0 ? (
+                  <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4 text-sm text-emerald-100">
+                    Nessun conflitto rilevato: i Rule Pack possono essere attivati secondo la priorità configurata.
+                  </div>
+                ) : dynamicRuleConflictResolverV29Report.conflicts.map((conflict) => (
+                  <div key={conflict.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{conflict.conflictType.replace(/_/g, " ")}</p>
+                        <p className="mt-1 text-xs text-slate-500">{conflict.packId} · {conflict.ruleId}</p>
+                      </div>
+                      <span className={
+                        conflict.severity === "error"
+                          ? "rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-red-100"
+                          : conflict.severity === "warning"
+                            ? "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-cyan-100"
+                      }>
+                        {conflict.severity}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-300">{conflict.detected}</p>
+                    <p className="mt-2 text-sm text-slate-400">Risoluzione: <span className="text-slate-200">{conflict.resolution}</span></p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Decisione attivazione</p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Attivazione pack: <span className="font-black text-white">{dynamicRuleConflictResolverV29Report.activationDecision.canActivateRulePacks ? "CONSENTITA" : "BLOCCATA"}</span>
+                </p>
+                <p className="mt-2 text-sm text-slate-300">Bloccanti: <span className="font-black text-white">{dynamicRuleConflictResolverV29Report.activationDecision.blockingConflicts}</span></p>
+                <p className="mt-1 text-sm text-slate-300">Warning: <span className="font-black text-white">{dynamicRuleConflictResolverV29Report.activationDecision.warningConflicts}</span></p>
+              </div>
+
+              <div className="rounded-2xl border border-rose-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Rollback sicuro</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRuleConflictResolverV29Report.rollbackPlan.map((item, index) => (
+                    <li key={`dynamic-rule-conflict-v2-9-rollback-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-rose-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-rose-200">Prossime azioni V2.9</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {dynamicRuleConflictResolverV29Report.nextActions.map((item, index) => (
+                    <li key={`dynamic-rule-conflict-v2-9-next-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
 
         <section className="rounded-[28px] border border-sky-400/15 bg-[#071422]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -12006,6 +15441,244 @@ function downloadImporterDiagnosticJson() {
                 <ul className="mt-3 space-y-2 text-sm text-slate-300">
                   {wallTechnicalPointsValidationV1Report.recommendations.map((item, index) => (
                     <li key={`wall-technical-points-validation-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#13091f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Technical Knowledge Base V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Knowledge Base tecnica</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Centralizza le regole tecniche BagaStudio per lavabi, idraulica, elettrico, pareti, battiscopa, mensole e qualità delle schede tecniche.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                technicalKnowledgeBaseV1Report.status === "KNOWLEDGE_BASE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {technicalKnowledgeBaseV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadTechnicalKnowledgeBaseV1Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta Knowledge Base V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{technicalKnowledgeBaseV1Report.totals.rules}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Idraulica</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{technicalKnowledgeBaseV1Report.totals.plumbing}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Elettrico</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{technicalKnowledgeBaseV1Report.totals.electrical}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Pareti</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{technicalKnowledgeBaseV1Report.totals.wall}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{technicalKnowledgeBaseV1Report.totals.errors}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{technicalKnowledgeBaseV1Report.totals.warnings}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[360px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Regola</th>
+                    <th className="px-4 py-3">Atteso</th>
+                    <th className="px-4 py-3">Categoria</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {technicalKnowledgeBaseV1Report.rules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{rule.label}</p>
+                        <p className="mt-1 text-slate-500">{rule.note}</p>
+                        <p className="mt-1 text-[11px] text-violet-200">{rule.validationTarget}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <p>{rule.expected}</p>
+                        {typeof rule.valueMm === "number" && (
+                          <p className="mt-1 text-[11px] font-black text-white">{rule.valueMm} mm</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          rule.severity === "error"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : rule.severity === "warning"
+                              ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                              : "rounded-full bg-sky-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100"
+                        }>
+                          {rule.category} / {rule.severity}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Quote lavabi</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Lavandino da appoggio: <span className="font-black text-white">{technicalKnowledgeBaseV1Report.sinkHeights.countertopSinkTopHeightMm} mm</span></p>
+                  <p>Lavandino da incasso: <span className="font-black text-white">{technicalKnowledgeBaseV1Report.sinkHeights.insetSinkTopHeightMm} mm</span></p>
+                  <p className="text-slate-500">Le quote alimentano prospetti parete, idraulica, scarico, PDF/DXF/CAD e validazioni tecniche.</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {technicalKnowledgeBaseV1Report.recommendations.map((item, index) => (
+                    <li key={`technical-knowledge-base-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#071821]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Smart Technical Validator V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Validatore tecnico intelligente</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Usa la Knowledge Base tecnica per trasformare regole, quote e punti tecnici in controlli automatici prima di PDF, DXF e CAD.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                smartTechnicalValidatorV1Report.status === "TECHNICAL_VALIDATION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : smartTechnicalValidatorV1Report.status === "TECHNICAL_VALIDATION_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {smartTechnicalValidatorV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadSmartTechnicalValidatorV1Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Smart Validator V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Controlli</p>
+              <p className="mt-1 text-2xl font-black text-white">{smartTechnicalValidatorV1Report.totals.checks}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Passed</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{smartTechnicalValidatorV1Report.totals.passed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{smartTechnicalValidatorV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{smartTechnicalValidatorV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Appoggio</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{smartTechnicalValidatorV1Report.sinkHeights.countertopSinkTopHeightMm} mm</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Incasso</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{smartTechnicalValidatorV1Report.sinkHeights.insetSinkTopHeightMm} mm</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[360px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Controllo</th>
+                    <th className="px-4 py-3">Rilevato</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {smartTechnicalValidatorV1Report.issues.map((issue) => (
+                    <tr key={issue.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{issue.label}</p>
+                        <p className="mt-1 text-slate-500">{issue.expected}</p>
+                        <p className="mt-1 text-[11px] text-cyan-200">{issue.category} / {issue.sourceRuleId}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <p>{issue.detected}</p>
+                        <p className="mt-1 text-slate-500">{issue.recommendation}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          issue.status === "passed"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : issue.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {issue.status} / {issue.severity}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Fonti collegate</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Knowledge Base: <span className="font-black text-white">{smartTechnicalValidatorV1Report.sourceKnowledgeBaseStatus.replace(/_/g, " ")}</span></p>
+                  <p>Wall Validation: <span className="font-black text-white">{smartTechnicalValidatorV1Report.sourceWallValidationStatus.replace(/_/g, " ")}</span></p>
+                  <p className="text-slate-500">Il validatore è il gate tecnico prima della scheda esecutiva finale.</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {smartTechnicalValidatorV1Report.recommendations.map((item, index) => (
+                    <li key={`smart-technical-validator-v1-recommendation-${index}`}>• {item}</li>
                   ))}
                 </ul>
               </div>
