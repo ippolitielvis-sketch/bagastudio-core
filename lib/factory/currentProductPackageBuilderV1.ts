@@ -120,11 +120,35 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
     };
   });
 
+  const isRuntimeHardwareComponent = (component: any) => {
+    const value = `${component.category || ""} ${component.componentCategory || ""} ${component.runtimeRole || ""} ${component.name || ""} ${component.tags || ""}`.toLowerCase();
+    return (
+      value.includes("hardware") ||
+      value.includes("ferramenta") ||
+      value.includes("cerniera") ||
+      value.includes("basetta") ||
+      value.includes("maniglia") ||
+      value.includes("cerchio") ||
+      value.includes("vite")
+    );
+  };
+
+  const isVisualOnlyComponent = (component: any) => {
+    const value = `${component.category || ""} ${component.componentCategory || ""} ${component.runtimeRole || ""} ${component.tags || ""}`.toLowerCase();
+    return isRuntimeHardwareComponent(component) || value.includes("mirror") || value.includes("lighting") || value.includes("insert");
+  };
+
+  const productionComponents = components.filter((component: any) => !isVisualOnlyComponent(component));
+  const runtimeHardwareComponents = components.filter((component: any) => isRuntimeHardwareComponent(component));
+  const visualOnlyComponents = components.filter((component: any) => isVisualOnlyComponent(component) && !isRuntimeHardwareComponent(component));
   const componentCategories = Array.from(new Set(components.map((component) => component.category))).sort();
   const productPackageV3Summary = {
     schema: "bagastudio-product-package-v3-summary",
     version: 3.1,
     componentCount: components.length,
+    productionComponentCount: productionComponents.length,
+    runtimeHardwareComponentCount: runtimeHardwareComponents.length,
+    visualOnlyComponentCount: visualOnlyComponents.length,
     componentCategories: Array.from(new Set(components.map((component: any) => component.componentCategory || component.category))).sort(),
     manufacturingReadyComponents: components.filter((component: any) => Boolean(component.productPackageV3?.csvRegenerationReady)).length,
     manufacturingMetadataReadyComponents: components.filter((component: any) => Boolean(component.manufacturingMetadataV31?.readiness?.hasThickness || component.manufacturingMetadataV31?.readiness?.hasHardware || component.manufacturingMetadataV31?.readiness?.hasDrillings)).length,
@@ -208,6 +232,9 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
         sourceFileName: safeModelName,
         originalFormat: modelExtension,
         componentCount: components.length,
+        productionComponentCount: productionComponents.length,
+        runtimeHardwareComponentCount: runtimeHardwareComponents.length,
+        visualOnlyComponentCount: visualOnlyComponents.length,
         componentCategories,
         runtimeMetadataVersion: 3,
         productPackageV3Summary,
@@ -227,7 +254,10 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
         sourceFileName: safeModelName,
         convertedModelUrl,
         requiresConversion: !isCanonicalGlb || isSpace3DSource,
-        conversionTargetFormat: "glb",
+        conversionTargetFormat: convertedModelUrl ? "glb" : null,
+        modelExtension,
+        modelFormat: modelExtension,
+        canonicalModelFormat: hasEmbeddedRuntimeGeometry ? modelExtension : "glb",
         hasRuntimeGeometry: Boolean(primaryModelUrl || convertedModelUrl || hasEmbeddedRuntimeGeometry),
         geometrySource: isSpace3DSource
           ? hasEmbeddedRuntimeGeometry
@@ -252,7 +282,10 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
       productPackageV3: productPackageV3Summary,
       componentCategories,
       components,
-      parts: components,
+      parts: productionComponents,
+      hardware: runtimeHardwareComponents,
+      runtimeHardware: runtimeHardwareComponents,
+      visualOnlyComponents,
       productionData: {
         schema: "bagastudio-production-data",
         version: 1,
@@ -265,6 +298,13 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
         unmatchedParts: csvCixMatcherReport?.unmatchedParts || 0,
         averageConfidence: csvCixMatcherReport?.averageConfidence || 0,
         matches: csvCixMatcherReport?.matches || [],
+        runtimeGeometrySeparation: {
+          schema: "bagastudio-runtime-geometry-separation-v1",
+          productionComponents: productionComponents.length,
+          runtimeHardwareComponents: runtimeHardwareComponents.length,
+          visualOnlyComponents: visualOnlyComponents.length,
+          note: "CSV/CIX vengono applicati solo ai pannelli produttivi; ferramenta/accessori DAE restano visibili nel Viewer ma non sono richiesti nel CSV.",
+        },
         autoMappingEngineV2: autoMappingV2Report,
         autoMappingClassificationV25: autoMappingV2Report?.classificationSummary || null,
         autoMappingClassifiedComponents: autoMappingV2Report?.classifiedComponents || [],
@@ -316,7 +356,7 @@ export function buildCurrentProductPackageJsonV1(params: CurrentProductPackageBu
         manufacturingConstraintsV1: true,
       },
       geometryRuntime: {
-        status: isSpace3DSource ? "metadata-only-requires-geometry-conversion" : ["glb", "gltf"].includes(modelExtension) ? "ready" : "requires-conversion-to-glb",
+        status: isSpace3DSource ? "metadata-only-requires-geometry-conversion" : ["glb", "gltf", "dae"].includes(modelExtension) ? "ready" : "requires-conversion-to-glb",
         originalFormat: modelExtension,
         preparedForViewer: Boolean(primaryModelUrl || convertedModelUrl),
         hasRuntimeGeometry: Boolean(primaryModelUrl || convertedModelUrl || hasEmbeddedRuntimeGeometry),

@@ -2399,10 +2399,22 @@ function loadProductFromLibrary(item: ProductLibraryItem) {
     setDepthDefault(Number(parsed.dimensions?.depth?.default ?? depthDefault));
     setDepthMax(Number(parsed.dimensions?.depth?.max ?? depthMax));
 
-    setModelFileName(parsed.assets?.sourceFileName || item.sourceFileName || "");
-    setModelExtension(parsed.assets?.originalFormat || "glb");
-    setModelDataUrl(parsed.assets?.embeddedModelDataUrl || parsed.assets?.modelUrl || "");
-    setModelPreviewUrl(parsed.assets?.embeddedModelDataUrl || parsed.assets?.modelUrl || "");
+    const packageModelUrl = parsed.assets?.convertedModelUrl || parsed.assets?.embeddedModelDataUrl || parsed.assets?.modelUrl || "";
+    const packageModelName = parsed.assets?.sourceFileName || parsed.metadata?.sourceFileName || item.sourceFileName || "";
+    const packageModelFormat =
+      parsed.assets?.conversionTargetFormat ||
+      parsed.assets?.modelExtension ||
+      parsed.assets?.modelFormat ||
+      parsed.assets?.canonicalModelFormat ||
+      parsed.engine?.canonicalModelFormat ||
+      (packageModelName.split(".").pop()?.toLowerCase()) ||
+      parsed.assets?.originalFormat ||
+      "glb";
+
+    setModelFileName(packageModelName);
+    setModelExtension(packageModelFormat);
+    setModelDataUrl(packageModelUrl);
+    setModelPreviewUrl(packageModelUrl);
 
     const parts = Array.isArray(parsed.parts) ? parsed.parts : parsed.components || [];
     setMeshList(
@@ -3157,33 +3169,37 @@ async function handleAdminModelImport(file?: File | null) {
           });
 
           const runtimeGlbObjectUrl = URL.createObjectURL(runtimeGlb.glbBlob);
+          const runtimeGlbDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(runtimeGlb.glbBlob);
+          });
 
           (window as any).bagastudioLastRuntimeGlb = {
             ...runtimeGlb,
             objectUrl: runtimeGlbObjectUrl,
+            dataUrl: runtimeGlbDataUrl,
             sourceFileName: file.name,
           };
 
-          setModelFileName(runtimeGlb.fileName);
-          setModelPreviewUrl(runtimeGlbObjectUrl);
+          // V6.6: il DAE resta la geometria autorevole del Product Package.
+          // Il GLB runtime viene generato solo come diagnostica/export, perché la conversione
+          // può appiattire o perdere gerarchie/ferramenta su alcuni file Spazio3D.
+          setModelFileName(file.name);
+          setModelPreviewUrl(url);
+          setModelDataUrl(dataUrl);
+          setModelExtension("dae");
 
           daeHierarchyWarnings.push(
-            `Runtime GLB ready: ${runtimeGlb.fileName}`,
-            `Runtime GLB meshes: ${runtimeGlb.meshCount}`,
-            `Runtime GLB objects: ${runtimeGlb.objectCount}`,
+            `Runtime GLB diagnostic ready: ${runtimeGlb.fileName}`,
+            `Runtime GLB diagnostic meshes: ${runtimeGlb.meshCount}`,
+            `Runtime GLB diagnostic objects: ${runtimeGlb.objectCount}`,
+            "DAE mantenuto come sorgente viewer/package per preservare pannelli + ferramenta.",
             ...runtimeGlb.warnings
           );
 
-          new GLTFLoader().load(
-            runtimeGlbObjectUrl,
-            (gltf) => {
-              applyMeshes(extractMeshesFromObject(gltf.scene), daeHierarchyWarnings);
-            },
-            undefined,
-            applyError
-          );
-
-          console.log("BagaStudio Runtime GLB V1:", {
+          console.log("BagaStudio Runtime GLB V1 diagnostic only:", {
             fileName: runtimeGlb.fileName,
             objectCount: runtimeGlb.objectCount,
             meshCount: runtimeGlb.meshCount,
@@ -3192,7 +3208,8 @@ async function handleAdminModelImport(file?: File | null) {
             naming: runtimeGlb.naming,
           });
 
-          return;
+          // Non ritorniamo: sotto carichiamo il DAE originale con ColladaLoader per estrarre
+          // tutte le mesh effettive, inclusi hardware/accessori non presenti nel CSV.
         } catch (runtimeGlbError) {
           const message =
             runtimeGlbError instanceof Error
@@ -3257,23 +3274,23 @@ function downloadImporterDiagnosticJson() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.10),transparent_28%),#02070d] text-white">
-      <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-8">
-        <header className="overflow-hidden rounded-[34px] border border-cyan-400/20 bg-gradient-to-r from-[#061827]/95 via-[#07131f]/95 to-[#02070d]/95 shadow-[0_30px_120px_rgba(14,165,233,0.16)] backdrop-blur-2xl">
-          <div className="flex flex-col gap-5 border-b border-cyan-400/10 px-6 py-6 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mx-auto max-w-[1800px] px-3 py-2 sm:px-4 lg:px-5">
+        <header className="overflow-hidden rounded-[22px] border border-cyan-400/20 bg-gradient-to-r from-[#061827]/95 via-[#07131f]/95 to-[#02070d]/95 shadow-[0_30px_120px_rgba(14,165,233,0.16)] backdrop-blur-2xl">
+          <div className="flex flex-col gap-3 border-b border-cyan-400/10 px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-5">
               <img
                 src="/bagastudio-core-brand.png"
                 alt="BagaStudio Core"
-                className="h-28 w-auto rounded-3xl object-contain shadow-[0_0_45px_rgba(14,165,233,0.18)]"
+                className="h-12 w-auto rounded-2xl object-contain shadow-[0_0_28px_rgba(14,165,233,0.16)]"
               />
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.48em] text-cyan-300/90">
+                <p className="text-[10px] font-black uppercase tracking-[0.34em] text-cyan-300/90">
                   BAGASTUDIO CORE
                 </p>
-                <h1 className="mt-1 text-4xl font-black tracking-tight text-white sm:text-5xl">
+                <h1 className="mt-0 text-2xl font-black tracking-tight text-white sm:text-3xl">
                   {adminT.adminPanel}
                 </h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+                <p className="mt-1 hidden max-w-2xl text-xs leading-5 text-slate-400 xl:block">
                   {adminT.subtitle}
                 </p>
               </div>
@@ -3285,7 +3302,7 @@ function downloadImporterDiagnosticJson() {
                 <select
                   value={adminLanguage}
                   onChange={(e) => setAdminLanguage(e.target.value as AdminLanguage)}
-                  className="rounded-2xl border border-cyan-400/30 bg-slate-950 px-4 py-3 text-sm font-black normal-case text-white outline-none"
+                  className="rounded-xl border border-cyan-400/30 bg-slate-950 px-3 py-2 text-xs font-black normal-case text-white outline-none"
                 >
                   <option className="bg-slate-950 text-white" value="it">Italiano</option>
                   <option className="bg-slate-950 text-white" value="en">English</option>
@@ -3293,38 +3310,38 @@ function downloadImporterDiagnosticJson() {
               </label>
               <a
                 href="/"
-                className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 shadow-[0_0_22px_rgba(14,165,233,0.10)] transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
+                className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 shadow-[0_0_22px_rgba(14,165,233,0.10)] transition hover:border-cyan-300/50 hover:bg-cyan-400/20"
               >
                 {adminT.backViewer}
               </a>
               <button
                 type="button"
                 onClick={downloadAdminBackup}
-                className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)] transition hover:bg-cyan-400"
+                className="rounded-xl bg-cyan-500 px-4 py-2 text-xs font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)] transition hover:bg-cyan-400"
               >
                 {adminT.downloadBackup}
               </button>
             </div>
           </div>
 
-          <nav className="grid grid-cols-2 gap-2 px-6 py-4 md:grid-cols-4">
-            <div className="rounded-2xl bg-cyan-500 px-4 py-3 text-center text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.30)]">
+          <nav className="grid grid-cols-2 gap-2 px-4 py-2 md:grid-cols-4">
+            <div className="rounded-xl bg-cyan-500 px-3 py-2 text-center text-xs font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.24)]">
               {adminT.importer}
             </div>
-            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
+            <div className="rounded-xl border border-cyan-400/15 bg-white/[0.04] px-3 py-2 text-center text-xs font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               {adminT.productCatalog}
             </div>
-            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
+            <div className="rounded-xl border border-cyan-400/15 bg-white/[0.04] px-3 py-2 text-center text-xs font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               {adminT.materials}
             </div>
-            <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
+            <div className="rounded-xl border border-cyan-400/15 bg-white/[0.04] px-3 py-2 text-center text-xs font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
               {adminT.accessoriesPricing}
             </div>
           </nav>
         </header>
 
         {/* bagastudio-admin-sticky-toolbar-v1 */}
-        <div className="sticky top-0 z-[80] mb-4 rounded-2xl border border-cyan-400/20 bg-slate-950/90 p-3 backdrop-blur-xl">
+        <div className="sticky top-0 z-[80] mb-3 rounded-xl border border-cyan-400/20 bg-slate-950/90 p-2 backdrop-blur-xl">
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => window.scrollTo({top:0,behavior:"smooth"})} className="rounded-xl border px-3 py-2 text-xs font-black">
               ↑ Torna su
@@ -3342,49 +3359,49 @@ function downloadImporterDiagnosticJson() {
         </div>
 
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+        <section className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-cyan-400/15 bg-[#06111d]/80 p-3 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Prodotti</p>
             <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.products}</p>
             <p className="mt-1 text-xs text-slate-400">salvati nella libreria locale</p>
           </div>
-          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+          <div className="rounded-2xl border border-cyan-400/15 bg-[#06111d]/80 p-3 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Componenti</p>
             <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.components}</p>
             <p className="mt-1 text-xs text-slate-400">{adminDashboardStats.selectableParts} selezionabili · {adminDashboardStats.hiddenParts} nascosti</p>
           </div>
-          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+          <div className="rounded-2xl border border-cyan-400/15 bg-[#06111d]/80 p-3 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Configurabilità</p>
             <p className="mt-2 text-3xl font-black text-white">{adminDashboardStats.ledReady + adminDashboardStats.insertReady}</p>
             <p className="mt-1 text-xs text-slate-400">LED {adminDashboardStats.ledReady} · Inserti {adminDashboardStats.insertReady} · Accessori {adminDashboardStats.accessoryReady}</p>
           </div>
-          <div className="rounded-[26px] border border-cyan-400/15 bg-[#06111d]/80 p-5 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
+          <div className="rounded-2xl border border-cyan-400/15 bg-[#06111d]/80 p-3 shadow-[0_25px_70px_rgba(0,0,0,0.28)]">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300">Stato package</p>
             <p className="mt-2 text-lg font-black text-white">{adminDashboardStats.hasJson ? "JSON pronto" : "Da generare"}</p>
             <p className="mt-1 text-xs text-slate-400">{adminDashboardStats.hasModel ? "Modello caricato" : "Nessun modello caricato"}</p>
           </div>
         </section>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="space-y-5 rounded-[30px] border border-cyan-400/15 bg-[#06111d]/80 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.40)] backdrop-blur-xl">
+        <div className="mt-3 grid gap-3 xl:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="space-y-3 rounded-2xl border border-cyan-400/15 bg-[#06111d]/80 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
                 {adminT.controlCenter}
               </p>
-              <h2 className="mt-2 text-2xl font-black">{adminT.adminTools}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+              <h2 className="mt-1 text-lg font-black">{adminT.adminTools}</h2>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">
                 {adminT.toolsDesc}
               </p>
             </div>
 
             <div className="grid gap-2">
-              <button type="button" className="rounded-2xl bg-cyan-500 px-4 py-3 text-left text-sm font-black text-white shadow-[0_0_24px_rgba(14,165,233,0.25)]">
+              <button type="button" className="rounded-xl bg-cyan-500 px-3 py-2 text-left text-xs font-black text-white shadow-[0_0_20px_rgba(14,165,233,0.22)]">
                 {adminT.stepImport}
               </button>
-              <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
+              <button type="button" className="rounded-xl border border-cyan-400/15 bg-white/[0.04] px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
                 {adminT.stepMapping}
               </button>
-              <button type="button" className="rounded-2xl border border-cyan-400/15 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
+              <button type="button" className="rounded-xl border border-cyan-400/15 bg-white/[0.04] px-3 py-2 text-left text-xs font-bold text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10">
                 {adminT.stepPackage}
               </button>
             </div>
@@ -11023,14 +11040,14 @@ function downloadImporterDiagnosticJson() {
     {adminT.preview3d}
   </h2>
 
-  <div className="h-[600px] overflow-hidden rounded-[30px] border border-cyan-400/20 bg-[#030a12] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
+  <div className="h-[72vh] min-h-[680px] overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#07111c] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
     <Canvas
   camera={{ position: [4, 3, 6], fov: 45 }}
-  style={{ background: "linear-gradient(180deg, #07111c 0%, #02070d 100%)" }}
+  style={{ background: "linear-gradient(180deg, #0b1724 0%, #030a12 100%)" }}
 >
-  <ambientLight intensity={3} />
-<directionalLight position={[5, 8, 5]} intensity={4} />
-<directionalLight position={[-5, 3, -5]} intensity={2} />
+  <ambientLight intensity={4.5} />
+<directionalLight position={[5, 8, 5]} intensity={5.5} />
+<directionalLight position={[-5, 3, -5]} intensity={3.2} />
 
   <gridHelper args={[10, 10]} />
   <axesHelper args={[3]} />

@@ -88,18 +88,51 @@ led?: boolean;
 };
 
 
+function sniffDataUrlModelFormat(url: string): string {
+  if (!url.startsWith("data:")) return "";
+
+  const lower = url.slice(0, 512).toLowerCase();
+  if (lower.includes("model/gltf") || lower.includes("model/glb")) return "glb";
+  if (lower.includes("model/stl")) return "stl";
+  if (lower.includes("model/obj")) return "obj";
+  if (lower.includes("model/fbx")) return "fbx";
+  if (lower.includes("model/vnd.collada") || lower.includes("model/dae") || lower.includes("collada")) return "dae";
+
+  try {
+    const commaIndex = url.indexOf(",");
+    if (commaIndex < 0) return "";
+    const metadata = url.slice(0, commaIndex).toLowerCase();
+    const payload = url.slice(commaIndex + 1, commaIndex + 12000);
+
+    let sample = "";
+    if (metadata.includes(";base64")) {
+      const paddedPayload = payload.slice(0, payload.length - (payload.length % 4));
+      sample = typeof atob === "function" ? atob(paddedPayload) : "";
+    } else {
+      sample = decodeURIComponent(payload);
+    }
+
+    const textSample = sample.slice(0, 4096).toLowerCase();
+    if (textSample.startsWith("gltf") || textSample.includes("glb")) return "glb";
+    if (textSample.includes("<collada") || textSample.includes("colladaschema")) return "dae";
+    if (textSample.includes("<library_geometries") || textSample.includes("<library_nodes")) return "dae";
+    if (textSample.includes("solid ") || textSample.includes("facet normal")) return "stl";
+    if (textSample.includes("\nv ") && textSample.includes("\nf ")) return "obj";
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 function inferModelFormat(url: string, explicitFormat?: string) {
+  const sniffedDataUrlFormat = sniffDataUrlModelFormat(url);
+  if (sniffedDataUrlFormat) return sniffedDataUrlFormat;
+
   const format = String(explicitFormat || "").toLowerCase().replace(".", "");
   if (format) return format;
 
-  if (url.startsWith("data:")) {
-    if (url.includes("model/gltf") || url.includes("model/glb")) return "glb";
-    if (url.includes("model/stl")) return "stl";
-    if (url.includes("model/obj")) return "obj";
-    if (url.includes("model/fbx")) return "fbx";
-    if (url.includes("model/vnd.collada") || url.includes("model/dae") || url.includes("collada")) return "dae";
-    return "glb";
-  }
+  if (url.startsWith("data:")) return "glb";
 
   const clean = url.split("?")[0].split("#")[0].toLowerCase();
   return clean.split(".").pop() || "glb";
@@ -193,76 +226,87 @@ function forcePreviewMaterials(root: THREE.Object3D, format?: string | null) {
 
 
 function buildBagastudioColladaRuntimeRoot(colladaScene: THREE.Object3D) {
-  colladaScene.visible = true;
-  colladaScene.updateMatrixWorld(true);
-
-  const daeGroup = new THREE.Group();
-  daeGroup.name = colladaScene.name || "Imported_DAE";
-  daeGroup.userData = {
+  // BagaStudio V6.8 - Spazio3D DAE Hierarchy Loader
+  // Spazio3D exports a real COLLADA node hierarchy (Cabinet -> panels -> hardware groups).
+  // Do NOT bake each mesh with matrixWorld and do NOT reset transforms: that destroys
+  // parent/child offsets, pivots, instance_node placement and makes the furniture appear
+  // as a few overlapping boards. Keep the original hierarchy and only tag meshes.
+  const daeRoot = colladaScene.clone(true);
+  daeRoot.name = colladaScene.name || "Imported_DAE";
+  daeRoot.visible = true;
+  daeRoot.userData = {
     ...colladaScene.userData,
     bagastudioImportedFormat: "dae",
     bagastudioSourceType: "collada",
-    bagastudioTransformMode: "world-matrix-baked",
+    bagastudioTransformMode: "hierarchy-preserved",
+    bagastudioPreserveHierarchy: true,
   };
 
-  const bakedMeshes: THREE.Mesh[] = [];
+  let meshIndex = 0;
 
-  colladaScene.traverse((child) => {
-    const sourceMesh = child as THREE.Mesh;
-    if (!sourceMesh.isMesh || !sourceMesh.geometry) return;
+  daeRoot.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
 
-    sourceMesh.updateMatrixWorld(true);
+    meshIndex += 1;
+    mesh.visible = true;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
 
-    const bakedGeometry = sourceMesh.geometry.clone();
-    bakedGeometry.applyMatrix4(sourceMesh.matrixWorld);
-    bakedGeometry.computeBoundingBox();
-    bakedGeometry.computeBoundingSphere();
-
-    if (!bakedGeometry.attributes.normal) {
-      bakedGeometry.computeVertexNormals();
+    if (!mesh.name || mesh.name.trim() === "") {
+      mesh.name = mesh.parent?.name || `dae_part_${meshIndex}`;
     }
 
-    const bakedMaterial = Array.isArray(sourceMesh.material)
-      ? sourceMesh.material.map((mat) => mat.clone())
-      : sourceMesh.material?.clone?.() || createBagastudioNeutralImportMaterial();
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    if (!geometry.attributes.normal) {
+      geometry.computeVertexNormals();
+    }
 
-    const bakedMesh = new THREE.Mesh(bakedGeometry, bakedMaterial);
-    bakedMesh.name = sourceMesh.name || sourceMesh.parent?.name || `dae_part_${sourceMesh.id}`;
-    bakedMesh.visible = true;
-    bakedMesh.castShadow = true;
-    bakedMesh.receiveShadow = true;
-    bakedMesh.frustumCulled = false;
-    bakedMesh.userData = {
-      ...sourceMesh.userData,
+    const originalName = mesh.name || "";
+    const parentName = mesh.parent?.name || "";
+    const normalizedName = `${originalName} ${parentName}`.toLowerCase();
+    const isRuntimeHardware =
+      normalizedName.includes("cerniera") ||
+      normalizedName.includes("basetta") ||
+      normalizedName.includes("maniglia") ||
+      normalizedName.includes("cerchio") ||
+      normalizedName.includes("hardware") ||
+      normalizedName.includes("ironware");
+
+    mesh.userData = {
+      ...mesh.userData,
       bagastudioImportedFormat: "dae",
       bagastudioSelectable: true,
       bagastudioRuntimeComponent: true,
-      bagastudioOriginalName: sourceMesh.name || "",
-      bagastudioParentName: sourceMesh.parent?.name || "",
+      bagastudioRuntimeKind: isRuntimeHardware ? "hardware" : "panel",
+      bagastudioOriginalName: originalName,
+      bagastudioParentName: parentName,
+      bagastudioPreservedLocalTransform: true,
     };
 
-    bakedMesh.position.set(0, 0, 0);
-    bakedMesh.rotation.set(0, 0, 0);
-    bakedMesh.scale.set(1, 1, 1);
-    bakedMesh.updateMatrixWorld(true);
+    if (!hasUsableMaterial(mesh.material) || materialLooksInvisible(mesh.material)) {
+      mesh.material = createBagastudioNeutralImportMaterial();
+    }
 
-    bakedMeshes.push(bakedMesh);
+    const apply = (mat: THREE.Material) => {
+      mat.side = THREE.DoubleSide;
+      mat.visible = true;
+      mat.needsUpdate = true;
+    };
+
+    if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
+    else if (mesh.material) apply(mesh.material as THREE.Material);
   });
 
-  bakedMeshes.forEach((mesh) => daeGroup.add(mesh));
-  daeGroup.updateMatrixWorld(true);
-
-  return daeGroup;
+  daeRoot.updateMatrixWorld(true);
+  return daeRoot;
 }
 
-
 function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?: string | null) {
-  if (!root) return 0.01;
-
-  const normalizedFormat = String(format || "").toLowerCase();
-  const shouldAutoScale = ["dae", "obj", "fbx", "stl"].includes(normalizedFormat);
-
-  if (!shouldAutoScale) return 0.01;
+  if (!root) return 1;
 
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
@@ -270,10 +314,13 @@ function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?:
 
   if (!Number.isFinite(maxDimension) || maxDimension <= 0) return 1;
 
+  // BagaStudio Viewer UX V6.5:
+  // GLB generati da DAE/Spazio3D arrivano spesso già normalizzati oppure in unità non coerenti.
+  // Prima i GLB venivano forzati a 0.01 e il prodotto risultava praticamente invisibile.
   const targetDimension = 8;
   const scale = targetDimension / maxDimension;
 
-  return THREE.MathUtils.clamp(scale, 0.001, 100);
+  return THREE.MathUtils.clamp(scale, 0.01, 100);
 }
 
 
@@ -4078,12 +4125,21 @@ productMaterials?.length
           productPackage?.assets?.modelUrl;
 
         if (modelUrl) {
+          const isConvertedModelUrl = Boolean(productPackage?.assets?.convertedModelUrl);
+          const resolvedFormat = isConvertedModelUrl
+            ? String(productPackage?.assets?.conversionTargetFormat || "glb").toLowerCase()
+            : inferModelFormat(
+                modelUrl,
+                productPackage?.assets?.modelExtension ||
+                  productPackage?.assets?.modelFormat ||
+                  productPackage?.assets?.originalFormat ||
+                  productPackage?.engine?.canonicalModelFormat ||
+                  "glb"
+              );
+
           applyRuntimeModel({
             url: modelUrl,
-            format:
-              productPackage?.assets?.conversionTargetFormat ||
-              productPackage?.assets?.originalFormat ||
-              "dae",
+            format: resolvedFormat,
             name:
               productPackage?.assets?.sourceFileName ||
               productPackage?.name ||
@@ -4269,26 +4325,26 @@ productMaterials?.length
           gl.outputColorSpace = THREE.SRGBColorSpace;
         }}
       >
-        <color attach="background" args={["#000000"]} />
+        <color attach="background" args={["#07111c"]} />
 
-        <ambientLight intensity={0.45} />
+        <ambientLight intensity={1.25} />
 
         <directionalLight
           castShadow
           position={[5, 8, 5]}
-          intensity={1.6}
+          intensity={2.7}
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
 
         <directionalLight
           position={[-4, 4, -3]}
-          intensity={0.8}
+          intensity={1.6}
         />
 
         <pointLight
           position={[0, 3, 3]}
-          intensity={0.7}
+          intensity={1.2}
         />
 
         <Environment preset="apartment" />

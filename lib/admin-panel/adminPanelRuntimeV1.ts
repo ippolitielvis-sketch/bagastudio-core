@@ -493,7 +493,15 @@ function guessComponentCategory(displayName: string) {
   const name = displayName.toLowerCase();
 
   if (name.includes("specchio") || name.includes("mirror")) return "mirror";
-  if (name.includes("maniglia") || name.includes("handle")) return "hardware";
+  if (
+    name.includes("maniglia") ||
+    name.includes("handle") ||
+    name.includes("cerniera") ||
+    name.includes("basetta") ||
+    name.includes("ferramenta") ||
+    name.includes("vite") ||
+    name.includes("cerchio")
+  ) return "hardware";
   if (name.includes("led")) return "lighting";
   if (name.includes("inserto") || name.includes("marmo") || name.includes("insert")) return "insert";
   if (
@@ -550,7 +558,7 @@ function guessRuntimeRole(displayName: string, category: string) {
   if (name.includes("cassetto") || name.includes("drawer")) return "drawer";
   if (name.includes("anta") || name.includes("door")) return "door";
   if (category === "mirror") return "mirror";
-  if (category === "hardware") return "hardware";
+  if (category === "hardware" || name.includes("cerniera") || name.includes("basetta") || name.includes("maniglia") || name.includes("ferramenta") || name.includes("cerchio")) return "hardware";
   if (category === "lighting") return "lighting";
   if (category === "insert") return "insert";
 
@@ -607,7 +615,11 @@ function inferManufacturingConstraintRoleV1(componentCategory: string, category:
     value.includes("cerniera") ||
     value.includes("guida") ||
     value.includes("ferramenta") ||
-    value.includes("hardware")
+    value.includes("hardware") ||
+    value.includes("handle") ||
+    value.includes("maniglia") ||
+    value.includes("vite") ||
+    value.includes("cerchio")
   ) {
     return "HARDWARE";
   }
@@ -1651,63 +1663,78 @@ function getStableMeshName(rawName: string | undefined, index: number) {
 function extractMeshesFromObject(object: THREE.Object3D) {
   const meshes: MeshConfig[] = [];
 
+  object.updateMatrixWorld(true);
+
   object.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
 
-      const rawName = mesh.name?.trim() || "";
+      const rawName = mesh.name?.trim() || mesh.parent?.name?.trim() || "";
       const meshName = getStableMeshName(rawName, meshes.length);
-
       const guessedName = guessPartName(mesh, meshes.length);
+      const displayName = guessedName || rawName || `Componente ${meshes.length + 1}`;
+      const componentCategory = inferAutoMappingEngineV25ComponentCategory(displayName, "").componentCategory;
+      const category = normalizeComponentCategory(
+        componentCategory === "hardware" ? "hardware" : componentCategory === "lighting" ? "lighting" : componentCategory === "mirror" ? "mirror" : "panel",
+        displayName
+      );
+      const runtimeRole = guessRuntimeRole(displayName, category);
+      const isHardware = category === "hardware" || componentCategory === "hardware";
+      const isVisualOnly = isHardware || category === "mirror" || category === "lighting" || componentCategory === "insert";
 
       meshes.push({
         meshName,
-        displayName: guessedName,
-        category: guessComponentCategory(guessedName),
+        displayName,
+        category,
+        componentCategory,
+        partId: buildStablePartId({ meshName, displayName, category }, meshes.length),
+        componentType: isHardware ? "runtime-hardware" : category === "panel" ? "configurable-panel" : `${category}-component`,
+        runtimeRole,
+        tags: [
+          "dae-runtime",
+          category,
+          componentCategory,
+          isHardware ? "hardware-from-dae" : "production-candidate",
+          isVisualOnly ? "visual-only" : "csv-cix-eligible",
+        ].filter(Boolean).join(", "),
         selectable: true,
         visible: true,
-        compatibleLed: guessedName.includes("LED"),
-        compatibleInsert: guessedName.includes("Inserto"),
-        supportsAccessories: !["mirror", "lighting"].includes(guessComponentCategory(guessedName)),
+        compatibleLed: !isVisualOnly && displayName.toUpperCase().includes("LED"),
+        compatibleInsert: !isVisualOnly && category === "panel",
+        supportsAccessories: !["mirror", "lighting"].includes(category),
         materialSlots:
-          guessedName === "Piano"
-            ? "top"
-            : guessedName === "Frontale"
-            ? "front"
-            : guessedName === "Specchio"
-            ? "mirror"
-            : guessedName === "Maniglia"
+          category === "hardware"
             ? "metal"
+            : category === "mirror"
+            ? "mirror"
+            : runtimeRole === "top"
+            ? "top"
+            : runtimeRole === "front" || runtimeRole === "door"
+            ? "front"
             : "main",
-        compatibleAccessories:
-          guessedName.includes("LED")
-            ? "led"
-            : guessedName.includes("Inserto")
-            ? "inserto"
-            : "",
+        compatibleAccessories: isHardware ? "hardware" : category === "panel" ? "led, insert" : "",
         dimensions: "",
         technicalPoints: "",
         assemblyOrder: "",
         panelThickness: "",
         materialCode: "",
         edgeBanding: "",
-        hardware: guessedName === "Maniglia" ? guessedName : "",
+        hardware: isHardware ? displayName : "",
         drillings: "",
         manufacturingData: "",
-        constraintRole: "",
+        constraintRole: isHardware ? "HARDWARE" : "",
         hardwareLinks: "",
         drillingLinks: "",
         dependencyParents: "",
         dependencyChildren: "",
-            ledPosition: "front",
-            ledFrontOffset: "4",
-ledSideMargin: "5",
-ledYOffset: "0",
-
-insertPosition: "front",
-insertOffsetX: "0",
-insertOffsetY: "0",
-insertOffsetZ: "1",
+        ledPosition: "front",
+        ledFrontOffset: "4",
+        ledSideMargin: "5",
+        ledYOffset: "0",
+        insertPosition: "front",
+        insertOffsetX: "0",
+        insertOffsetY: "0",
+        insertOffsetZ: "1",
       });
     }
   });
@@ -1916,7 +1943,7 @@ function inferAutoMappingV2Category(name: string) {
 
   if (lower.includes("specchio") || lower.includes("mirror")) return "mirror";
   if (lower.includes("led")) return "lighting";
-  if (lower.includes("maniglia") || lower.includes("cerniera") || lower.includes("basetta") || lower.includes("piede")) return "hardware";
+  if (lower.includes("maniglia") || lower.includes("cerniera") || lower.includes("basetta") || lower.includes("piede") || lower.includes("vite") || lower.includes("ferramenta") || lower.includes("cerchio")) return "hardware";
   if (lower.includes("inserto") || lower.includes("marmo")) return "insert";
   if (
     lower.includes("fianco") ||

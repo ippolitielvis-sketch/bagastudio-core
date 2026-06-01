@@ -110,7 +110,7 @@ export function inferAutoMappingEngineV25ComponentCategory(
 
   if (has("specchio", "mirror")) return make("mirror", 96, "keyword specchio/mirror");
   if (has("led", "strip", "luce")) return make("lighting", 95, "keyword LED/luce");
-  if (has("maniglia", "cerniera", "ferramenta", "vite", "basetta", "handle", "hinge")) return make("hardware", 93, "keyword ferramenta");
+  if (has("maniglia", "cerniera", "ferramenta", "vite", "basetta", "cerchio", "handle", "hinge", "hardware")) return make("hardware", 93, "keyword ferramenta/accessorio DAE");
   if (has("piede", "gamba", "leg")) return make("leg", 90, "keyword piede/gamba");
   if (has("zoccolo", "plinth", "baseboard")) return make("baseboard", 92, "keyword zoccolo");
   if (has("schiena", "retro", "back")) return make("back", 94, "keyword schiena/retro");
