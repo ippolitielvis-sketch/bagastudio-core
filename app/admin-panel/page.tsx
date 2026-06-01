@@ -5440,6 +5440,2549 @@ function downloadFactoryExportPackageV1Report() {
   downloadJsonFile(`bagastudio-factory-export-package-v1-${Date.now()}.json`, factoryExportPackageV1Report);
 }
 
+
+type BomRegenerationV1Status = "ready" | "review" | "blocked";
+
+type BomRegenerationV1Item = {
+  key: string;
+  material: string | null;
+  thickness: number | null;
+  quantity: number;
+  componentNames: string[];
+  sourceRows: number[];
+  status: BomRegenerationV1Status;
+  note: string;
+};
+
+type BomRegenerationV1Report = {
+  schema: "bagastudio-bom-regeneration-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: "BOM_READY" | "BOM_REVIEW_REQUIRED" | "BOM_BLOCKED";
+  sourceCsvFileName: string | null;
+  targetThickness: number | null;
+  totals: {
+    bomItems: number;
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    totalQuantity: number;
+  };
+  items: BomRegenerationV1Item[];
+  notes: string[];
+};
+
+function buildBomRegenerationV1Report(
+  csvReport: CsvRegenerationV1Report,
+  csvGuardReport: CsvRegenerationGuardV1Report
+): BomRegenerationV1Report {
+  const guardByRow = new Map<number, CsvRegenerationGuardV1Report["items"][number]>();
+  csvGuardReport.items.forEach((item) => guardByRow.set(item.rowIndex, item));
+
+  const grouped = new Map<string, BomRegenerationV1Item>();
+
+  csvReport.rows.forEach((row) => {
+    const guard = guardByRow.get(row.rowIndex) || null;
+    const materialKey = String(row.material || "materiale-non-definito").trim().toLowerCase();
+    const thicknessKey = row.regeneratedThickness === null ? "spessore-non-definito" : `${row.regeneratedThickness}`;
+    const key = `${materialKey}__${thicknessKey}`;
+    const rowQuantity = row.quantity && row.quantity > 0 ? row.quantity : 1;
+    const rowStatus: BomRegenerationV1Status = guard?.status === "blocked"
+      ? "blocked"
+      : guard?.status === "review" || row.status === "skipped"
+        ? "review"
+        : "ready";
+
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += rowQuantity;
+      existing.componentNames.push(row.name);
+      existing.sourceRows.push(row.rowIndex);
+      if (rowStatus === "blocked") existing.status = "blocked";
+      else if (rowStatus === "review" && existing.status !== "blocked") existing.status = "review";
+      return;
+    }
+
+    grouped.set(key, {
+      key,
+      material: row.material,
+      thickness: row.regeneratedThickness,
+      quantity: rowQuantity,
+      componentNames: [row.name],
+      sourceRows: [row.rowIndex],
+      status: rowStatus,
+      note: rowStatus === "blocked"
+        ? "Voce BOM bloccata da CSV Guard: correggere prima dell'export produttivo."
+        : rowStatus === "review"
+          ? "Voce BOM da revisionare: riga CSV saltata/non collegata o richiesta verifica tecnica."
+          : "Voce BOM pronta per distinta diagnostica V1.",
+    });
+  });
+
+  const items = Array.from(grouped.values()).sort((a, b) => {
+    const materialCompare = String(a.material || "").localeCompare(String(b.material || ""));
+    if (materialCompare !== 0) return materialCompare;
+    return (a.thickness || 0) - (b.thickness || 0);
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const readiness = blocked > 0 ? "BOM_BLOCKED" : review > 0 ? "BOM_REVIEW_REQUIRED" : "BOM_READY";
+
+  return {
+    schema: "bagastudio-bom-regeneration-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness,
+    sourceCsvFileName: csvReport.sourceCsvFileName,
+    targetThickness: csvReport.targetThickness,
+    totals: {
+      bomItems: items.length,
+      components: csvReport.rows.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+    },
+    items,
+    notes: [
+      "BOM Regeneration V1 raggruppa il CSV rigenerato per materiale e spessore.",
+      "La quantità è diagnostica e deriva dalle righe CSV, senza ancora ottimizzazione taglio o nesting.",
+      "Le voci review/blocked devono essere corrette prima della futura pipeline Factory Engine.",
+    ],
+  };
+}
+
+const bomRegenerationV1Report = useMemo(() => {
+  return buildBomRegenerationV1Report(csvRegenerationV1Report, csvRegenerationGuardV1Report);
+}, [csvRegenerationV1Report, csvRegenerationGuardV1Report]);
+
+function downloadBomRegenerationV1Report() {
+  downloadJsonFile(`bagastudio-bom-regeneration-v1-${Date.now()}.json`, bomRegenerationV1Report);
+}
+
+
+type HardwareRepositionEngineV1Status = "ready" | "review" | "blocked" | "skipped";
+
+type HardwareRepositionEngineV1Item = {
+  componentId: string;
+  displayName: string;
+  status: HardwareRepositionEngineV1Status;
+  originalThickness: number | null;
+  targetThickness: number | null;
+  thicknessDelta: number | null;
+  drillingOffsetRule: string;
+  hardwareOffsetRule: string;
+  linkedCsvRow: number | null;
+  constraintStatus: "ok" | "warning" | "error" | null;
+  note: string;
+};
+
+type HardwareRepositionEngineV1Report = {
+  schema: "bagastudio-hardware-reposition-engine-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: "REPOSITION_READY" | "REPOSITION_REVIEW_REQUIRED" | "REPOSITION_BLOCKED";
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    skipped: number;
+    repositionRequired: number;
+  };
+  items: HardwareRepositionEngineV1Item[];
+  notes: string[];
+};
+
+function buildHardwareRepositionEngineV1Report(
+  parametricReport: ParametricEditV1Report,
+  csvReport: CsvRegenerationV1Report,
+  constraintReport: ConstraintEngineV1Report
+): HardwareRepositionEngineV1Report {
+  const csvByName = new Map<string, CsvRegenerationV1Report["rows"][number]>();
+  csvReport.rows.forEach((row) => csvByName.set(normalizeCsvRegenerationKey(row.name), row));
+
+  const constraintsByComponent = new Map<string, ConstraintEngineV1Item[]>();
+  constraintReport.items.forEach((item) => {
+    const list = constraintsByComponent.get(item.componentId) || [];
+    list.push(item);
+    constraintsByComponent.set(item.componentId, list);
+  });
+
+  const items: HardwareRepositionEngineV1Item[] = parametricReport.items.map((item) => {
+    const linkedCsvRow = csvByName.get(normalizeCsvRegenerationKey(item.displayName)) || null;
+    const constraints = constraintsByComponent.get(item.componentId) || [];
+    const hasConstraintError = constraints.some((constraint) => constraint.status === "error");
+    const hasConstraintWarning = constraints.some((constraint) => constraint.status === "warning");
+    const thicknessDelta = item.originalThickness !== null && item.targetThickness !== null
+      ? Number((item.targetThickness - item.originalThickness).toFixed(3))
+      : null;
+    const repositionRequired = Boolean(thicknessDelta !== null && Math.abs(thicknessDelta) > 0.001);
+
+    let status: HardwareRepositionEngineV1Status = "ready";
+    let note = "Ferramenta pronta: nessun riposizionamento richiesto dalle regole V1.";
+
+    if (item.status === "blocked" || hasConstraintError) {
+      status = "blocked";
+      note = "Riposizionamento bloccato: correggere prima errori Parametric Edit o Constraint Engine.";
+    } else if (item.status === "skipped") {
+      status = "skipped";
+      note = "Componente saltato: nessuna regola di riposizionamento applicata in V1.";
+    } else if (item.status === "review" || hasConstraintWarning || !linkedCsvRow) {
+      status = "review";
+      note = "Riposizionamento da revisionare: dati CSV/constraint incompleti o warning presenti.";
+    } else if (repositionRequired) {
+      status = "ready";
+      note = "Riposizionamento V1 pronto: mantenere riferimenti parametrici a bordo/asse e aggiornare quote interne.";
+    }
+
+    return {
+      componentId: item.componentId,
+      displayName: item.displayName,
+      status,
+      originalThickness: item.originalThickness,
+      targetThickness: item.targetThickness,
+      thicknessDelta,
+      drillingOffsetRule: repositionRequired ? "edge/axis references preserved; internal drilling offsets recalculated" : "no drilling offset change",
+      hardwareOffsetRule: repositionRequired ? "hardware anchors stay parametric; depth/margins revalidated" : "no hardware offset change",
+      linkedCsvRow: linkedCsvRow?.rowIndex ?? null,
+      constraintStatus: hasConstraintError ? "error" : hasConstraintWarning ? "warning" : constraints.length > 0 ? "ok" : null,
+      note,
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const readiness = blocked > 0
+    ? "REPOSITION_BLOCKED"
+    : review > 0
+      ? "REPOSITION_REVIEW_REQUIRED"
+      : "REPOSITION_READY";
+
+  return {
+    schema: "bagastudio-hardware-reposition-engine-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness,
+    totals: {
+      components: items.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      skipped: items.filter((item) => item.status === "skipped").length,
+      repositionRequired: items.filter((item) => item.thicknessDelta !== null && Math.abs(item.thicknessDelta) > 0.001).length,
+    },
+    items,
+    notes: [
+      "Hardware Reposition Engine V1 prepara il riposizionamento parametrico di ferramenta e forature dopo cambio spessore.",
+      "Le quote restano diagnostiche: edge/axis references devono essere validate su CSV/CIX reali prima della produzione.",
+      "Gli elementi blocked/review devono essere risolti prima della futura CSV/CIX Regeneration Pipeline.",
+    ],
+  };
+}
+
+const hardwareRepositionEngineV1Report = useMemo(() => {
+  return buildHardwareRepositionEngineV1Report(
+    parametricEditV1Report,
+    csvRegenerationV1Report,
+    constraintEngineV1Report
+  );
+}, [parametricEditV1Report, csvRegenerationV1Report, constraintEngineV1Report]);
+
+function downloadHardwareRepositionEngineV1Report() {
+  downloadJsonFile(`bagastudio-hardware-reposition-engine-v1-${Date.now()}.json`, hardwareRepositionEngineV1Report);
+}
+
+
+type CsvCixRegenerationPipelineV1Status = "ready" | "review" | "blocked" | "skipped";
+type CsvCixRegenerationPipelineV1Readiness = "PIPELINE_READY" | "PIPELINE_REVIEW_REQUIRED" | "PIPELINE_BLOCKED";
+
+type CsvCixRegenerationPipelineV1Item = {
+  componentId: string;
+  displayName: string;
+  status: CsvCixRegenerationPipelineV1Status;
+  csvRow: number | null;
+  csvStatus: CsvRegenerationV1Report["rows"][number]["status"] | null;
+  csvGuardStatus: CsvRegenerationGuardV1Status | null;
+  bomStatus: BomRegenerationV1Status | null;
+  hardwareRepositionStatus: HardwareRepositionEngineV1Status | null;
+  outputTargets: Array<"CSV" | "CIX" | "BOM" | "HARDWARE_MAP">;
+  note: string;
+};
+
+type CsvCixRegenerationPipelineV1Report = {
+  schema: "bagastudio-csv-cix-regeneration-pipeline-v1";
+  version: 1;
+  generatedAt: string;
+  readiness: CsvCixRegenerationPipelineV1Readiness;
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    skipped: number;
+    csvRowsReady: number;
+    cixTargetsPlanned: number;
+    bomLinkedItems: number;
+  };
+  items: CsvCixRegenerationPipelineV1Item[];
+  notes: string[];
+};
+
+function buildCsvCixRegenerationPipelineV1Report(
+  csvReport: CsvRegenerationV1Report,
+  csvGuardReport: CsvRegenerationGuardV1Report,
+  bomReport: BomRegenerationV1Report,
+  hardwareReport: HardwareRepositionEngineV1Report
+): CsvCixRegenerationPipelineV1Report {
+  const guardByRow = new Map<number, CsvRegenerationGuardV1Report["items"][number]>();
+  csvGuardReport.items.forEach((item) => guardByRow.set(item.rowIndex, item));
+
+  const hardwareByName = new Map<string, HardwareRepositionEngineV1Item>();
+  hardwareReport.items.forEach((item) => hardwareByName.set(normalizeCsvRegenerationKey(item.displayName), item));
+
+  const bomByComponentName = new Map<string, BomRegenerationV1Item>();
+  bomReport.items.forEach((item) => {
+    item.componentNames.forEach((componentName) => {
+      bomByComponentName.set(normalizeCsvRegenerationKey(componentName), item);
+    });
+  });
+
+  const items: CsvCixRegenerationPipelineV1Item[] = csvReport.rows.map((row) => {
+    const key = normalizeCsvRegenerationKey(row.name);
+    const guard = guardByRow.get(row.rowIndex) || null;
+    const hardware = hardwareByName.get(key) || null;
+    const bom = bomByComponentName.get(key) || null;
+    const outputTargets: CsvCixRegenerationPipelineV1Item["outputTargets"] = ["CSV"];
+
+    if (bom) outputTargets.push("BOM");
+    if (hardware && hardware.status !== "skipped") outputTargets.push("HARDWARE_MAP", "CIX");
+
+    let status: CsvCixRegenerationPipelineV1Status = "ready";
+    let note = "Pipeline pronta: CSV rigenerabile, BOM collegata e CIX pianificabile in modalità diagnostica V1.";
+
+    if (guard?.status === "blocked" || hardware?.status === "blocked" || bom?.status === "blocked") {
+      status = "blocked";
+      note = "Pipeline bloccata: correggere CSV Guard, BOM o Hardware Reposition prima della rigenerazione CSV/CIX.";
+    } else if (row.status === "skipped" || hardware?.status === "skipped") {
+      status = "skipped";
+      note = "Pipeline saltata: riga o ferramenta non gestita dalle regole V1.";
+    } else if (guard?.status === "review" || hardware?.status === "review" || bom?.status === "review" || !hardware || !bom) {
+      status = "review";
+      note = "Pipeline da revisionare: collegamenti incompleti o warning presenti prima dell'export produttivo.";
+    }
+
+    return {
+      componentId: hardware?.componentId || `csv-row-${row.rowIndex}`,
+      displayName: row.name,
+      status,
+      csvRow: row.rowIndex,
+      csvStatus: row.status,
+      csvGuardStatus: guard?.status || null,
+      bomStatus: bom?.status || null,
+      hardwareRepositionStatus: hardware?.status || null,
+      outputTargets,
+      note,
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const readiness: CsvCixRegenerationPipelineV1Readiness = blocked > 0
+    ? "PIPELINE_BLOCKED"
+    : review > 0
+      ? "PIPELINE_REVIEW_REQUIRED"
+      : "PIPELINE_READY";
+
+  return {
+    schema: "bagastudio-csv-cix-regeneration-pipeline-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    readiness,
+    totals: {
+      components: items.length,
+      ready: items.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      skipped: items.filter((item) => item.status === "skipped").length,
+      csvRowsReady: csvReport.rows.filter((row) => row.status === "updated" || row.status === "unchanged").length,
+      cixTargetsPlanned: items.filter((item) => item.outputTargets.includes("CIX")).length,
+      bomLinkedItems: items.filter((item) => item.bomStatus !== null).length,
+    },
+    items,
+    notes: [
+      "CSV/CIX Regeneration Pipeline V1 collega CSV rigenerato, CSV Guard, BOM e Hardware Reposition.",
+      "Il CIX in V1 è pianificato come target diagnostico: la scrittura reale dei file .cix richiederà mapping lavorazioni macchina.",
+      "Gli stati review/blocked impediscono l'export produttivo automatico e richiedono controllo tecnico.",
+    ],
+  };
+}
+
+const csvCixRegenerationPipelineV1Report = useMemo(() => {
+  return buildCsvCixRegenerationPipelineV1Report(
+    csvRegenerationV1Report,
+    csvRegenerationGuardV1Report,
+    bomRegenerationV1Report,
+    hardwareRepositionEngineV1Report
+  );
+}, [csvRegenerationV1Report, csvRegenerationGuardV1Report, bomRegenerationV1Report, hardwareRepositionEngineV1Report]);
+
+function downloadCsvCixRegenerationPipelineV1Report() {
+  downloadJsonFile(`bagastudio-csv-cix-regeneration-pipeline-v1-${Date.now()}.json`, csvCixRegenerationPipelineV1Report);
+}
+
+type FactoryEngineV1Status = "READY" | "REVIEW" | "BLOCKED";
+
+type FactoryEngineV1Report = {
+  schema: "bagastudio-factory-engine-v1";
+  version: 1;
+  generatedAt: string;
+  factoryStatus: FactoryEngineV1Status;
+  factoryScore: number;
+  summary: {
+    components: number;
+    productionBlocked: number;
+    productionReview: number;
+    parametricBlocked: number;
+    csvBlocked: number;
+    bomBlocked: number;
+    hardwareBlocked: number;
+    pipelineBlocked: number;
+    exportReadiness: FactoryExportPackageV1Readiness;
+  };
+  inputs: {
+    productionReadinessSchema: ProductionReadinessGateV1Report["schema"];
+    parametricEditSchema: ParametricEditV1Report["schema"];
+    csvGuardSchema: CsvRegenerationGuardV1Report["schema"];
+    factoryExportSchema: FactoryExportPackageV1Report["schema"];
+    bomSchema: BomRegenerationV1Report["schema"];
+    hardwareRepositionSchema: HardwareRepositionEngineV1Report["schema"];
+    csvCixPipelineSchema: CsvCixRegenerationPipelineV1Report["schema"];
+  };
+  blockers: string[];
+  warnings: string[];
+  recommendations: string[];
+};
+
+function buildFactoryEngineV1Report(params: {
+  productionReadiness: ProductionReadinessGateV1Report;
+  parametricEdit: ParametricEditV1Report;
+  csvGuard: CsvRegenerationGuardV1Report;
+  factoryExport: FactoryExportPackageV1Report;
+  bom: BomRegenerationV1Report;
+  hardwareReposition: HardwareRepositionEngineV1Report;
+  csvCixPipeline: CsvCixRegenerationPipelineV1Report;
+}): FactoryEngineV1Report {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const recommendations: string[] = [];
+
+  if (params.productionReadiness.totals.blocked > 0) {
+    blockers.push(`${params.productionReadiness.totals.blocked} componenti bloccati dal Production Readiness Gate.`);
+  }
+  if (params.productionReadiness.totals.review > 0) {
+    warnings.push(`${params.productionReadiness.totals.review} componenti richiedono revisione produttiva.`);
+  }
+
+  if (params.parametricEdit.totals.blocked > 0) {
+    blockers.push(`${params.parametricEdit.totals.blocked} componenti bloccati nel Parametric Edit.`);
+  }
+  if (params.parametricEdit.totals.review > 0) {
+    warnings.push(`${params.parametricEdit.totals.review} componenti parametrici richiedono controllo tecnico.`);
+  }
+
+  if (params.csvGuard.totals.blocked > 0) {
+    blockers.push(`${params.csvGuard.totals.blocked} righe CSV non rigenerabili in sicurezza.`);
+  }
+  if (params.csvGuard.totals.review > 0) {
+    warnings.push(`${params.csvGuard.totals.review} righe CSV richiedono revisione prima dell'export.`);
+  }
+
+  if (params.bom.totals.blocked > 0) {
+    blockers.push(`${params.bom.totals.blocked} righe BOM bloccate.`);
+  }
+  if (params.bom.totals.review > 0) {
+    warnings.push(`${params.bom.totals.review} righe BOM richiedono revisione.`);
+  }
+
+  if (params.hardwareReposition.totals.blocked > 0) {
+    blockers.push(`${params.hardwareReposition.totals.blocked} riposizionamenti ferramenta bloccati.`);
+  }
+  if (params.hardwareReposition.totals.review > 0) {
+    warnings.push(`${params.hardwareReposition.totals.review} riposizionamenti ferramenta richiedono revisione.`);
+  }
+
+  if (params.csvCixPipeline.totals.blocked > 0) {
+    blockers.push(`${params.csvCixPipeline.totals.blocked} elementi bloccati nella pipeline CSV/CIX.`);
+  }
+  if (params.csvCixPipeline.totals.review > 0) {
+    warnings.push(`${params.csvCixPipeline.totals.review} elementi pipeline CSV/CIX richiedono controllo.`);
+  }
+
+  if (params.factoryExport.readiness === "FACTORY_BLOCKED") {
+    blockers.push("Factory Export Package V1 segnala export produttivo bloccato.");
+  }
+  if (params.factoryExport.readiness === "FACTORY_REVIEW_REQUIRED") {
+    warnings.push("Factory Export Package V1 richiede revisione prima dell'export.");
+  }
+
+  if (blockers.length === 0 && warnings.length === 0) {
+    recommendations.push("Progetto pronto per il prossimo step: Product Package Regeneration e Viewer Sync.");
+  } else {
+    recommendations.push("Correggere prima i blocchi critici, poi rieseguire CSV Guard, BOM, Hardware Reposition e Pipeline CSV/CIX.");
+  }
+  if (params.csvCixPipeline.totals.cixTargetsPlanned > 0) {
+    recommendations.push("Prima dell'export CIX reale serve mapping lavorazioni macchina per ogni target CIX pianificato.");
+  }
+
+  const factoryStatus: FactoryEngineV1Status = blockers.length > 0 ? "BLOCKED" : warnings.length > 0 ? "REVIEW" : "READY";
+  const totalSignals = blockers.length + warnings.length;
+  const factoryScore = Math.max(0, Math.min(100, 100 - blockers.length * 18 - warnings.length * 7 - Math.max(0, totalSignals - 4) * 2));
+
+  return {
+    schema: "bagastudio-factory-engine-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    factoryStatus,
+    factoryScore,
+    summary: {
+      components: params.productionReadiness.totals.components,
+      productionBlocked: params.productionReadiness.totals.blocked,
+      productionReview: params.productionReadiness.totals.review,
+      parametricBlocked: params.parametricEdit.totals.blocked,
+      csvBlocked: params.csvGuard.totals.blocked,
+      bomBlocked: params.bom.totals.blocked,
+      hardwareBlocked: params.hardwareReposition.totals.blocked,
+      pipelineBlocked: params.csvCixPipeline.totals.blocked,
+      exportReadiness: params.factoryExport.readiness,
+    },
+    inputs: {
+      productionReadinessSchema: params.productionReadiness.schema,
+      parametricEditSchema: params.parametricEdit.schema,
+      csvGuardSchema: params.csvGuard.schema,
+      factoryExportSchema: params.factoryExport.schema,
+      bomSchema: params.bom.schema,
+      hardwareRepositionSchema: params.hardwareReposition.schema,
+      csvCixPipelineSchema: params.csvCixPipeline.schema,
+    },
+    blockers,
+    warnings,
+    recommendations,
+  };
+}
+
+const factoryEngineV1Report = useMemo(() => {
+  return buildFactoryEngineV1Report({
+    productionReadiness: productionReadinessGateV1Report,
+    parametricEdit: parametricEditV1Report,
+    csvGuard: csvRegenerationGuardV1Report,
+    factoryExport: factoryExportPackageV1Report,
+    bom: bomRegenerationV1Report,
+    hardwareReposition: hardwareRepositionEngineV1Report,
+    csvCixPipeline: csvCixRegenerationPipelineV1Report,
+  });
+}, [
+  productionReadinessGateV1Report,
+  parametricEditV1Report,
+  csvRegenerationGuardV1Report,
+  factoryExportPackageV1Report,
+  bomRegenerationV1Report,
+  hardwareRepositionEngineV1Report,
+  csvCixRegenerationPipelineV1Report,
+]);
+
+function downloadFactoryEngineV1Report() {
+  downloadJsonFile(`bagastudio-factory-engine-v1-${Date.now()}.json`, factoryEngineV1Report);
+}
+
+
+type ProductPackageRegenerationV1Status = "READY_TO_SYNC" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type ProductPackageRegenerationV1Component = {
+  componentId: string;
+  displayName: string;
+  status: "ready" | "review" | "blocked" | "skipped";
+  parametricStatus: ParametricEditV1Status | null;
+  bomStatus: BomRegenerationV1Status | null;
+  hardwareStatus: HardwareRepositionEngineV1Status | null;
+  pipelineStatus: CsvCixRegenerationPipelineV1Status | null;
+  targetThickness: number | null;
+  externalDimensionsLocked: boolean;
+  viewerSyncReady: boolean;
+  note: string;
+};
+
+type ProductPackageRegenerationV1Report = {
+  schema: "bagastudio-product-package-regeneration-v1";
+  version: 1;
+  generatedAt: string;
+  status: ProductPackageRegenerationV1Status;
+  sourceFactoryStatus: FactoryEngineV1Status;
+  currentPackageSchema: string;
+  nextPackageVersion: number;
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    skipped: number;
+    viewerSyncReady: number;
+    packageComponents: number;
+  };
+  components: ProductPackageRegenerationV1Component[];
+  packagePatch: {
+    mode: "diagnostic_patch_v1";
+    keepsOriginalGeometry: boolean;
+    keepsExternalDimensions: boolean;
+    updatesParametricMetadata: boolean;
+    updatesBomMetadata: boolean;
+    updatesHardwareMetadata: boolean;
+    updatesCsvCixMetadata: boolean;
+  };
+  recommendations: string[];
+};
+
+function buildProductPackageRegenerationV1Report(params: {
+  factory: FactoryEngineV1Report;
+  currentPackage: any;
+  parametric: ParametricEditV1Report;
+  bom: BomRegenerationV1Report;
+  hardware: HardwareRepositionEngineV1Report;
+  csvCix: CsvCixRegenerationPipelineV1Report;
+}): ProductPackageRegenerationV1Report {
+  const bomByComponentName = new Map<string, BomRegenerationV1Item>();
+  params.bom.items.forEach((item) => {
+    item.componentNames.forEach((componentName) => {
+      bomByComponentName.set(normalizeCsvRegenerationKey(componentName), item);
+    });
+  });
+
+  const hardwareById = new Map<string, HardwareRepositionEngineV1Item>();
+  params.hardware.items.forEach((item) => hardwareById.set(item.componentId, item));
+
+  const pipelineById = new Map<string, CsvCixRegenerationPipelineV1Item>();
+  params.csvCix.items.forEach((item) => pipelineById.set(item.componentId, item));
+
+  const components: ProductPackageRegenerationV1Component[] = params.parametric.items.map((item) => {
+    const bomItem = bomByComponentName.get(normalizeCsvRegenerationKey(item.displayName)) || null;
+    const hardwareItem = hardwareById.get(item.componentId) || null;
+    const pipelineItem = pipelineById.get(item.componentId) || null;
+
+    const hasBlock = item.status === "blocked" || bomItem?.status === "blocked" || hardwareItem?.status === "blocked" || pipelineItem?.status === "blocked";
+    const hasReview = item.status === "review" || bomItem?.status === "review" || hardwareItem?.status === "review" || pipelineItem?.status === "review";
+    const isSkipped = item.status === "skipped" || pipelineItem?.status === "skipped";
+
+    let status: ProductPackageRegenerationV1Component["status"] = "ready";
+    let note = "Componente pronto per patch Product Package e futura sincronizzazione Viewer.";
+
+    if (hasBlock) {
+      status = "blocked";
+      note = "Bloccato: Factory/Parametric/BOM/Hardware/Pipeline segnala errori da correggere prima di rigenerare il Product Package.";
+    } else if (hasReview) {
+      status = "review";
+      note = "Review richiesta: il Product Package può essere preparato solo come bozza controllata.";
+    } else if (isSkipped) {
+      status = "skipped";
+      note = "Componente saltato dalla pipeline produttiva: non viene incluso nella patch automatica V1.";
+    }
+
+    return {
+      componentId: item.componentId,
+      displayName: item.displayName,
+      status,
+      parametricStatus: item.status,
+      bomStatus: bomItem?.status || null,
+      hardwareStatus: hardwareItem?.status || null,
+      pipelineStatus: pipelineItem?.status || null,
+      targetThickness: item.targetThickness,
+      externalDimensionsLocked: item.externalDimensionsLocked,
+      viewerSyncReady: status === "ready" && item.externalDimensionsLocked,
+      note,
+    };
+  });
+
+  const blocked = components.filter((item) => item.status === "blocked").length;
+  const review = components.filter((item) => item.status === "review").length;
+  const skipped = components.filter((item) => item.status === "skipped").length;
+
+  const status: ProductPackageRegenerationV1Status =
+    params.factory.factoryStatus === "BLOCKED" || blocked > 0
+      ? "BLOCKED"
+      : params.factory.factoryStatus === "REVIEW" || review > 0
+        ? "REVIEW_REQUIRED"
+        : "READY_TO_SYNC";
+
+  const packageComponents = Array.isArray(params.currentPackage?.components)
+    ? params.currentPackage.components.length
+    : Array.isArray(params.currentPackage?.parts)
+      ? params.currentPackage.parts.length
+      : 0;
+
+  return {
+    schema: "bagastudio-product-package-regeneration-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceFactoryStatus: params.factory.factoryStatus,
+    currentPackageSchema: String(params.currentPackage?.schema || params.currentPackage?.productPackageSchema || "unknown"),
+    nextPackageVersion: Number(params.currentPackage?.version || params.currentPackage?.packageVersion || 3) + 1,
+    totals: {
+      components: components.length,
+      ready: components.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      skipped,
+      viewerSyncReady: components.filter((item) => item.viewerSyncReady).length,
+      packageComponents,
+    },
+    components,
+    packagePatch: {
+      mode: "diagnostic_patch_v1",
+      keepsOriginalGeometry: true,
+      keepsExternalDimensions: true,
+      updatesParametricMetadata: true,
+      updatesBomMetadata: true,
+      updatesHardwareMetadata: true,
+      updatesCsvCixMetadata: true,
+    },
+    recommendations: [
+      status === "READY_TO_SYNC"
+        ? "Product Package pronto per Viewer Sync V1: applicare patch metadata senza alterare geometria originale."
+        : "Correggere blocchi/review prima di usare il Product Package rigenerato come base cliente.",
+      "V1 genera una patch diagnostica: la rigenerazione geometrica reale arriverà con Viewer Sync e Structure Editor.",
+      "Mantenere sempre ingombro esterno bloccato durante cambio spessore, ferramenta e quote interne.",
+    ],
+  };
+}
+
+const productPackageRegenerationV1Report = useMemo(() => {
+  return buildProductPackageRegenerationV1Report({
+    factory: factoryEngineV1Report,
+    currentPackage: buildCurrentProductPackageJson(),
+    parametric: parametricEditV1Report,
+    bom: bomRegenerationV1Report,
+    hardware: hardwareRepositionEngineV1Report,
+    csvCix: csvCixRegenerationPipelineV1Report,
+  });
+}, [
+  factoryEngineV1Report,
+  parametricEditV1Report,
+  bomRegenerationV1Report,
+  hardwareRepositionEngineV1Report,
+  csvCixRegenerationPipelineV1Report,
+  generatedJson,
+  meshList,
+  productId,
+  productName,
+]);
+
+function downloadProductPackageRegenerationV1Report() {
+  downloadJsonFile(`bagastudio-product-package-regeneration-v1-${Date.now()}.json`, productPackageRegenerationV1Report);
+}
+
+
+type ViewerSyncV1Status = "SYNC_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type ViewerSyncV1Component = {
+  componentId: string;
+  displayName: string;
+  status: "ready" | "review" | "blocked" | "skipped";
+  sourceProductPackageStatus: ProductPackageRegenerationV1Component["status"];
+  viewerSyncReady: boolean;
+  geometryMode: "metadata_only" | "geometry_regeneration_required" | "skipped";
+  syncTargets: string[];
+  note: string;
+};
+
+type ViewerSyncV1Report = {
+  schema: "bagastudio-viewer-sync-v1";
+  version: 1;
+  generatedAt: string;
+  status: ViewerSyncV1Status;
+  sourceProductPackageSchema: ProductPackageRegenerationV1Report["schema"];
+  sourceProductPackageStatus: ProductPackageRegenerationV1Status;
+  syncMode: "diagnostic_viewer_sync_v1";
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    skipped: number;
+    metadataOnly: number;
+    geometryRequired: number;
+  };
+  components: ViewerSyncV1Component[];
+  viewerPatch: {
+    keepsCurrentModelGeometry: boolean;
+    updatesComponentMetadata: boolean;
+    updatesFactoryMetadata: boolean;
+    updatesBomMetadata: boolean;
+    updatesHardwareMetadata: boolean;
+    updatesCsvCixMetadata: boolean;
+    readyForMaterialAccessoryLedWorkflow: boolean;
+  };
+  recommendations: string[];
+};
+
+function buildViewerSyncV1Report(params: {
+  productPackage: ProductPackageRegenerationV1Report;
+}): ViewerSyncV1Report {
+  const components: ViewerSyncV1Component[] = params.productPackage.components.map((item) => {
+    const syncTargets = ["componentMetadata", "factoryState", "bomMetadata", "hardwareMetadata", "csvCixMetadata"];
+
+    if (item.status === "blocked") {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        status: "blocked",
+        sourceProductPackageStatus: item.status,
+        viewerSyncReady: false,
+        geometryMode: "geometry_regeneration_required",
+        syncTargets,
+        note: "Bloccato: il componente non deve essere sincronizzato nel Viewer finché Product Package/Factory non sono corretti.",
+      };
+    }
+
+    if (item.status === "skipped") {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        status: "skipped",
+        sourceProductPackageStatus: item.status,
+        viewerSyncReady: false,
+        geometryMode: "skipped",
+        syncTargets: [],
+        note: "Componente saltato: nessuna patch Viewer automatica in V1.",
+      };
+    }
+
+    if (!item.viewerSyncReady || item.status === "review") {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        status: "review",
+        sourceProductPackageStatus: item.status,
+        viewerSyncReady: false,
+        geometryMode: "geometry_regeneration_required",
+        syncTargets,
+        note: "Review richiesta: servono controlli prima di aggiornare il Viewer o rigenerare geometria/struttura.",
+      };
+    }
+
+    return {
+      componentId: item.componentId,
+      displayName: item.displayName,
+      status: "ready",
+      sourceProductPackageStatus: item.status,
+      viewerSyncReady: true,
+      geometryMode: "metadata_only",
+      syncTargets,
+      note: "Pronto: il Viewer può ricevere metadata factory mantenendo geometria attuale e workflow materiali/accessori/LED.",
+    };
+  });
+
+  const blocked = components.filter((item) => item.status === "blocked").length;
+  const review = components.filter((item) => item.status === "review").length;
+  const skipped = components.filter((item) => item.status === "skipped").length;
+  const geometryRequired = components.filter((item) => item.geometryMode === "geometry_regeneration_required").length;
+
+  const status: ViewerSyncV1Status =
+    params.productPackage.status === "BLOCKED" || blocked > 0
+      ? "BLOCKED"
+      : params.productPackage.status === "REVIEW_REQUIRED" || review > 0
+        ? "REVIEW_REQUIRED"
+        : "SYNC_READY";
+
+  return {
+    schema: "bagastudio-viewer-sync-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceProductPackageSchema: params.productPackage.schema,
+    sourceProductPackageStatus: params.productPackage.status,
+    syncMode: "diagnostic_viewer_sync_v1",
+    totals: {
+      components: components.length,
+      ready: components.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      skipped,
+      metadataOnly: components.filter((item) => item.geometryMode === "metadata_only").length,
+      geometryRequired,
+    },
+    components,
+    viewerPatch: {
+      keepsCurrentModelGeometry: true,
+      updatesComponentMetadata: true,
+      updatesFactoryMetadata: true,
+      updatesBomMetadata: true,
+      updatesHardwareMetadata: true,
+      updatesCsvCixMetadata: true,
+      readyForMaterialAccessoryLedWorkflow: status === "SYNC_READY",
+    },
+    recommendations: [
+      status === "SYNC_READY"
+        ? "Viewer Sync V1 pronto: applicare metadata produttivi al Product Package senza perdere materiali, accessori, LED e configurazione cliente."
+        : "Correggere review/blocchi prima di usare il Viewer come anteprima commerciale del prodotto rigenerato.",
+      "V1 è metadata-only: la modifica geometrica reale dei componenti arriverà con Structure Editor/Product Package Regeneration V2.",
+      "Mantenere separati dati factory e dati cliente, così texture/accessori/LED restano applicabili anche dopo la rigenerazione.",
+    ],
+  };
+}
+
+const viewerSyncV1Report = useMemo(() => {
+  return buildViewerSyncV1Report({
+    productPackage: productPackageRegenerationV1Report,
+  });
+}, [productPackageRegenerationV1Report]);
+
+function downloadViewerSyncV1Report() {
+  downloadJsonFile(`bagastudio-viewer-sync-v1-${Date.now()}.json`, viewerSyncV1Report);
+}
+
+
+type ParametricStructureEditorV1Status = "STRUCTURE_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type ParametricStructureEditorV1Action = {
+  componentId: string;
+  displayName: string;
+  actionType: "preserve_geometry" | "update_metadata" | "requires_structure_regeneration" | "blocked";
+  status: "ready" | "review" | "blocked";
+  sourceViewerStatus: ViewerSyncV1Component["status"];
+  keepsExternalDimensions: boolean;
+  editableTargets: string[];
+  note: string;
+};
+
+type ParametricStructureEditorV1Report = {
+  schema: "bagastudio-parametric-structure-editor-v1";
+  version: 1;
+  generatedAt: string;
+  status: ParametricStructureEditorV1Status;
+  sourceViewerSyncSchema: ViewerSyncV1Report["schema"];
+  sourceViewerSyncStatus: ViewerSyncV1Status;
+  editorMode: "diagnostic_structure_editor_v1";
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    preserveGeometry: number;
+    requiresRegeneration: number;
+    metadataUpdates: number;
+  };
+  actions: ParametricStructureEditorV1Action[];
+  structureRules: {
+    keepExternalEnvelopeLocked: boolean;
+    allowInternalRepartition: boolean;
+    allowThicknessDrivenRecalculation: boolean;
+    allowHardwareDrivenReposition: boolean;
+    allowViewerMaterialWorkflowAfterEdit: boolean;
+  };
+  recommendations: string[];
+};
+
+function buildParametricStructureEditorV1Report(params: {
+  viewerSync: ViewerSyncV1Report;
+}): ParametricStructureEditorV1Report {
+  const actions: ParametricStructureEditorV1Action[] = params.viewerSync.components.map((item) => {
+    const editableTargets = [
+      "thicknessMetadata",
+      "internalOffsets",
+      "hardwareReferences",
+      "bomReferences",
+      "viewerComponentMetadata",
+    ];
+
+    if (item.status === "blocked") {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        actionType: "blocked",
+        status: "blocked",
+        sourceViewerStatus: item.status,
+        keepsExternalDimensions: true,
+        editableTargets: [],
+        note: "Bloccato: non modificare la struttura finché Viewer Sync/Product Package non sono corretti.",
+      };
+    }
+
+    if (item.geometryMode === "geometry_regeneration_required" || item.status === "review") {
+      return {
+        componentId: item.componentId,
+        displayName: item.displayName,
+        actionType: "requires_structure_regeneration",
+        status: "review",
+        sourceViewerStatus: item.status,
+        keepsExternalDimensions: true,
+        editableTargets,
+        note: "Richiede rigenerazione struttura: V1 prepara il piano di modifica mantenendo l'ingombro esterno bloccato.",
+      };
+    }
+
+    return {
+      componentId: item.componentId,
+      displayName: item.displayName,
+      actionType: item.viewerSyncReady ? "update_metadata" : "preserve_geometry",
+      status: "ready",
+      sourceViewerStatus: item.status,
+      keepsExternalDimensions: true,
+      editableTargets,
+      note: "Pronto: struttura modificabile a livello metadata/parametri, con Viewer ancora pronto per texture, accessori e LED.",
+    };
+  });
+
+  const blocked = actions.filter((item) => item.status === "blocked").length;
+  const review = actions.filter((item) => item.status === "review").length;
+  const requiresRegeneration = actions.filter((item) => item.actionType === "requires_structure_regeneration").length;
+
+  const status: ParametricStructureEditorV1Status =
+    params.viewerSync.status === "BLOCKED" || blocked > 0
+      ? "BLOCKED"
+      : params.viewerSync.status === "REVIEW_REQUIRED" || review > 0
+        ? "REVIEW_REQUIRED"
+        : "STRUCTURE_READY";
+
+  return {
+    schema: "bagastudio-parametric-structure-editor-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceViewerSyncSchema: params.viewerSync.schema,
+    sourceViewerSyncStatus: params.viewerSync.status,
+    editorMode: "diagnostic_structure_editor_v1",
+    totals: {
+      components: actions.length,
+      ready: actions.filter((item) => item.status === "ready").length,
+      review,
+      blocked,
+      preserveGeometry: actions.filter((item) => item.actionType === "preserve_geometry").length,
+      requiresRegeneration,
+      metadataUpdates: actions.filter((item) => item.actionType === "update_metadata").length,
+    },
+    actions,
+    structureRules: {
+      keepExternalEnvelopeLocked: true,
+      allowInternalRepartition: true,
+      allowThicknessDrivenRecalculation: true,
+      allowHardwareDrivenReposition: true,
+      allowViewerMaterialWorkflowAfterEdit: status !== "BLOCKED",
+    },
+    recommendations: [
+      status === "STRUCTURE_READY"
+        ? "Structure Editor V1 pronto: applicare modifiche parametriche interne senza cambiare ingombro esterno del mobile."
+        : "Correggere review/blocchi prima di generare una nuova struttura usabile nel Viewer.",
+      "Questo step prepara il futuro editor reale: aggiunta divisori, modifica spessori, riallineamento ferramenta e mantenimento del workflow materiali/accessori/LED.",
+      "Le geometrie reali non vengono ancora riscritte in V1: il report crea un piano controllato per Product Package Regeneration V2.",
+    ],
+  };
+}
+
+const parametricStructureEditorV1Report = useMemo(() => {
+  return buildParametricStructureEditorV1Report({
+    viewerSync: viewerSyncV1Report,
+  });
+}, [viewerSyncV1Report]);
+
+function downloadParametricStructureEditorV1Report() {
+  downloadJsonFile(`bagastudio-parametric-structure-editor-v1-${Date.now()}.json`, parametricStructureEditorV1Report);
+}
+
+
+type FactoryEngineV2Status = "FACTORY_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type FactoryEngineV2PhaseStatus = "ready" | "review" | "blocked";
+
+type FactoryEngineV2Phase = {
+  id: string;
+  label: string;
+  status: FactoryEngineV2PhaseStatus;
+  sourceSchema: string;
+  note: string;
+};
+
+type FactoryEngineV2Report = {
+  schema: "bagastudio-factory-engine-v2";
+  version: 2;
+  generatedAt: string;
+  status: FactoryEngineV2Status;
+  sourceFactoryEngineSchema: FactoryEngineV1Report["schema"];
+  sourceFactoryEngineStatus: FactoryEngineV1Status;
+  sourceStructureEditorSchema: ParametricStructureEditorV1Report["schema"];
+  sourceStructureEditorStatus: ParametricStructureEditorV1Status;
+  factoryScore: number;
+  phases: FactoryEngineV2Phase[];
+  totals: {
+    phases: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    structureActions: number;
+    structureReady: number;
+    structureReview: number;
+    structureBlocked: number;
+  };
+  viewerBridge: {
+    productPackageRegenerationReady: boolean;
+    viewerSyncReady: boolean;
+    structureEditorReady: boolean;
+    keepsExternalEnvelopeLocked: boolean;
+    materialAccessoryLedWorkflowPreserved: boolean;
+  };
+  nextSteps: string[];
+  recommendations: string[];
+};
+
+function buildFactoryEngineV2Report(params: {
+  factory: FactoryEngineV1Report;
+  productPackage: ProductPackageRegenerationV1Report;
+  viewerSync: ViewerSyncV1Report;
+  structureEditor: ParametricStructureEditorV1Report;
+}): FactoryEngineV2Report {
+  const toPhaseStatus = (blocked: boolean, review: boolean): FactoryEngineV2PhaseStatus => {
+    if (blocked) return "blocked";
+    if (review) return "review";
+    return "ready";
+  };
+
+  const phases: FactoryEngineV2Phase[] = [
+    {
+      id: "factory-engine-v1",
+      label: "Factory Engine V1",
+      status: toPhaseStatus(params.factory.factoryStatus === "BLOCKED", params.factory.factoryStatus === "REVIEW"),
+      sourceSchema: params.factory.schema,
+      note: `Stato sorgente: ${params.factory.factoryStatus}. Score ${params.factory.factoryScore}.`,
+    },
+    {
+      id: "product-package-regeneration-v1",
+      label: "Product Package Regeneration V1",
+      status: toPhaseStatus(params.productPackage.status === "BLOCKED", params.productPackage.status === "REVIEW_REQUIRED"),
+      sourceSchema: params.productPackage.schema,
+      note: "Verifica patch Product Package e mantenimento dei riferimenti factory.",
+    },
+    {
+      id: "viewer-sync-v1",
+      label: "Viewer Sync V1",
+      status: toPhaseStatus(params.viewerSync.status === "BLOCKED", params.viewerSync.status === "REVIEW_REQUIRED"),
+      sourceSchema: params.viewerSync.schema,
+      note: "Verifica ponte verso Viewer per texture, accessori, LED e configurazione cliente.",
+    },
+    {
+      id: "parametric-structure-editor-v1",
+      label: "Parametric Structure Editor V1",
+      status: toPhaseStatus(params.structureEditor.status === "BLOCKED", params.structureEditor.status === "REVIEW_REQUIRED"),
+      sourceSchema: params.structureEditor.schema,
+      note: "Verifica modifiche struttura con ingombro esterno bloccato.",
+    },
+  ];
+
+  const blocked = phases.filter((item) => item.status === "blocked").length;
+  const review = phases.filter((item) => item.status === "review").length;
+  const ready = phases.filter((item) => item.status === "ready").length;
+
+  const status: FactoryEngineV2Status = blocked > 0 ? "BLOCKED" : review > 0 ? "REVIEW_REQUIRED" : "FACTORY_READY";
+
+  const factoryScore = Math.max(
+    0,
+    Math.min(100, Math.round(params.factory.factoryScore - blocked * 18 - review * 7)),
+  );
+
+  return {
+    schema: "bagastudio-factory-engine-v2",
+    version: 2,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceFactoryEngineSchema: params.factory.schema,
+    sourceFactoryEngineStatus: params.factory.factoryStatus,
+    sourceStructureEditorSchema: params.structureEditor.schema,
+    sourceStructureEditorStatus: params.structureEditor.status,
+    factoryScore,
+    phases,
+    totals: {
+      phases: phases.length,
+      ready,
+      review,
+      blocked,
+      structureActions: params.structureEditor.totals.components,
+      structureReady: params.structureEditor.totals.ready,
+      structureReview: params.structureEditor.totals.review,
+      structureBlocked: params.structureEditor.totals.blocked,
+    },
+    viewerBridge: {
+      productPackageRegenerationReady: params.productPackage.status === "READY_TO_SYNC",
+      viewerSyncReady: params.viewerSync.status === "SYNC_READY",
+      structureEditorReady: params.structureEditor.status === "STRUCTURE_READY",
+      keepsExternalEnvelopeLocked: params.structureEditor.structureRules.keepExternalEnvelopeLocked,
+      materialAccessoryLedWorkflowPreserved: params.viewerSync.viewerPatch.readyForMaterialAccessoryLedWorkflow,
+    },
+    nextSteps: [
+      "Product Package Regeneration V2 con geometria/componenti aggiornabili.",
+      "Viewer Sync V2 con applicazione reale della patch al Product Package.",
+      "CSV/CIX Regeneration reale con output produttivo scaricabile.",
+    ],
+    recommendations: [
+      status === "FACTORY_READY"
+        ? "Factory Engine V2 pronto: il flusso factory è coerente e può alimentare i prossimi step Product Package V2 / Viewer Sync V2."
+        : "Correggere i blocchi/review indicati prima di procedere con rigenerazione reale della geometria o output macchina.",
+      "Mantenere separati dati produttivi e configurazione cliente per non perdere materiali, texture, accessori e LED nel Viewer.",
+      "Il prossimo step consigliato è Viewer Sync V2 o Product Package Regeneration V2, non una nuova feature laterale.",
+    ],
+  };
+}
+
+const factoryEngineV2Report = useMemo(() => {
+  return buildFactoryEngineV2Report({
+    factory: factoryEngineV1Report,
+    productPackage: productPackageRegenerationV1Report,
+    viewerSync: viewerSyncV1Report,
+    structureEditor: parametricStructureEditorV1Report,
+  });
+}, [factoryEngineV1Report, productPackageRegenerationV1Report, viewerSyncV1Report, parametricStructureEditorV1Report]);
+
+function downloadFactoryEngineV2Report() {
+  downloadJsonFile(`bagastudio-factory-engine-v2-${Date.now()}.json`, factoryEngineV2Report);
+}
+
+type ProductPackageRegenerationV2Status = "PACKAGE_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type ProductPackageRegenerationV2PatchStatus = "ready" | "review" | "blocked";
+
+type ProductPackageRegenerationV2Patch = {
+  id: string;
+  componentId: string;
+  displayName: string;
+  patchType: "preserve_geometry" | "update_metadata" | "regenerate_structure" | "review_required";
+  status: ProductPackageRegenerationV2PatchStatus;
+  keepsCustomerConfiguration: boolean;
+  keepsExternalEnvelopeLocked: boolean;
+  viewerSyncHint: string;
+  note: string;
+};
+
+type ProductPackageRegenerationV2Report = {
+  schema: "bagastudio-product-package-regeneration-v2";
+  version: 2;
+  generatedAt: string;
+  status: ProductPackageRegenerationV2Status;
+  sourceFactoryEngineV2Schema: FactoryEngineV2Report["schema"];
+  sourceFactoryEngineV2Status: FactoryEngineV2Status;
+  sourceProductPackageV1Schema: ProductPackageRegenerationV1Report["schema"];
+  sourceViewerSyncV1Schema: ViewerSyncV1Report["schema"];
+  sourceStructureEditorV1Schema: ParametricStructureEditorV1Report["schema"];
+  totals: {
+    patches: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    preserveGeometry: number;
+    metadataUpdates: number;
+    structureRegeneration: number;
+  };
+  packageRules: {
+    preserveMaterials: boolean;
+    preserveAccessories: boolean;
+    preserveLedConfiguration: boolean;
+    preserveCustomerConfiguration: boolean;
+    keepExternalEnvelopeLocked: boolean;
+    regenerateComponentsMetadataOnly: boolean;
+  };
+  patches: ProductPackageRegenerationV2Patch[];
+  recommendations: string[];
+};
+
+function buildProductPackageRegenerationV2Report(params: {
+  factoryV2: FactoryEngineV2Report;
+  productPackageV1: ProductPackageRegenerationV1Report;
+  viewerSyncV1: ViewerSyncV1Report;
+  structureEditorV1: ParametricStructureEditorV1Report;
+}): ProductPackageRegenerationV2Report {
+  const v1Components = params.productPackageV1.components ?? [];
+  const structureActions = params.structureEditorV1.actions ?? [];
+  const actionByComponentId = new Map(structureActions.map((item) => [item.componentId, item]));
+
+  const patches: ProductPackageRegenerationV2Patch[] = v1Components.map((component) => {
+    const structureAction = actionByComponentId.get(component.componentId);
+    const hasFactoryBlock = params.factoryV2.status === "BLOCKED" || component.status === "blocked" || structureAction?.status === "blocked";
+    const requiresReview = params.factoryV2.status === "REVIEW_REQUIRED" || component.status === "review" || structureAction?.status === "review";
+    const requiresStructureRegeneration = structureAction?.actionType === "requires_structure_regeneration";
+
+    const status: ProductPackageRegenerationV2PatchStatus = hasFactoryBlock ? "blocked" : requiresReview ? "review" : "ready";
+
+    const patchType: ProductPackageRegenerationV2Patch["patchType"] = hasFactoryBlock
+      ? "review_required"
+      : requiresStructureRegeneration
+        ? "regenerate_structure"
+        : component.viewerSyncReady
+          ? "update_metadata"
+          : "preserve_geometry";
+
+    return {
+      id: `pp-v2-${component.componentId}`,
+      componentId: component.componentId,
+      displayName: component.displayName,
+      patchType,
+      status,
+      keepsCustomerConfiguration: status !== "blocked",
+      keepsExternalEnvelopeLocked: structureAction?.keepsExternalDimensions ?? true,
+      viewerSyncHint: status === "blocked"
+        ? "Non sincronizzare nel Viewer finché i blocchi factory non sono risolti."
+        : requiresStructureRegeneration
+          ? "Preparare geometria/metadata aggiornati per Viewer Sync V2 mantenendo materiali, accessori e LED."
+          : "Sincronizzazione metadata-only compatibile con Viewer Sync V2.",
+      note: structureAction?.note ?? component.note,
+    };
+  });
+
+  const blocked = patches.filter((item) => item.status === "blocked").length;
+  const review = patches.filter((item) => item.status === "review").length;
+  const ready = patches.filter((item) => item.status === "ready").length;
+
+  const status: ProductPackageRegenerationV2Status = blocked > 0
+    ? "BLOCKED"
+    : review > 0
+      ? "REVIEW_REQUIRED"
+      : "PACKAGE_READY";
+
+  return {
+    schema: "bagastudio-product-package-regeneration-v2",
+    version: 2,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceFactoryEngineV2Schema: params.factoryV2.schema,
+    sourceFactoryEngineV2Status: params.factoryV2.status,
+    sourceProductPackageV1Schema: params.productPackageV1.schema,
+    sourceViewerSyncV1Schema: params.viewerSyncV1.schema,
+    sourceStructureEditorV1Schema: params.structureEditorV1.schema,
+    totals: {
+      patches: patches.length,
+      ready,
+      review,
+      blocked,
+      preserveGeometry: patches.filter((item) => item.patchType === "preserve_geometry").length,
+      metadataUpdates: patches.filter((item) => item.patchType === "update_metadata").length,
+      structureRegeneration: patches.filter((item) => item.patchType === "regenerate_structure").length,
+    },
+    packageRules: {
+      preserveMaterials: true,
+      preserveAccessories: true,
+      preserveLedConfiguration: true,
+      preserveCustomerConfiguration: true,
+      keepExternalEnvelopeLocked: params.structureEditorV1.structureRules.keepExternalEnvelopeLocked,
+      regenerateComponentsMetadataOnly: status !== "BLOCKED",
+    },
+    patches,
+    recommendations: [
+      status === "PACKAGE_READY"
+        ? "Product Package Regeneration V2 pronto: il pacchetto può alimentare Viewer Sync V2 senza perdere materiali, accessori e LED del cliente."
+        : "Correggere review/blocchi prima di applicare la patch Product Package al Viewer.",
+      "Mantenere separata la configurazione cliente dal layer produttivo: materiali, texture, accessori, LED e Kelvin non devono essere sovrascritti dalle modifiche factory.",
+      "Questo step resta diagnostico: la riscrittura reale della geometria/componenti arriverà con Product Package Regeneration V3 / Viewer Sync V2 applicativo.",
+    ],
+  };
+}
+
+const productPackageRegenerationV2Report = useMemo(() => {
+  return buildProductPackageRegenerationV2Report({
+    factoryV2: factoryEngineV2Report,
+    productPackageV1: productPackageRegenerationV1Report,
+    viewerSyncV1: viewerSyncV1Report,
+    structureEditorV1: parametricStructureEditorV1Report,
+  });
+}, [factoryEngineV2Report, productPackageRegenerationV1Report, viewerSyncV1Report, parametricStructureEditorV1Report]);
+
+function downloadProductPackageRegenerationV2Report() {
+  downloadJsonFile(`bagastudio-product-package-regeneration-v2-${Date.now()}.json`, productPackageRegenerationV2Report);
+}
+
+
+type ViewerSyncV2Status = "VIEWER_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type ViewerSyncV2SyncMode = "metadata_only" | "geometry_patch" | "structure_regeneration" | "blocked";
+
+type ViewerSyncV2ItemStatus = "ready" | "review" | "blocked";
+
+type ViewerSyncV2Item = {
+  id: string;
+  componentId: string;
+  displayName: string;
+  syncMode: ViewerSyncV2SyncMode;
+  status: ViewerSyncV2ItemStatus;
+  preservesMaterials: boolean;
+  preservesAccessories: boolean;
+  preservesLedConfiguration: boolean;
+  preservesCustomerConfiguration: boolean;
+  requiresViewerRefresh: boolean;
+  requiresGeometryRebuild: boolean;
+  note: string;
+};
+
+type ViewerSyncV2Report = {
+  schema: "bagastudio-viewer-sync-v2";
+  version: 2;
+  generatedAt: string;
+  status: ViewerSyncV2Status;
+  sourceProductPackageV2Schema: ProductPackageRegenerationV2Report["schema"];
+  sourceProductPackageV2Status: ProductPackageRegenerationV2Status;
+  sourceFactoryEngineV2Schema: FactoryEngineV2Report["schema"];
+  sourceFactoryEngineV2Status: FactoryEngineV2Status;
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    metadataOnly: number;
+    geometryPatch: number;
+    structureRegeneration: number;
+  };
+  viewerRules: {
+    preserveExistingMaterials: boolean;
+    preserveExistingAccessories: boolean;
+    preserveExistingLedAndKelvin: boolean;
+    preserveCustomerSelections: boolean;
+    allowMetadataOnlySync: boolean;
+    requireManualReviewBeforeGeometryRebuild: boolean;
+  };
+  items: ViewerSyncV2Item[];
+  recommendations: string[];
+};
+
+function buildViewerSyncV2Report(params: {
+  productPackageV2: ProductPackageRegenerationV2Report;
+  factoryV2: FactoryEngineV2Report;
+}): ViewerSyncV2Report {
+  const items: ViewerSyncV2Item[] = params.productPackageV2.patches.map((patch) => {
+    const requiresGeometryRebuild = patch.patchType === "regenerate_structure";
+    const isBlocked = patch.status === "blocked" || params.factoryV2.status === "BLOCKED";
+    const requiresReview = patch.status === "review" || params.factoryV2.status === "REVIEW_REQUIRED" || requiresGeometryRebuild;
+
+    const syncMode: ViewerSyncV2SyncMode = isBlocked
+      ? "blocked"
+      : requiresGeometryRebuild
+        ? "structure_regeneration"
+        : patch.patchType === "update_metadata"
+          ? "metadata_only"
+          : "geometry_patch";
+
+    const status: ViewerSyncV2ItemStatus = isBlocked ? "blocked" : requiresReview ? "review" : "ready";
+
+    return {
+      id: `viewer-sync-v2-${patch.componentId}`,
+      componentId: patch.componentId,
+      displayName: patch.displayName,
+      syncMode,
+      status,
+      preservesMaterials: patch.keepsCustomerConfiguration,
+      preservesAccessories: patch.keepsCustomerConfiguration,
+      preservesLedConfiguration: patch.keepsCustomerConfiguration,
+      preservesCustomerConfiguration: patch.keepsCustomerConfiguration,
+      requiresViewerRefresh: status !== "blocked",
+      requiresGeometryRebuild,
+      note: status === "blocked"
+        ? "Bloccato: risolvere prima gli errori factory o Product Package."
+        : requiresGeometryRebuild
+          ? "Review richiesta: struttura modificata, sincronizzare nel Viewer solo dopo conferma geometria/Product Package."
+          : "Sincronizzazione Viewer V2 pronta senza sovrascrivere materiali, accessori, LED e configurazione cliente.",
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const ready = items.filter((item) => item.status === "ready").length;
+
+  const status: ViewerSyncV2Status = blocked > 0
+    ? "BLOCKED"
+    : review > 0
+      ? "REVIEW_REQUIRED"
+      : "VIEWER_READY";
+
+  return {
+    schema: "bagastudio-viewer-sync-v2",
+    version: 2,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceProductPackageV2Schema: params.productPackageV2.schema,
+    sourceProductPackageV2Status: params.productPackageV2.status,
+    sourceFactoryEngineV2Schema: params.factoryV2.schema,
+    sourceFactoryEngineV2Status: params.factoryV2.status,
+    totals: {
+      components: items.length,
+      ready,
+      review,
+      blocked,
+      metadataOnly: items.filter((item) => item.syncMode === "metadata_only").length,
+      geometryPatch: items.filter((item) => item.syncMode === "geometry_patch").length,
+      structureRegeneration: items.filter((item) => item.syncMode === "structure_regeneration").length,
+    },
+    viewerRules: {
+      preserveExistingMaterials: true,
+      preserveExistingAccessories: true,
+      preserveExistingLedAndKelvin: true,
+      preserveCustomerSelections: true,
+      allowMetadataOnlySync: status !== "BLOCKED",
+      requireManualReviewBeforeGeometryRebuild: true,
+    },
+    items,
+    recommendations: [
+      status === "VIEWER_READY"
+        ? "Viewer Sync V2 pronto: il Viewer può ricevere la patch Product Package preservando materiali, accessori e LED scelti dal cliente."
+        : "Prima della sincronizzazione Viewer risolvere blocchi/review segnalati da Product Package V2 e Factory Engine V2.",
+      "Separare sempre il layer factory dal layer commerciale: la rigenerazione produttiva non deve cancellare texture, accessori, LED, Kelvin e configurazione cliente.",
+      "Le modifiche strutturali richiedono conferma manuale prima del rebuild geometrico completo nel Viewer.",
+    ],
+  };
+}
+
+const viewerSyncV2Report = useMemo(() => {
+  return buildViewerSyncV2Report({
+    productPackageV2: productPackageRegenerationV2Report,
+    factoryV2: factoryEngineV2Report,
+  });
+}, [productPackageRegenerationV2Report, factoryEngineV2Report]);
+
+function downloadViewerSyncV2Report() {
+  downloadJsonFile(`bagastudio-viewer-sync-v2-${Date.now()}.json`, viewerSyncV2Report);
+}
+
+
+type FactoryProductionPackageV1Status = "PRODUCTION_READY" | "REVIEW_REQUIRED" | "BLOCKED";
+
+type FactoryProductionPackageV1ItemStatus = "ready" | "review" | "blocked";
+
+type FactoryProductionPackageV1Item = {
+  id: string;
+  componentId: string;
+  displayName: string;
+  status: FactoryProductionPackageV1ItemStatus;
+  includeInFactoryPackage: boolean;
+  includeInViewerPackage: boolean;
+  includeInCsvCixExport: boolean;
+  includeInBom: boolean;
+  preservesCustomerConfiguration: boolean;
+  note: string;
+};
+
+type FactoryProductionPackageV1Report = {
+  schema: "bagastudio-factory-production-package-v1";
+  version: 1;
+  generatedAt: string;
+  status: FactoryProductionPackageV1Status;
+  sourceFactoryEngineV2Schema: FactoryEngineV2Report["schema"];
+  sourceFactoryEngineV2Status: FactoryEngineV2Status;
+  sourceProductPackageV2Schema: ProductPackageRegenerationV2Report["schema"];
+  sourceProductPackageV2Status: ProductPackageRegenerationV2Status;
+  sourceViewerSyncV2Schema: ViewerSyncV2Report["schema"];
+  sourceViewerSyncV2Status: ViewerSyncV2Status;
+  totals: {
+    components: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    factoryIncluded: number;
+    viewerIncluded: number;
+    csvCixIncluded: number;
+    bomIncluded: number;
+  };
+  packageRules: {
+    requireFactoryReady: boolean;
+    requireViewerSyncReady: boolean;
+    preserveCustomerMaterialsAccessoriesLed: boolean;
+    includeCsvCixPayload: boolean;
+    includeBomPayload: boolean;
+    requireManualApprovalOnReview: boolean;
+  };
+  items: FactoryProductionPackageV1Item[];
+  recommendations: string[];
+};
+
+function buildFactoryProductionPackageV1Report(params: {
+  factoryV2: FactoryEngineV2Report;
+  productPackageV2: ProductPackageRegenerationV2Report;
+  viewerSyncV2: ViewerSyncV2Report;
+}): FactoryProductionPackageV1Report {
+  const items: FactoryProductionPackageV1Item[] = params.viewerSyncV2.items.map((viewerItem) => {
+    const productPatch = params.productPackageV2.patches.find((patch) => patch.componentId === viewerItem.componentId);
+    const isBlocked = viewerItem.status === "blocked" || params.factoryV2.status === "BLOCKED" || params.productPackageV2.status === "BLOCKED";
+    const requiresReview = viewerItem.status === "review" || params.factoryV2.status === "REVIEW_REQUIRED" || params.productPackageV2.status === "REVIEW_REQUIRED";
+    const status: FactoryProductionPackageV1ItemStatus = isBlocked ? "blocked" : requiresReview ? "review" : "ready";
+
+    return {
+      id: `factory-production-package-v1-${viewerItem.componentId}`,
+      componentId: viewerItem.componentId,
+      displayName: viewerItem.displayName,
+      status,
+      includeInFactoryPackage: status !== "blocked",
+      includeInViewerPackage: status !== "blocked" && viewerItem.requiresViewerRefresh,
+      includeInCsvCixExport: status !== "blocked" && !!productPatch,
+      includeInBom: status !== "blocked",
+      preservesCustomerConfiguration: viewerItem.preservesCustomerConfiguration,
+      note: status === "blocked"
+        ? "Componente escluso dal pacchetto produzione: risolvere blocchi factory/Product Package/Viewer Sync."
+        : status === "review"
+          ? "Componente inseribile solo dopo approvazione tecnica manuale."
+          : "Componente pronto per pacchetto produzione con configurazione cliente preservata.",
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "blocked").length;
+  const review = items.filter((item) => item.status === "review").length;
+  const ready = items.filter((item) => item.status === "ready").length;
+
+  const status: FactoryProductionPackageV1Status = blocked > 0
+    ? "BLOCKED"
+    : review > 0
+      ? "REVIEW_REQUIRED"
+      : "PRODUCTION_READY";
+
+  return {
+    schema: "bagastudio-factory-production-package-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceFactoryEngineV2Schema: params.factoryV2.schema,
+    sourceFactoryEngineV2Status: params.factoryV2.status,
+    sourceProductPackageV2Schema: params.productPackageV2.schema,
+    sourceProductPackageV2Status: params.productPackageV2.status,
+    sourceViewerSyncV2Schema: params.viewerSyncV2.schema,
+    sourceViewerSyncV2Status: params.viewerSyncV2.status,
+    totals: {
+      components: items.length,
+      ready,
+      review,
+      blocked,
+      factoryIncluded: items.filter((item) => item.includeInFactoryPackage).length,
+      viewerIncluded: items.filter((item) => item.includeInViewerPackage).length,
+      csvCixIncluded: items.filter((item) => item.includeInCsvCixExport).length,
+      bomIncluded: items.filter((item) => item.includeInBom).length,
+    },
+    packageRules: {
+      requireFactoryReady: true,
+      requireViewerSyncReady: true,
+      preserveCustomerMaterialsAccessoriesLed: true,
+      includeCsvCixPayload: true,
+      includeBomPayload: true,
+      requireManualApprovalOnReview: true,
+    },
+    items,
+    recommendations: [
+      status === "PRODUCTION_READY"
+        ? "Factory Production Package V1 pronto: il progetto può essere consegnato al flusso produzione mantenendo il ponte Viewer/Product Package."
+        : "Prima della consegna produzione risolvere i blocchi o approvare manualmente gli elementi in review.",
+      "Il pacchetto produzione deve includere CSV/CIX, BOM, report factory, Product Package rigenerato e istruzioni Viewer Sync senza cancellare la configurazione cliente.",
+      "Questo step resta diagnostico: la generazione fisica dei file finali arriverà con Factory Production Package V2 / Export Bundle reale.",
+    ],
+  };
+}
+
+const factoryProductionPackageV1Report = useMemo(() => {
+  return buildFactoryProductionPackageV1Report({
+    factoryV2: factoryEngineV2Report,
+    productPackageV2: productPackageRegenerationV2Report,
+    viewerSyncV2: viewerSyncV2Report,
+  });
+}, [factoryEngineV2Report, productPackageRegenerationV2Report, viewerSyncV2Report]);
+
+function downloadFactoryProductionPackageV1Report() {
+  downloadJsonFile(`bagastudio-factory-production-package-v1-${Date.now()}.json`, factoryProductionPackageV1Report);
+}
+
+
+type LayoutRoomIntelligenceV1Status = "ROOM_READY" | "ROOM_REVIEW_REQUIRED" | "ROOM_BLOCKED";
+
+type LayoutRoomIntelligenceV1CheckStatus = "pass" | "review" | "blocked";
+
+type LayoutRoomIntelligenceV1Check = {
+  id: string;
+  label: string;
+  status: LayoutRoomIntelligenceV1CheckStatus;
+  category: "layout" | "baseboard" | "wall_support" | "clearance" | "technical_sheets";
+  note: string;
+  recommendation: string;
+};
+
+type LayoutRoomIntelligenceV1Report = {
+  schema: "bagastudio-layout-room-intelligence-v1";
+  version: 1;
+  generatedAt: string;
+  status: LayoutRoomIntelligenceV1Status;
+  sourceFactoryProductionPackageSchema: FactoryProductionPackageV1Report["schema"];
+  sourceFactoryProductionPackageStatus: FactoryProductionPackageV1Status;
+  assumptions: {
+    planInputMode: "manual_trace" | "image_pdf_reference" | "dxf_future";
+    baseboardDataRequired: boolean;
+    wallMaterialDataRequired: boolean;
+    furnitureFootprintValidationRequired: boolean;
+    technicalSheetGenerationReady: boolean;
+  };
+  totals: {
+    checks: number;
+    pass: number;
+    review: number;
+    blocked: number;
+    furnitureItemsLinked: number;
+  };
+  checks: LayoutRoomIntelligenceV1Check[];
+  recommendations: string[];
+};
+
+function buildLayoutRoomIntelligenceV1Report(params: {
+  factoryProductionPackage: FactoryProductionPackageV1Report;
+}): LayoutRoomIntelligenceV1Report {
+  const productionBlocked = params.factoryProductionPackage.status === "BLOCKED";
+  const productionReview = params.factoryProductionPackage.status === "REVIEW_REQUIRED";
+
+  const checks: LayoutRoomIntelligenceV1Check[] = [
+    {
+      id: "layout-plan-input",
+      label: "Piantina locale / ingombri mobili",
+      status: "review",
+      category: "layout",
+      note: "Modulo predisposto per piantina caricata e tracciamento guidato di muri, aperture, quote e ingombri mobili.",
+      recommendation: "Prima fase: usare tracciamento manuale controllato; DXF/DWG e riconoscimento automatico arriveranno come step successivi.",
+    },
+    {
+      id: "baseboard-clearance-check",
+      label: "Battiscopa e scasso mobili",
+      status: "review",
+      category: "baseboard",
+      note: "Richiede dati battiscopa: presenza, altezza, spessore e posizione rispetto ai mobili a parete.",
+      recommendation: "Se il battiscopa è presente, verificare sempre scasso, distacco o zoccolo tecnico prima di confermare produzione.",
+    },
+    {
+      id: "wall-support-check",
+      label: "Tipologia parete e ferramenta fissaggio",
+      status: "review",
+      category: "wall_support",
+      note: "Richiede indicazione parete: muratura, cartongesso, cemento o supporto non idoneo.",
+      recommendation: "La scelta ferramenta deve dipendere dal supporto; mensole e pensili su cartongesso richiedono verifica strutturale e fissaggi dedicati.",
+    },
+    {
+      id: "clearance-and-opening-check",
+      label: "Passaggi, aperture e collisioni ambiente",
+      status: productionBlocked ? "blocked" : "review",
+      category: "clearance",
+      note: productionBlocked
+        ? "Il pacchetto produzione è bloccato: non validare passaggi e montabilità locale prima di risolvere i blocchi factory."
+        : "Modulo predisposto per verificare passaggi, apertura ante/cassetti, porte, pilastri e interferenze con pareti.",
+      recommendation: "Integrare quote minime di passaggio, area apertura frontali e collisioni con ingombri reali della piantina.",
+    },
+    {
+      id: "technical-sheets-from-layout",
+      label: "Schede tecniche da layout",
+      status: productionBlocked ? "blocked" : productionReview ? "review" : "pass",
+      category: "technical_sheets",
+      note: productionBlocked
+        ? "Schede tecniche non rilasciabili finché il Factory Production Package è bloccato."
+        : "Predisposizione per schede tecniche con punti fissaggio, battiscopa, pareti, quote ambiente e distinta ferramenta.",
+      recommendation: "Le schede tecniche devono includere alert montaggio, punti elettrici/idraulici/fissaggio e note parete/battiscopa.",
+    },
+  ];
+
+  const blocked = checks.filter((check) => check.status === "blocked").length;
+  const review = checks.filter((check) => check.status === "review").length;
+  const pass = checks.filter((check) => check.status === "pass").length;
+
+  const status: LayoutRoomIntelligenceV1Status = blocked > 0
+    ? "ROOM_BLOCKED"
+    : review > 0
+      ? "ROOM_REVIEW_REQUIRED"
+      : "ROOM_READY";
+
+  return {
+    schema: "bagastudio-layout-room-intelligence-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceFactoryProductionPackageSchema: params.factoryProductionPackage.schema,
+    sourceFactoryProductionPackageStatus: params.factoryProductionPackage.status,
+    assumptions: {
+      planInputMode: "manual_trace",
+      baseboardDataRequired: true,
+      wallMaterialDataRequired: true,
+      furnitureFootprintValidationRequired: true,
+      technicalSheetGenerationReady: status !== "ROOM_BLOCKED",
+    },
+    totals: {
+      checks: checks.length,
+      pass,
+      review,
+      blocked,
+      furnitureItemsLinked: params.factoryProductionPackage.totals.components,
+    },
+    checks,
+    recommendations: [
+      "Layout Intelligence V1 deve partire con input guidato: piantina caricata, tracciamento muri/aperture e conferma manuale degli ingombri mobili.",
+      "Battiscopa, tipo parete e punti tecnici devono diventare dati obbligatori prima della generazione schede tecniche definitive.",
+      "Questo modulo prepara il ponte tra piantina, Product Package, Factory Engine, Viewer Sync e schede tecniche PDF/DXF.",
+    ],
+  };
+}
+
+const layoutRoomIntelligenceV1Report = useMemo(() => {
+  return buildLayoutRoomIntelligenceV1Report({
+    factoryProductionPackage: factoryProductionPackageV1Report,
+  });
+}, [factoryProductionPackageV1Report]);
+
+function downloadLayoutRoomIntelligenceV1Report() {
+  downloadJsonFile(`bagastudio-layout-room-intelligence-v1-${Date.now()}.json`, layoutRoomIntelligenceV1Report);
+}
+
+
+type LayoutTechnicalSheetGeneratorV1Status = "SHEETS_READY" | "SHEETS_REVIEW_REQUIRED" | "SHEETS_BLOCKED";
+
+type LayoutTechnicalSheetGeneratorV1SectionStatus = "ready" | "review" | "blocked";
+
+type LayoutTechnicalSheetGeneratorV1Section = {
+  id: string;
+  title: string;
+  status: LayoutTechnicalSheetGeneratorV1SectionStatus;
+  source: "layout" | "factory" | "mounting" | "technical_points";
+  requiredData: string[];
+  output: string;
+  note: string;
+};
+
+type LayoutTechnicalSheetGeneratorV1Report = {
+  schema: "bagastudio-layout-technical-sheet-generator-v1";
+  version: 1;
+  generatedAt: string;
+  status: LayoutTechnicalSheetGeneratorV1Status;
+  sourceLayoutSchema: LayoutRoomIntelligenceV1Report["schema"];
+  sourceLayoutStatus: LayoutRoomIntelligenceV1Status;
+  sourceFactoryProductionPackageSchema: FactoryProductionPackageV1Report["schema"];
+  sourceFactoryProductionPackageStatus: FactoryProductionPackageV1Status;
+  totals: {
+    sections: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    furnitureItemsLinked: number;
+  };
+  generationRules: {
+    requireLayoutTraceApproval: boolean;
+    requireBaseboardData: boolean;
+    requireWallSupportData: boolean;
+    requireFactoryPackageNotBlocked: boolean;
+    includeMountingWarnings: boolean;
+    includeFixingHardwareNotes: boolean;
+  };
+  sections: LayoutTechnicalSheetGeneratorV1Section[];
+  recommendations: string[];
+};
+
+function buildLayoutTechnicalSheetGeneratorV1Report(params: {
+  layout: LayoutRoomIntelligenceV1Report;
+  factoryProductionPackage: FactoryProductionPackageV1Report;
+}): LayoutTechnicalSheetGeneratorV1Report {
+  const layoutBlocked = params.layout.status === "ROOM_BLOCKED";
+  const layoutReview = params.layout.status === "ROOM_REVIEW_REQUIRED";
+  const factoryBlocked = params.factoryProductionPackage.status === "BLOCKED";
+  const factoryReview = params.factoryProductionPackage.status === "REVIEW_REQUIRED";
+
+  const sections: LayoutTechnicalSheetGeneratorV1Section[] = [
+    {
+      id: "sheet-room-layout-reference",
+      title: "Riferimento piantina e ingombri",
+      status: layoutBlocked ? "blocked" : "review",
+      source: "layout",
+      requiredData: ["piantina caricata", "quote ambiente", "muri/aperture tracciati", "ingombri mobili confermati"],
+      output: "Tavola layout con muri, aperture, mobili, quote principali e aree di passaggio.",
+      note: layoutBlocked
+        ? "La scheda layout resta bloccata finché Layout Intelligence segnala errori critici."
+        : "Predisposta per generare la prima tavola tecnica partendo da pianta e ingombri mobili approvati.",
+    },
+    {
+      id: "sheet-baseboard-and-clearance",
+      title: "Battiscopa, scassi e distacchi",
+      status: layoutBlocked ? "blocked" : "review",
+      source: "layout",
+      requiredData: ["presenza battiscopa", "altezza battiscopa", "spessore battiscopa", "tipo scasso mobile"],
+      output: "Alert su scassi mancanti, distacchi necessari, zoccoli tecnici e interferenze con parete.",
+      note: "Questa scheda deve impedire produzione/installazione se il mobile non prevede scasso con battiscopa dichiarato.",
+    },
+    {
+      id: "sheet-wall-support-and-fixings",
+      title: "Pareti, supporti e fissaggi",
+      status: layoutBlocked || factoryBlocked ? "blocked" : "review",
+      source: "mounting",
+      requiredData: ["tipo parete", "carichi previsti", "ferramenta fissaggio", "punti ancoraggio"],
+      output: "Indicazioni di montaggio per muratura/cartongesso/cemento e avvisi su mensole o pensili non idonei.",
+      note: "La ferramenta di fissaggio deve dipendere dal supporto reale e dalle regole del Factory Engine.",
+    },
+    {
+      id: "sheet-factory-production-summary",
+      title: "Riepilogo produzione e BOM",
+      status: factoryBlocked ? "blocked" : factoryReview || layoutReview ? "review" : "ready",
+      source: "factory",
+      requiredData: ["Factory Production Package", "BOM", "CSV/CIX pipeline", "Hardware Reposition"],
+      output: "Riepilogo componenti, ferramenta, lavorazioni, warning e stato produzione.",
+      note: "Questa scheda collega layout e produzione, senza sostituire ancora l'export CSV/CIX finale reale.",
+    },
+    {
+      id: "sheet-technical-points",
+      title: "Punti tecnici e predisposizioni",
+      status: layoutBlocked ? "blocked" : "review",
+      source: "technical_points",
+      requiredData: ["prese", "scarichi", "carichi acqua", "passacavi", "fori tecnici"],
+      output: "Tavola predisposizioni tecniche con punti elettrici/idraulici/fissaggio e note montaggio.",
+      note: "È il ponte verso il modulo punti tecnici parametrico già previsto nella roadmap BagaStudio Core.",
+    },
+  ];
+
+  const blocked = sections.filter((section) => section.status === "blocked").length;
+  const review = sections.filter((section) => section.status === "review").length;
+  const ready = sections.filter((section) => section.status === "ready").length;
+
+  const status: LayoutTechnicalSheetGeneratorV1Status = blocked > 0
+    ? "SHEETS_BLOCKED"
+    : review > 0
+      ? "SHEETS_REVIEW_REQUIRED"
+      : "SHEETS_READY";
+
+  return {
+    schema: "bagastudio-layout-technical-sheet-generator-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceLayoutSchema: params.layout.schema,
+    sourceLayoutStatus: params.layout.status,
+    sourceFactoryProductionPackageSchema: params.factoryProductionPackage.schema,
+    sourceFactoryProductionPackageStatus: params.factoryProductionPackage.status,
+    totals: {
+      sections: sections.length,
+      ready,
+      review,
+      blocked,
+      furnitureItemsLinked: params.layout.totals.furnitureItemsLinked,
+    },
+    generationRules: {
+      requireLayoutTraceApproval: true,
+      requireBaseboardData: true,
+      requireWallSupportData: true,
+      requireFactoryPackageNotBlocked: true,
+      includeMountingWarnings: true,
+      includeFixingHardwareNotes: true,
+    },
+    sections,
+    recommendations: [
+      "Generare schede tecniche solo dopo approvazione manuale del tracciamento piantina e degli ingombri mobili.",
+      "Battiscopa, pareti e fissaggi devono essere dati obbligatori prima della consegna al montaggio.",
+      "La prima versione produce report diagnostico; gli step successivi genereranno PDF/DXF con tavole quotate e simboli tecnici.",
+    ],
+  };
+}
+
+const layoutTechnicalSheetGeneratorV1Report = useMemo(() => {
+  return buildLayoutTechnicalSheetGeneratorV1Report({
+    layout: layoutRoomIntelligenceV1Report,
+    factoryProductionPackage: factoryProductionPackageV1Report,
+  });
+}, [layoutRoomIntelligenceV1Report, factoryProductionPackageV1Report]);
+
+function downloadLayoutTechnicalSheetGeneratorV1Report() {
+  downloadJsonFile(`bagastudio-layout-technical-sheet-generator-v1-${Date.now()}.json`, layoutTechnicalSheetGeneratorV1Report);
+}
+
+
+type LayoutDxfCadExportPrepV1Status = "CAD_READY" | "CAD_REVIEW_REQUIRED" | "CAD_BLOCKED";
+
+type LayoutDxfCadExportPrepV1LayerStatus = "ready" | "review" | "blocked";
+
+type LayoutDxfCadExportPrepV1Layer = {
+  id: string;
+  layerName: string;
+  status: LayoutDxfCadExportPrepV1LayerStatus;
+  source: "layout" | "technical_sheet" | "factory" | "mounting";
+  entities: string[];
+  outputTarget: "DXF" | "PDF" | "DXF_PDF";
+  note: string;
+};
+
+type LayoutDxfCadExportPrepV1Report = {
+  schema: "bagastudio-layout-dxf-cad-export-prep-v1";
+  version: 1;
+  generatedAt: string;
+  status: LayoutDxfCadExportPrepV1Status;
+  sourceLayoutSchema: LayoutRoomIntelligenceV1Report["schema"];
+  sourceLayoutStatus: LayoutRoomIntelligenceV1Status;
+  sourceTechnicalSheetSchema: LayoutTechnicalSheetGeneratorV1Report["schema"];
+  sourceTechnicalSheetStatus: LayoutTechnicalSheetGeneratorV1Status;
+  sourceFactoryProductionPackageSchema: FactoryProductionPackageV1Report["schema"];
+  sourceFactoryProductionPackageStatus: FactoryProductionPackageV1Status;
+  totals: {
+    layers: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    dxfTargets: number;
+    pdfTargets: number;
+  };
+  exportRules: {
+    requireApprovedLayoutTrace: boolean;
+    requireScaledRoomReference: boolean;
+    requireWallAndOpeningLayers: boolean;
+    requireFurnitureFootprintLayers: boolean;
+    requireTechnicalPointLayers: boolean;
+    requireMountingAndFixingNotes: boolean;
+    preserveProductPackageIds: boolean;
+  };
+  layers: LayoutDxfCadExportPrepV1Layer[];
+  recommendations: string[];
+};
+
+function buildLayoutDxfCadExportPrepV1Report(params: {
+  layout: LayoutRoomIntelligenceV1Report;
+  technicalSheets: LayoutTechnicalSheetGeneratorV1Report;
+  factoryProductionPackage: FactoryProductionPackageV1Report;
+}): LayoutDxfCadExportPrepV1Report {
+  const layoutBlocked = params.layout.status === "ROOM_BLOCKED";
+  const sheetsBlocked = params.technicalSheets.status === "SHEETS_BLOCKED";
+  const factoryBlocked = params.factoryProductionPackage.status === "BLOCKED";
+  const layoutReview = params.layout.status === "ROOM_REVIEW_REQUIRED";
+  const sheetsReview = params.technicalSheets.status === "SHEETS_REVIEW_REQUIRED";
+  const factoryReview = params.factoryProductionPackage.status === "REVIEW_REQUIRED";
+
+  const layers: LayoutDxfCadExportPrepV1Layer[] = [
+    {
+      id: "cad-layer-room-walls-openings",
+      layerName: "BGS_ROOM_WALLS_OPENINGS",
+      status: layoutBlocked ? "blocked" : "review",
+      source: "layout",
+      entities: ["muri", "porte", "finestre", "quote ambiente", "aree non finestrabili"],
+      outputTarget: "DXF_PDF",
+      note: "Layer base per esportare piantina, aperture e riferimenti ambiente. Richiede scala e tracciamento approvati.",
+    },
+    {
+      id: "cad-layer-furniture-footprints",
+      layerName: "BGS_FURNITURE_FOOTPRINTS",
+      status: layoutBlocked || factoryBlocked ? "blocked" : layoutReview || factoryReview ? "review" : "ready",
+      source: "factory",
+      entities: ["ingombri mobili", "productPackageId", "componenti principali", "quote esterne bloccate"],
+      outputTarget: "DXF_PDF",
+      note: "Layer degli ingombri mobili collegato al Product Package e al Factory Production Package.",
+    },
+    {
+      id: "cad-layer-baseboard-clearance",
+      layerName: "BGS_BASEBOARD_CLEARANCE",
+      status: layoutBlocked ? "blocked" : "review",
+      source: "layout",
+      entities: ["battiscopa", "scassi", "distacchi parete", "zoccoli tecnici"],
+      outputTarget: "DXF_PDF",
+      note: "Layer dedicato a battiscopa e scassi per evitare errori in produzione e montaggio.",
+    },
+    {
+      id: "cad-layer-technical-points",
+      layerName: "BGS_TECHNICAL_POINTS",
+      status: sheetsBlocked ? "blocked" : "review",
+      source: "technical_sheet",
+      entities: ["prese", "scarichi", "carichi acqua", "passacavi", "punti fissaggio"],
+      outputTarget: "DXF_PDF",
+      note: "Predisposizione per punti tecnici elettrici, idraulici e fissaggi con futura esportazione quotata.",
+    },
+    {
+      id: "cad-layer-mounting-fixings",
+      layerName: "BGS_MOUNTING_FIXINGS",
+      status: factoryBlocked || sheetsBlocked ? "blocked" : "review",
+      source: "mounting",
+      entities: ["tipo parete", "ferramenta fissaggio", "ancoraggi", "warning montaggio"],
+      outputTarget: "PDF",
+      note: "Layer/note per montaggio: muratura, cartongesso, supporti deboli, mensole e pensili.",
+    },
+  ];
+
+  const blocked = layers.filter((layer) => layer.status === "blocked").length;
+  const review = layers.filter((layer) => layer.status === "review").length;
+  const ready = layers.filter((layer) => layer.status === "ready").length;
+  const dxfTargets = layers.filter((layer) => layer.outputTarget === "DXF" || layer.outputTarget === "DXF_PDF").length;
+  const pdfTargets = layers.filter((layer) => layer.outputTarget === "PDF" || layer.outputTarget === "DXF_PDF").length;
+
+  const status: LayoutDxfCadExportPrepV1Status = blocked > 0
+    ? "CAD_BLOCKED"
+    : review > 0
+      ? "CAD_REVIEW_REQUIRED"
+      : "CAD_READY";
+
+  return {
+    schema: "bagastudio-layout-dxf-cad-export-prep-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceLayoutSchema: params.layout.schema,
+    sourceLayoutStatus: params.layout.status,
+    sourceTechnicalSheetSchema: params.technicalSheets.schema,
+    sourceTechnicalSheetStatus: params.technicalSheets.status,
+    sourceFactoryProductionPackageSchema: params.factoryProductionPackage.schema,
+    sourceFactoryProductionPackageStatus: params.factoryProductionPackage.status,
+    totals: {
+      layers: layers.length,
+      ready,
+      review,
+      blocked,
+      dxfTargets,
+      pdfTargets,
+    },
+    exportRules: {
+      requireApprovedLayoutTrace: true,
+      requireScaledRoomReference: true,
+      requireWallAndOpeningLayers: true,
+      requireFurnitureFootprintLayers: true,
+      requireTechnicalPointLayers: true,
+      requireMountingAndFixingNotes: true,
+      preserveProductPackageIds: true,
+    },
+    layers,
+    recommendations: [
+      "Prima dell'export DXF reale serve una pianta in scala approvata o un riferimento quotato certo.",
+      "Ogni ingombro mobile deve mantenere productPackageId e componentId per restare sincronizzato con Viewer e Factory Engine.",
+      "Le prime esportazioni saranno diagnostiche; la fase successiva dovrà generare entità DXF reali con layer e quote tecniche.",
+    ],
+  };
+}
+
+const layoutDxfCadExportPrepV1Report = useMemo(() => {
+  return buildLayoutDxfCadExportPrepV1Report({
+    layout: layoutRoomIntelligenceV1Report,
+    technicalSheets: layoutTechnicalSheetGeneratorV1Report,
+    factoryProductionPackage: factoryProductionPackageV1Report,
+  });
+}, [layoutRoomIntelligenceV1Report, layoutTechnicalSheetGeneratorV1Report, factoryProductionPackageV1Report]);
+
+function downloadLayoutDxfCadExportPrepV1Report() {
+  downloadJsonFile(`bagastudio-layout-dxf-cad-export-prep-v1-${Date.now()}.json`, layoutDxfCadExportPrepV1Report);
+}
+
+
+type TechnicalWallElevationSheetsV1Status = "ELEVATIONS_READY" | "ELEVATIONS_REVIEW_REQUIRED" | "ELEVATIONS_BLOCKED";
+
+type TechnicalWallElevationSheetsV1LayerStatus = "ready" | "review" | "blocked";
+
+type TechnicalWallElevationSheetsV1LayerKind =
+  | "furniture_outline"
+  | "dimensions"
+  | "electrical"
+  | "plumbing"
+  | "fixing"
+  | "mounting_notes";
+
+type TechnicalWallElevationSheetsV1Layer = {
+  id: string;
+  layerName: string;
+  label: string;
+  kind: TechnicalWallElevationSheetsV1LayerKind;
+  status: TechnicalWallElevationSheetsV1LayerStatus;
+  colorHint: string;
+  entities: string[];
+  requiredForPdf: boolean;
+  requiredForDxf: boolean;
+  note: string;
+};
+
+type TechnicalWallElevationSheetsV1Report = {
+  schema: "bagastudio-technical-wall-elevation-sheets-v1";
+  version: 1;
+  generatedAt: string;
+  status: TechnicalWallElevationSheetsV1Status;
+  sourceLayoutSchema: LayoutRoomIntelligenceV1Report["schema"];
+  sourceLayoutStatus: LayoutRoomIntelligenceV1Status;
+  sourceTechnicalSheetSchema: LayoutTechnicalSheetGeneratorV1Report["schema"];
+  sourceTechnicalSheetStatus: LayoutTechnicalSheetGeneratorV1Status;
+  sourceCadExportSchema: LayoutDxfCadExportPrepV1Report["schema"];
+  sourceCadExportStatus: LayoutDxfCadExportPrepV1Status;
+  totals: {
+    layers: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    pdfLayers: number;
+    dxfLayers: number;
+    technicalPointLayers: number;
+  };
+  wallElevationRules: {
+    drawFurnitureFrontElevations: boolean;
+    requireHotColdWaterPoints: boolean;
+    requireDrainPoints: boolean;
+    requireDrawerIntegratedSockets: boolean;
+    requireWallFixingPoints: boolean;
+    requireColorSeparatedLayers: boolean;
+    preserveProductPackageIds: boolean;
+  };
+  layers: TechnicalWallElevationSheetsV1Layer[];
+  recommendations: string[];
+};
+
+function buildTechnicalWallElevationSheetsV1Report(params: {
+  layout: LayoutRoomIntelligenceV1Report;
+  technicalSheets: LayoutTechnicalSheetGeneratorV1Report;
+  cadExport: LayoutDxfCadExportPrepV1Report;
+}): TechnicalWallElevationSheetsV1Report {
+  const layoutBlocked = params.layout.status === "ROOM_BLOCKED";
+  const sheetsBlocked = params.technicalSheets.status === "SHEETS_BLOCKED";
+  const cadBlocked = params.cadExport.status === "CAD_BLOCKED";
+  const layoutReview = params.layout.status === "ROOM_REVIEW_REQUIRED";
+  const sheetsReview = params.technicalSheets.status === "SHEETS_REVIEW_REQUIRED";
+  const cadReview = params.cadExport.status === "CAD_REVIEW_REQUIRED";
+
+  const baseBlocked = layoutBlocked || sheetsBlocked || cadBlocked;
+  const baseReview = layoutReview || sheetsReview || cadReview;
+
+  const layers: TechnicalWallElevationSheetsV1Layer[] = [
+    {
+      id: "wall-elevation-furniture-outline",
+      layerName: "BGS_WALL_ELEVATION_FURNITURE_OUTLINE",
+      label: "Contorno mobile in prospetto",
+      kind: "furniture_outline",
+      status: baseBlocked ? "blocked" : baseReview ? "review" : "ready",
+      colorHint: "mobile-outline",
+      entities: ["prospetto mobile", "contorno mobile", "ingombro frontale", "productPackageId", "componentId"],
+      requiredForPdf: true,
+      requiredForDxf: true,
+      note: "Disegna i mobili in prospetto parete mantenendo ID prodotto e componenti per sincronizzazione con Viewer e Factory.",
+    },
+    {
+      id: "wall-elevation-dimensions",
+      layerName: "BGS_WALL_ELEVATION_DIMENSIONS",
+      label: "Quote tecniche",
+      kind: "dimensions",
+      status: baseBlocked ? "blocked" : "review",
+      colorHint: "dimension-lines",
+      entities: ["quote generali", "quote mobili", "quote punti tecnici", "distanze da pareti", "quote da pavimento"],
+      requiredForPdf: true,
+      requiredForDxf: true,
+      note: "Layer dedicato alle quote con colore separato per rendere leggibili prospetti e tavole tecniche.",
+    },
+    {
+      id: "wall-elevation-electrical-points",
+      layerName: "BGS_WALL_ELEVATION_ELECTRICAL_POINTS",
+      label: "Punti elettrici e prese",
+      kind: "electrical",
+      status: baseBlocked ? "blocked" : "review",
+      colorHint: "electrical-points",
+      entities: ["prese parete", "prese integrate nelle cassettiere", "passacavi", "punti alimentazione LED", "punti quadro"],
+      requiredForPdf: true,
+      requiredForDxf: true,
+      note: "Predispone prese e punti elettrici, incluse prese nelle cassettiere e alimentazioni accessori/LED.",
+    },
+    {
+      id: "wall-elevation-plumbing-hot-cold-drain",
+      layerName: "BGS_WALL_ELEVATION_PLUMBING",
+      label: "Idraulica acqua calda/fredda/scarico",
+      kind: "plumbing",
+      status: baseBlocked ? "blocked" : "review",
+      colorHint: "plumbing-points",
+      entities: ["carico acqua fredda", "carico acqua calda", "scarico", "sifone", "distanze tecniche", "quote da pavimento"],
+      requiredForPdf: true,
+      requiredForDxf: true,
+      note: "Layer per carico/scarico acqua con punti distinti e quotati per mobili tecnici, lavaggi e impianti.",
+    },
+    {
+      id: "wall-elevation-fixing-points",
+      layerName: "BGS_WALL_ELEVATION_FIXING_POINTS",
+      label: "Punti fissaggio e supporto parete",
+      kind: "fixing",
+      status: baseBlocked ? "blocked" : "review",
+      colorHint: "fixing-points",
+      entities: ["punti fissaggio", "tipo parete", "tasselli/ferramenta", "mensole", "pensili", "zone rinforzo"],
+      requiredForPdf: true,
+      requiredForDxf: true,
+      note: "Collega prospetto parete alla verifica muratura/cartongesso e alla ferramenta corretta per fissaggi e mensole.",
+    },
+    {
+      id: "wall-elevation-mounting-notes",
+      layerName: "BGS_WALL_ELEVATION_MOUNTING_NOTES",
+      label: "Note montaggio e controlli",
+      kind: "mounting_notes",
+      status: baseBlocked ? "blocked" : "review",
+      colorHint: "mounting-notes",
+      entities: ["note installatore", "avvisi battiscopa", "scassi", "errori locale", "vincoli montaggio"],
+      requiredForPdf: true,
+      requiredForDxf: false,
+      note: "Note operative per montaggio, battiscopa, scassi e criticità rilevate da Layout Intelligence.",
+    },
+  ];
+
+  const blocked = layers.filter((layer) => layer.status === "blocked").length;
+  const review = layers.filter((layer) => layer.status === "review").length;
+  const ready = layers.filter((layer) => layer.status === "ready").length;
+  const pdfLayers = layers.filter((layer) => layer.requiredForPdf).length;
+  const dxfLayers = layers.filter((layer) => layer.requiredForDxf).length;
+  const technicalPointLayers = layers.filter((layer) => layer.kind === "electrical" || layer.kind === "plumbing" || layer.kind === "fixing").length;
+
+  const status: TechnicalWallElevationSheetsV1Status = blocked > 0
+    ? "ELEVATIONS_BLOCKED"
+    : review > 0
+      ? "ELEVATIONS_REVIEW_REQUIRED"
+      : "ELEVATIONS_READY";
+
+  return {
+    schema: "bagastudio-technical-wall-elevation-sheets-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceLayoutSchema: params.layout.schema,
+    sourceLayoutStatus: params.layout.status,
+    sourceTechnicalSheetSchema: params.technicalSheets.schema,
+    sourceTechnicalSheetStatus: params.technicalSheets.status,
+    sourceCadExportSchema: params.cadExport.schema,
+    sourceCadExportStatus: params.cadExport.status,
+    totals: {
+      layers: layers.length,
+      ready,
+      review,
+      blocked,
+      pdfLayers,
+      dxfLayers,
+      technicalPointLayers,
+    },
+    wallElevationRules: {
+      drawFurnitureFrontElevations: true,
+      requireHotColdWaterPoints: true,
+      requireDrainPoints: true,
+      requireDrawerIntegratedSockets: true,
+      requireWallFixingPoints: true,
+      requireColorSeparatedLayers: true,
+      preserveProductPackageIds: true,
+    },
+    layers,
+    recommendations: [
+      "Ogni prospetto parete deve mostrare mobili frontali, contorno mobile, quote e punti tecnici su layer/colore separato.",
+      "I punti acqua calda/fredda/scarico devono essere quotati da pavimento e riferiti alla parete corretta prima dell'export PDF/DXF.",
+      "Le prese integrate nelle cassettiere devono restare collegate al componente e al Product Package per evitare errori in produzione e montaggio.",
+      "I punti fissaggio devono dipendere dal tipo parete dichiarato: muratura, cartongesso, cemento o supporto debole.",
+    ],
+  };
+}
+
+const technicalWallElevationSheetsV1Report = useMemo(() => {
+  return buildTechnicalWallElevationSheetsV1Report({
+    layout: layoutRoomIntelligenceV1Report,
+    technicalSheets: layoutTechnicalSheetGeneratorV1Report,
+    cadExport: layoutDxfCadExportPrepV1Report,
+  });
+}, [layoutRoomIntelligenceV1Report, layoutTechnicalSheetGeneratorV1Report, layoutDxfCadExportPrepV1Report]);
+
+function downloadTechnicalWallElevationSheetsV1Report() {
+  downloadJsonFile(`bagastudio-technical-wall-elevation-sheets-v1-${Date.now()}.json`, technicalWallElevationSheetsV1Report);
+}
+
+
+type WallTechnicalPointsValidationV1Status = "TECHNICAL_POINTS_READY" | "TECHNICAL_POINTS_REVIEW_REQUIRED" | "TECHNICAL_POINTS_BLOCKED";
+
+type WallTechnicalPointsValidationV1Severity = "info" | "warning" | "error";
+
+type WallTechnicalPointsValidationV1RuleKind =
+  | "sink_height"
+  | "hot_cold_water"
+  | "drain"
+  | "electrical_socket"
+  | "drawer_socket"
+  | "wall_fixing"
+  | "baseboard_cutout"
+  | "sheet_layer_quality";
+
+type WallTechnicalPointsValidationV1Rule = {
+  id: string;
+  label: string;
+  kind: WallTechnicalPointsValidationV1RuleKind;
+  severity: WallTechnicalPointsValidationV1Severity;
+  status: "passed" | "review" | "blocked";
+  expected: string;
+  actual: string;
+  note: string;
+};
+
+type WallTechnicalPointsValidationV1Report = {
+  schema: "bagastudio-wall-technical-points-validation-v1";
+  version: 1;
+  generatedAt: string;
+  status: WallTechnicalPointsValidationV1Status;
+  sourceElevationSchema: TechnicalWallElevationSheetsV1Report["schema"];
+  sourceElevationStatus: TechnicalWallElevationSheetsV1Status;
+  sourceLayoutSchema: LayoutRoomIntelligenceV1Report["schema"];
+  sourceLayoutStatus: LayoutRoomIntelligenceV1Status;
+  sinkRules: {
+    countertopSinkTopHeightMm: 850;
+    insetSinkTopHeightMm: 930;
+    requireSinkTypeBeforeFinalSheet: boolean;
+    propagateHeightToPlumbingPoints: boolean;
+    propagateHeightToWallElevations: boolean;
+  };
+  totals: {
+    rules: number;
+    passed: number;
+    review: number;
+    blocked: number;
+    errors: number;
+    warnings: number;
+  };
+  rules: WallTechnicalPointsValidationV1Rule[];
+  recommendations: string[];
+};
+
+function buildWallTechnicalPointsValidationV1Report(params: {
+  layout: LayoutRoomIntelligenceV1Report;
+  elevations: TechnicalWallElevationSheetsV1Report;
+}): WallTechnicalPointsValidationV1Report {
+  const layoutBlocked = params.layout.status === "ROOM_BLOCKED";
+  const elevationBlocked = params.elevations.status === "ELEVATIONS_BLOCKED";
+  const layoutReview = params.layout.status === "ROOM_REVIEW_REQUIRED";
+  const elevationReview = params.elevations.status === "ELEVATIONS_REVIEW_REQUIRED";
+
+  const baseBlocked = layoutBlocked || elevationBlocked;
+  const baseReview = layoutReview || elevationReview;
+
+  const rules: WallTechnicalPointsValidationV1Rule[] = [
+    {
+      id: "sink-height-countertop",
+      label: "Quota piano lavandino da appoggio",
+      kind: "sink_height",
+      severity: "warning",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Piano a 850 mm da pavimento finito",
+      actual: "Da validare in base al tipo lavandino selezionato nel Product Package",
+      note: "Quando il cliente sceglie lavandino da appoggio, il prospetto deve fissare piano, quote idrauliche e note montaggio su 850 mm.",
+    },
+    {
+      id: "sink-height-inset",
+      label: "Quota piano lavandino da incasso",
+      kind: "sink_height",
+      severity: "warning",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Piano a 930 mm da pavimento finito",
+      actual: "Da validare in base al tipo lavandino selezionato nel Product Package",
+      note: "Quando il cliente sceglie lavandino da incasso, il prospetto deve fissare piano, quote idrauliche e note montaggio su 930 mm.",
+    },
+    {
+      id: "plumbing-hot-cold-water",
+      label: "Carico acqua calda/fredda",
+      kind: "hot_cold_water",
+      severity: "error",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Punti caldo/freddo distinti, quotati e associati alla parete corretta",
+      actual: "Predisposizione layer tecnica presente; coordinate finali da validare sul layout reale",
+      note: "Il sistema dovrà evitare inversioni caldo/freddo e quote non coerenti con mobile, sifone e rubinetteria.",
+    },
+    {
+      id: "plumbing-drain",
+      label: "Scarico idraulico",
+      kind: "drain",
+      severity: "error",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Scarico quotato, centrato o dichiarato decentrato, senza collisioni con cassetti/fianchi",
+      actual: "Da calcolare sul mobile e sul tipo lavabo selezionato",
+      note: "Lo scarico deve essere verificato rispetto a cassetti, divisori, fondo mobile e accessibilità manutenzione.",
+    },
+    {
+      id: "electrical-wall-sockets",
+      label: "Prese elettriche parete",
+      kind: "electrical_socket",
+      severity: "warning",
+      status: baseBlocked ? "blocked" : baseReview ? "review" : "passed",
+      expected: "Prese quotate, non nascoste da mobili o cassetti non accessibili",
+      actual: baseReview ? "Layout da verificare" : "Predisposizione validabile",
+      note: "Le prese devono essere leggibili in prospetto e collegate alla parete corretta.",
+    },
+    {
+      id: "drawer-integrated-sockets",
+      label: "Prese nelle cassettiere",
+      kind: "drawer_socket",
+      severity: "warning",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Prese integrate collegate a componente/cassetto e alimentazione dedicata",
+      actual: "Da associare a Product Package e distinta accessori",
+      note: "Le prese nelle cassettiere devono comparire in scheda tecnica, distinta accessori e istruzioni montaggio.",
+    },
+    {
+      id: "wall-fixing-support",
+      label: "Fissaggi in base alla parete",
+      kind: "wall_fixing",
+      severity: "error",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Ferramenta distinta per muratura, cartongesso, cemento o supporto debole",
+      actual: "Tipo parete da confermare in Layout Intelligence",
+      note: "Mensole e pensili devono essere bloccati o messi in review se la parete non supporta il carico previsto.",
+    },
+    {
+      id: "baseboard-cutout",
+      label: "Battiscopa e scasso mobile",
+      kind: "baseboard_cutout",
+      severity: "warning",
+      status: baseBlocked ? "blocked" : "review",
+      expected: "Se battiscopa presente, scasso o distanziale mobile dichiarato e quotato",
+      actual: "Da validare su rilievo cliente/utente",
+      note: "La scheda deve avvisare quando il battiscopa esiste ma il mobile non prevede scasso corretto.",
+    },
+    {
+      id: "sheet-layer-quality",
+      label: "Qualità grafica scheda tecnica",
+      kind: "sheet_layer_quality",
+      severity: "info",
+      status: baseBlocked ? "blocked" : baseReview ? "review" : "passed",
+      expected: "Layer/colori separati per mobile, quote, elettrico, idraulico, fissaggi e note",
+      actual: "Technical Wall Elevation Sheets V1 predisposto",
+      note: "Le schede BagaStudio devono essere più pulite e professionali del DXF standard importato.",
+    },
+  ];
+
+  const blocked = rules.filter((rule) => rule.status === "blocked").length;
+  const review = rules.filter((rule) => rule.status === "review").length;
+  const passed = rules.filter((rule) => rule.status === "passed").length;
+  const errors = rules.filter((rule) => rule.severity === "error").length;
+  const warnings = rules.filter((rule) => rule.severity === "warning").length;
+
+  const status: WallTechnicalPointsValidationV1Status = blocked > 0
+    ? "TECHNICAL_POINTS_BLOCKED"
+    : review > 0
+      ? "TECHNICAL_POINTS_REVIEW_REQUIRED"
+      : "TECHNICAL_POINTS_READY";
+
+  return {
+    schema: "bagastudio-wall-technical-points-validation-v1",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    status,
+    sourceElevationSchema: params.elevations.schema,
+    sourceElevationStatus: params.elevations.status,
+    sourceLayoutSchema: params.layout.schema,
+    sourceLayoutStatus: params.layout.status,
+    sinkRules: {
+      countertopSinkTopHeightMm: 850,
+      insetSinkTopHeightMm: 930,
+      requireSinkTypeBeforeFinalSheet: true,
+      propagateHeightToPlumbingPoints: true,
+      propagateHeightToWallElevations: true,
+    },
+    totals: {
+      rules: rules.length,
+      passed,
+      review,
+      blocked,
+      errors,
+      warnings,
+    },
+    rules,
+    recommendations: [
+      "Prima della scheda finale il tipo lavandino deve essere esplicito: appoggio = piano 850 mm, incasso = piano 930 mm.",
+      "Carico acqua calda/fredda e scarico devono essere quotati nel prospetto parete e verificati contro cassetti, divisori e fianchi.",
+      "Le prese nelle cassettiere devono essere trattate come accessori tecnici collegati a componente, alimentazione e distinta accessori.",
+      "La validazione parete deve scegliere ferramenta e fissaggi in base a muratura/cartongesso/cemento/supporto debole.",
+    ],
+  };
+}
+
+const wallTechnicalPointsValidationV1Report = useMemo(() => {
+  return buildWallTechnicalPointsValidationV1Report({
+    layout: layoutRoomIntelligenceV1Report,
+    elevations: technicalWallElevationSheetsV1Report,
+  });
+}, [layoutRoomIntelligenceV1Report, technicalWallElevationSheetsV1Report]);
+
+function downloadWallTechnicalPointsValidationV1Report() {
+  downloadJsonFile(`bagastudio-wall-technical-points-validation-v1-${Date.now()}.json`, wallTechnicalPointsValidationV1Report);
+}
+
+
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
@@ -7727,6 +10270,1748 @@ function downloadImporterDiagnosticJson() {
           </div>
         </section>
 
+
+
+        <section className="rounded-[28px] border border-lime-400/15 bg-[#0f1a06]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-lime-200">BOM Regeneration V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Distinta base rigenerata</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Raggruppa le righe del CSV rigenerato per materiale e spessore, preparando la futura distinta componenti/ferramenta del Factory Engine.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                bomRegenerationV1Report.readiness === "BOM_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : bomRegenerationV1Report.readiness === "BOM_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {bomRegenerationV1Report.readiness.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadBomRegenerationV1Report}
+                disabled={bomRegenerationV1Report.totals.bomItems === 0}
+                className="rounded-2xl border border-lime-400/25 bg-lime-400/10 px-5 py-3 text-sm font-black text-lime-100 transition hover:bg-lime-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta BOM V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Voci BOM</p>
+              <p className="mt-1 text-2xl font-black text-white">{bomRegenerationV1Report.totals.bomItems}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{bomRegenerationV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{bomRegenerationV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{bomRegenerationV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{bomRegenerationV1Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-[#101a07] text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Materiale</th>
+                  <th className="px-3 py-3">Spessore</th>
+                  <th className="px-3 py-3">Q.tà</th>
+                  <th className="px-3 py-3">Componenti</th>
+                  <th className="px-3 py-3">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bomRegenerationV1Report.items.slice(0, 30).map((item) => (
+                  <tr key={item.key} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 font-semibold text-white">{item.material || "n/d"}</td>
+                    <td className="px-3 py-2">{item.thickness ?? "n/d"}</td>
+                    <td className="px-3 py-2">{item.quantity}</td>
+                    <td className="px-3 py-2 text-slate-500">{item.componentNames.slice(0, 4).join(", ")}{item.componentNames.length > 4 ? "…" : ""}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06151a]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Hardware Reposition Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Riposizionamento ferramenta parametrico</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il ricalcolo diagnostico di ferramenta e forature dopo cambio spessore, mantenendo riferimenti parametrici a bordo/asse e ingombro esterno bloccato.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                hardwareRepositionEngineV1Report.readiness === "REPOSITION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : hardwareRepositionEngineV1Report.readiness === "REPOSITION_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {hardwareRepositionEngineV1Report.readiness.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadHardwareRepositionEngineV1Report}
+                disabled={hardwareRepositionEngineV1Report.totals.components === 0}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta Reposition V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{hardwareRepositionEngineV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Da riposizionare</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{hardwareRepositionEngineV1Report.totals.repositionRequired}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{hardwareRepositionEngineV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{hardwareRepositionEngineV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{hardwareRepositionEngineV1Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-[#071a1d] text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Componente</th>
+                  <th className="px-3 py-3">Delta</th>
+                  <th className="px-3 py-3">CSV</th>
+                  <th className="px-3 py-3">Constraint</th>
+                  <th className="px-3 py-3">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hardwareRepositionEngineV1Report.items.slice(0, 30).map((item) => (
+                  <tr key={item.componentId} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 font-semibold text-white">{item.displayName}</td>
+                    <td className="px-3 py-2">{item.thicknessDelta ?? "n/d"}</td>
+                    <td className="px-3 py-2">{item.linkedCsvRow ?? "n/d"}</td>
+                    <td className="px-3 py-2">{item.constraintStatus ?? "n/d"}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : item.status === "skipped"
+                              ? "rounded-full bg-slate-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-200"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#06111f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">CSV/CIX Regeneration Pipeline V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Pipeline rigenerazione CSV / CIX</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Collega CSV rigenerato, Guard, BOM e riposizionamento ferramenta per preparare la futura esportazione produttiva CSV/CIX senza modificare ancora i file macchina reali.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                csvCixRegenerationPipelineV1Report.readiness === "PIPELINE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : csvCixRegenerationPipelineV1Report.readiness === "PIPELINE_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {csvCixRegenerationPipelineV1Report.readiness.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadCsvCixRegenerationPipelineV1Report}
+                disabled={csvCixRegenerationPipelineV1Report.totals.components === 0}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Esporta Pipeline CSV/CIX V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{csvCixRegenerationPipelineV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Target CIX</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{csvCixRegenerationPipelineV1Report.totals.cixTargetsPlanned}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{csvCixRegenerationPipelineV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{csvCixRegenerationPipelineV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{csvCixRegenerationPipelineV1Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-[#071a2a] text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Componente</th>
+                  <th className="px-3 py-3">CSV</th>
+                  <th className="px-3 py-3">BOM</th>
+                  <th className="px-3 py-3">Hardware</th>
+                  <th className="px-3 py-3">Target</th>
+                  <th className="px-3 py-3">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {csvCixRegenerationPipelineV1Report.items.slice(0, 30).map((item) => (
+                  <tr key={`${item.componentId}-${item.csvRow ?? item.displayName}`} className="border-t border-white/5 text-slate-300">
+                    <td className="px-3 py-2 font-semibold text-white">{item.displayName}</td>
+                    <td className="px-3 py-2">{item.csvGuardStatus || item.csvStatus || "n/d"}</td>
+                    <td className="px-3 py-2">{item.bomStatus || "n/d"}</td>
+                    <td className="px-3 py-2">{item.hardwareRepositionStatus || "n/d"}</td>
+                    <td className="px-3 py-2 text-slate-500">{item.outputTargets.join(" / ")}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : item.status === "skipped"
+                              ? "rounded-full bg-slate-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-200"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#16071f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Factory Engine V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Motore centrale produzione</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Raccoglie Production Gate, Parametric Edit, CSV Guard, BOM, Hardware Reposition e Pipeline CSV/CIX per produrre un unico stato Factory Ready / Review / Blocked.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                factoryEngineV1Report.factoryStatus === "READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : factoryEngineV1Report.factoryStatus === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {factoryEngineV1Report.factoryStatus}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadFactoryEngineV1Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Factory Engine V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Score</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryEngineV1Report.factoryScore}/100</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryEngineV1Report.summary.components}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocchi</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{factoryEngineV1Report.blockers.length}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{factoryEngineV1Report.warnings.length}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Export</p>
+              <p className="mt-1 text-sm font-black text-fuchsia-100">{factoryEngineV1Report.summary.exportReadiness.replace(/_/g, " ")}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-3">
+            <div className="rounded-2xl border border-red-400/10 bg-black/20 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Blocchi critici</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {(factoryEngineV1Report.blockers.length ? factoryEngineV1Report.blockers : ["Nessun blocco critico rilevato."]).map((item, index) => (
+                  <li key={`factory-blocker-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/10 bg-black/20 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-yellow-200">Revisioni</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {(factoryEngineV1Report.warnings.length ? factoryEngineV1Report.warnings : ["Nessuna revisione obbligatoria."]).map((item, index) => (
+                  <li key={`factory-warning-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Raccomandazioni</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {factoryEngineV1Report.recommendations.map((item, index) => (
+                  <li key={`factory-recommendation-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061922]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Product Package Regeneration V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rigenerazione Product Package</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara una patch diagnostica del Product Package collegando Factory Engine, Parametric Edit, BOM, Hardware Reposition e Pipeline CSV/CIX. È il ponte verso Viewer Sync V1.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                productPackageRegenerationV1Report.status === "READY_TO_SYNC"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : productPackageRegenerationV1Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {productPackageRegenerationV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadProductPackageRegenerationV1Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Product Package V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{productPackageRegenerationV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Viewer Sync Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{productPackageRegenerationV1Report.totals.viewerSyncReady}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{productPackageRegenerationV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{productPackageRegenerationV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Next package</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">v{productPackageRegenerationV1Report.nextPackageVersion}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+            <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+              <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Componente</th>
+                  <th className="px-4 py-3">Spessore</th>
+                  <th className="px-4 py-3">Viewer</th>
+                  <th className="px-4 py-3">Stato</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {productPackageRegenerationV1Report.components.slice(0, 18).map((item) => (
+                  <tr key={`product-package-regeneration-${item.componentId}`}>
+                    <td className="px-4 py-3">
+                      <p className="font-black text-white">{item.displayName}</p>
+                      <p className="mt-1 text-slate-500">{item.note}</p>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-200">{item.targetThickness ?? "n/d"} mm</td>
+                    <td className="px-4 py-3 font-semibold text-slate-200">{item.viewerSyncReady ? "ready" : "review"}</td>
+                    <td className="px-4 py-3">
+                      <span className={
+                        item.status === "ready"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "blocked"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : item.status === "skipped"
+                              ? "rounded-full bg-slate-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-200"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#061525]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Viewer Sync V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Sincronizzazione Viewer</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara la sincronizzazione metadata-only dal Product Package rigenerato al Viewer, preservando geometria attuale, materiali, accessori, LED e configurazione cliente.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                viewerSyncV1Report.status === "SYNC_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : viewerSyncV1Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {viewerSyncV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadViewerSyncV1Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta Viewer Sync V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{viewerSyncV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{viewerSyncV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{viewerSyncV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{viewerSyncV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Metadata only</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{viewerSyncV1Report.totals.metadataOnly}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Componente</th>
+                    <th className="px-4 py-3">Modalità</th>
+                    <th className="px-4 py-3">Viewer</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {viewerSyncV1Report.components.slice(0, 18).map((item) => (
+                    <tr key={`viewer-sync-v1-${item.componentId}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.displayName}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.geometryMode.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.viewerSyncReady ? "sync" : "review"}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : item.status === "skipped"
+                                ? "rounded-full bg-slate-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-200"
+                                : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Raccomandazioni</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {viewerSyncV1Report.recommendations.map((item, index) => (
+                  <li key={`viewer-sync-recommendation-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#130b24]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Parametric Structure Editor V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Editor struttura parametrica</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il piano diagnostico per modificare struttura, spessori, divisori e riferimenti ferramenta mantenendo bloccato l'ingombro esterno e preservando il futuro workflow Viewer.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                parametricStructureEditorV1Report.status === "STRUCTURE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : parametricStructureEditorV1Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {parametricStructureEditorV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadParametricStructureEditorV1Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta Structure Editor V1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{parametricStructureEditorV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{parametricStructureEditorV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{parametricStructureEditorV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{parametricStructureEditorV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Rigenerazione</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{parametricStructureEditorV1Report.totals.requiresRegeneration}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Metadata</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{parametricStructureEditorV1Report.totals.metadataUpdates}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Componente</th>
+                    <th className="px-4 py-3">Azione</th>
+                    <th className="px-4 py-3">Ingombro</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {parametricStructureEditorV1Report.actions.slice(0, 18).map((item) => (
+                    <tr key={`parametric-structure-editor-${item.componentId}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.displayName}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.actionType.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.keepsExternalDimensions ? "bloccato" : "review"}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Raccomandazioni</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {parametricStructureEditorV1Report.recommendations.map((item, index) => (
+                  <li key={`parametric-structure-recommendation-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#18071f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Factory Engine V2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Orchestratore factory avanzato</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Consolida Factory Engine, Product Package Regeneration, Viewer Sync e Structure Editor in un unico stato operativo pronto per i prossimi step Viewer Sync V2 e rigenerazione reale Product Package.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                factoryEngineV2Report.status === "FACTORY_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : factoryEngineV2Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {factoryEngineV2Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadFactoryEngineV2Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Factory Engine V2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Score</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryEngineV2Report.factoryScore}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Fasi</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryEngineV2Report.totals.phases}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{factoryEngineV2Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{factoryEngineV2Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{factoryEngineV2Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Viewer Bridge</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{factoryEngineV2Report.viewerBridge.viewerSyncReady ? "OK" : "Review"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-h-[280px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Fase</th>
+                    <th className="px-4 py-3">Schema</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {factoryEngineV2Report.phases.map((item) => (
+                    <tr key={`factory-engine-v2-${item.id}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.label}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.sourceSchema}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Viewer Bridge</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Product Package: {factoryEngineV2Report.viewerBridge.productPackageRegenerationReady ? "ready" : "review"}</p>
+                  <p>Viewer Sync: {factoryEngineV2Report.viewerBridge.viewerSyncReady ? "ready" : "review"}</p>
+                  <p>Ingombro esterno: {factoryEngineV2Report.viewerBridge.keepsExternalEnvelopeLocked ? "bloccato" : "review"}</p>
+                  <p>Materiali/accessori/LED: {factoryEngineV2Report.viewerBridge.materialAccessoryLedWorkflowPreserved ? "preservati" : "review"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {factoryEngineV2Report.recommendations.map((item, index) => (
+                    <li key={`factory-engine-v2-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061820]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Product Package V2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Rigenerazione pacchetto prodotto V2</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara la patch Product Package collegata a Factory Engine V2, mantenendo separati dati produttivi e configurazione cliente per preservare texture, accessori, LED e Kelvin nel Viewer.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                productPackageRegenerationV2Report.status === "PACKAGE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : productPackageRegenerationV2Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {productPackageRegenerationV2Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadProductPackageRegenerationV2Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Product Package V2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Patch</p>
+              <p className="mt-1 text-2xl font-black text-white">{productPackageRegenerationV2Report.totals.patches}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{productPackageRegenerationV2Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{productPackageRegenerationV2Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{productPackageRegenerationV2Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Geometria</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{productPackageRegenerationV2Report.totals.preserveGeometry}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Metadata</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{productPackageRegenerationV2Report.totals.metadataUpdates}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Struttura</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{productPackageRegenerationV2Report.totals.structureRegeneration}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Componente</th>
+                    <th className="px-4 py-3">Patch</th>
+                    <th className="px-4 py-3">Viewer</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {productPackageRegenerationV2Report.patches.slice(0, 18).map((item) => (
+                    <tr key={`product-package-v2-${item.id}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.displayName}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.patchType.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3 text-slate-300">{item.viewerSyncHint}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Regole pacchetto</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Materiali: {productPackageRegenerationV2Report.packageRules.preserveMaterials ? "preservati" : "review"}</p>
+                  <p>Accessori: {productPackageRegenerationV2Report.packageRules.preserveAccessories ? "preservati" : "review"}</p>
+                  <p>LED/Kelvin: {productPackageRegenerationV2Report.packageRules.preserveLedConfiguration ? "preservati" : "review"}</p>
+                  <p>Ingombro esterno: {productPackageRegenerationV2Report.packageRules.keepExternalEnvelopeLocked ? "bloccato" : "review"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {productPackageRegenerationV2Report.recommendations.map((item, index) => (
+                    <li key={`product-package-v2-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#071421]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Viewer Sync V2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Sincronizzazione Viewer V2</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il ponte tra Product Package V2 e Viewer, mantenendo separata la configurazione cliente dal layer produttivo per preservare texture, accessori, LED e Kelvin.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                viewerSyncV2Report.status === "VIEWER_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : viewerSyncV2Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {viewerSyncV2Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadViewerSyncV2Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta Viewer Sync V2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{viewerSyncV2Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{viewerSyncV2Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{viewerSyncV2Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{viewerSyncV2Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Metadata</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{viewerSyncV2Report.totals.metadataOnly}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Geometry</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{viewerSyncV2Report.totals.geometryPatch}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">Structure</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{viewerSyncV2Report.totals.structureRegeneration}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Componente</th>
+                    <th className="px-4 py-3">Sync</th>
+                    <th className="px-4 py-3">Cliente</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {viewerSyncV2Report.items.slice(0, 18).map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.displayName}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-200">{item.syncMode.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {item.preservesCustomerConfiguration ? "preservata" : "review"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Regole Viewer</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Materiali: {viewerSyncV2Report.viewerRules.preserveExistingMaterials ? "preservati" : "review"}</p>
+                  <p>Accessori: {viewerSyncV2Report.viewerRules.preserveExistingAccessories ? "preservati" : "review"}</p>
+                  <p>LED/Kelvin: {viewerSyncV2Report.viewerRules.preserveExistingLedAndKelvin ? "preservati" : "review"}</p>
+                  <p>Geometria: {viewerSyncV2Report.viewerRules.requireManualReviewBeforeGeometryRebuild ? "review manuale" : "automatica"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {viewerSyncV2Report.recommendations.map((item, index) => (
+                    <li key={`viewer-sync-v2-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+
+        <section className="rounded-[28px] border border-orange-400/15 bg-[#1b1207]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-200">Factory Production Package V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Pacchetto produzione finale</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Consolida Factory Engine V2, Product Package V2 e Viewer Sync V2 in un report unico per preparare produzione, Viewer e configurazione cliente senza perdita dati.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                factoryProductionPackageV1Report.status === "PRODUCTION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : factoryProductionPackageV1Report.status === "BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {factoryProductionPackageV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadFactoryProductionPackageV1Report}
+                className="rounded-2xl border border-orange-400/25 bg-orange-400/10 px-5 py-3 text-sm font-black text-orange-100 transition hover:bg-orange-400/20"
+              >
+                Esporta Production Package
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Componenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{factoryProductionPackageV1Report.totals.components}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{factoryProductionPackageV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{factoryProductionPackageV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{factoryProductionPackageV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Factory</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{factoryProductionPackageV1Report.totals.factoryIncluded}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Viewer</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{factoryProductionPackageV1Report.totals.viewerIncluded}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">CSV/CIX</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{factoryProductionPackageV1Report.totals.csvCixIncluded}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-violet-200">BOM</p>
+              <p className="mt-1 text-2xl font-black text-violet-100">{factoryProductionPackageV1Report.totals.bomIncluded}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Componente</th>
+                    <th className="px-4 py-3">Factory</th>
+                    <th className="px-4 py-3">Viewer</th>
+                    <th className="px-4 py-3">CSV/CIX</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {factoryProductionPackageV1Report.items.slice(0, 18).map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{item.displayName}</p>
+                        <p className="mt-1 text-slate-500">{item.note}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{item.includeInFactoryPackage ? "incluso" : "bloccato"}</td>
+                      <td className="px-4 py-3 text-slate-300">{item.includeInViewerPackage ? "incluso" : "review"}</td>
+                      <td className="px-4 py-3 text-slate-300">{item.includeInCsvCixExport ? "incluso" : "review"}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          item.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : item.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-orange-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-200">Regole pacchetto</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Factory ready: {factoryProductionPackageV1Report.packageRules.requireFactoryReady ? "richiesto" : "non richiesto"}</p>
+                  <p>Viewer sync: {factoryProductionPackageV1Report.packageRules.requireViewerSyncReady ? "richiesto" : "non richiesto"}</p>
+                  <p>Config cliente: {factoryProductionPackageV1Report.packageRules.preserveCustomerMaterialsAccessoriesLed ? "preservata" : "review"}</p>
+                  <p>Export CSV/CIX: {factoryProductionPackageV1Report.packageRules.includeCsvCixPayload ? "incluso" : "escluso"}</p>
+                  <p>BOM: {factoryProductionPackageV1Report.packageRules.includeBomPayload ? "inclusa" : "esclusa"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-orange-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {factoryProductionPackageV1Report.recommendations.map((item, index) => (
+                    <li key={`factory-production-package-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#06171b]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Intelligenza locale da piantina</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il controllo tecnico da piantina caricata: ingombri mobili, battiscopa, supporto pareti, passaggi, montabilità e schede tecniche.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutRoomIntelligenceV1Report.status === "ROOM_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutRoomIntelligenceV1Report.status === "ROOM_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutRoomIntelligenceV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutRoomIntelligenceV1Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Layout Intelligence
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Controlli</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutRoomIntelligenceV1Report.totals.checks}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Pass</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutRoomIntelligenceV1Report.totals.pass}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutRoomIntelligenceV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutRoomIntelligenceV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Mobili collegati</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{layoutRoomIntelligenceV1Report.totals.furnitureItemsLinked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-h-[300px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Controllo</th>
+                    <th className="px-4 py-3">Categoria</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutRoomIntelligenceV1Report.checks.map((check) => (
+                    <tr key={check.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{check.label}</p>
+                        <p className="mt-1 text-slate-500">{check.note}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{check.category.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          check.status === "pass"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : check.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {check.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Dati richiesti</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Input pianta: {layoutRoomIntelligenceV1Report.assumptions.planInputMode.replace(/_/g, " ")}</p>
+                  <p>Battiscopa: {layoutRoomIntelligenceV1Report.assumptions.baseboardDataRequired ? "obbligatorio" : "non richiesto"}</p>
+                  <p>Tipo parete: {layoutRoomIntelligenceV1Report.assumptions.wallMaterialDataRequired ? "obbligatorio" : "non richiesto"}</p>
+                  <p>Validazione ingombri: {layoutRoomIntelligenceV1Report.assumptions.furnitureFootprintValidationRequired ? "richiesta" : "non richiesta"}</p>
+                  <p>Schede tecniche: {layoutRoomIntelligenceV1Report.assumptions.technicalSheetGenerationReady ? "predisposte" : "bloccate"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutRoomIntelligenceV1Report.recommendations.map((item, index) => (
+                    <li key={`layout-room-intelligence-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#071422]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Layout Technical Sheet Generator V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Schede tecniche da piantina</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara le tavole tecniche da Layout Intelligence: piantina, battiscopa, pareti, fissaggi, punti tecnici, BOM e note montaggio.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutTechnicalSheetGeneratorV1Report.status === "SHEETS_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutTechnicalSheetGeneratorV1Report.status === "SHEETS_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutTechnicalSheetGeneratorV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutTechnicalSheetGeneratorV1Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta schede tecniche layout
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Sezioni</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutTechnicalSheetGeneratorV1Report.totals.sections}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutTechnicalSheetGeneratorV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutTechnicalSheetGeneratorV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutTechnicalSheetGeneratorV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Mobili collegati</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{layoutTechnicalSheetGeneratorV1Report.totals.furnitureItemsLinked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Scheda</th>
+                    <th className="px-4 py-3">Fonte</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutTechnicalSheetGeneratorV1Report.sections.map((section) => (
+                    <tr key={section.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{section.title}</p>
+                        <p className="mt-1 text-slate-500">{section.output}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{section.source.replace(/_/g, " ")}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          section.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : section.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {section.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Regole generazione</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Tracciamento layout: {layoutTechnicalSheetGeneratorV1Report.generationRules.requireLayoutTraceApproval ? "approvazione richiesta" : "non richiesto"}</p>
+                  <p>Battiscopa: {layoutTechnicalSheetGeneratorV1Report.generationRules.requireBaseboardData ? "dato obbligatorio" : "facoltativo"}</p>
+                  <p>Supporto parete: {layoutTechnicalSheetGeneratorV1Report.generationRules.requireWallSupportData ? "dato obbligatorio" : "facoltativo"}</p>
+                  <p>Factory package: {layoutTechnicalSheetGeneratorV1Report.generationRules.requireFactoryPackageNotBlocked ? "non deve essere bloccato" : "non vincolante"}</p>
+                  <p>Warning montaggio: {layoutTechnicalSheetGeneratorV1Report.generationRules.includeMountingWarnings ? "inclusi" : "esclusi"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutTechnicalSheetGeneratorV1Report.recommendations.map((item, index) => (
+                    <li key={`layout-technical-sheet-generator-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-indigo-400/15 bg-[#0b1022]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-200">Layout DXF / CAD Export Prep V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Preparazione export CAD da piantina</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara layer, dati e controlli per esportare piantina, ingombri mobili, battiscopa, punti tecnici e note montaggio verso DXF/PDF.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                layoutDxfCadExportPrepV1Report.status === "CAD_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : layoutDxfCadExportPrepV1Report.status === "CAD_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {layoutDxfCadExportPrepV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadLayoutDxfCadExportPrepV1Report}
+                className="rounded-2xl border border-indigo-400/25 bg-indigo-400/10 px-5 py-3 text-sm font-black text-indigo-100 transition hover:bg-indigo-400/20"
+              >
+                Esporta preparazione CAD
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Layer</p>
+              <p className="mt-1 text-2xl font-black text-white">{layoutDxfCadExportPrepV1Report.totals.layers}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{layoutDxfCadExportPrepV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{layoutDxfCadExportPrepV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{layoutDxfCadExportPrepV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-400/15 bg-indigo-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-indigo-200">DXF / PDF</p>
+              <p className="mt-1 text-2xl font-black text-indigo-100">{layoutDxfCadExportPrepV1Report.totals.dxfTargets}/{layoutDxfCadExportPrepV1Report.totals.pdfTargets}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="max-h-[320px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Layer</th>
+                    <th className="px-4 py-3">Output</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {layoutDxfCadExportPrepV1Report.layers.map((layer) => (
+                    <tr key={layer.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{layer.layerName}</p>
+                        <p className="mt-1 text-slate-500">{layer.note}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{layer.outputTarget.replace(/_/g, " + ")}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          layer.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : layer.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {layer.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-indigo-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Regole export</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Traccia layout: {layoutDxfCadExportPrepV1Report.exportRules.requireApprovedLayoutTrace ? "approvata richiesta" : "non richiesta"}</p>
+                  <p>Scala ambiente: {layoutDxfCadExportPrepV1Report.exportRules.requireScaledRoomReference ? "obbligatoria" : "facoltativa"}</p>
+                  <p>Layer muri/aperture: {layoutDxfCadExportPrepV1Report.exportRules.requireWallAndOpeningLayers ? "obbligatori" : "facoltativi"}</p>
+                  <p>Layer mobili: {layoutDxfCadExportPrepV1Report.exportRules.requireFurnitureFootprintLayers ? "obbligatori" : "facoltativi"}</p>
+                  <p>ID Product Package: {layoutDxfCadExportPrepV1Report.exportRules.preserveProductPackageIds ? "preservati" : "non preservati"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {layoutDxfCadExportPrepV1Report.recommendations.map((item, index) => (
+                    <li key={`layout-dxf-cad-export-prep-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061720]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Technical Wall Elevation Sheets V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Prospetti parete tecnici</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara prospetti parete con mobili disegnati frontalmente, quote, punti elettrici, punti idraulici, carico acqua calda/fredda, scarico, prese nelle cassettiere e punti fissaggio.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                technicalWallElevationSheetsV1Report.status === "ELEVATIONS_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : technicalWallElevationSheetsV1Report.status === "ELEVATIONS_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {technicalWallElevationSheetsV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadTechnicalWallElevationSheetsV1Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta prospetti parete
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Layer</p>
+              <p className="mt-1 text-2xl font-black text-white">{technicalWallElevationSheetsV1Report.totals.layers}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{technicalWallElevationSheetsV1Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{technicalWallElevationSheetsV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{technicalWallElevationSheetsV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">PDF/DXF</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{technicalWallElevationSheetsV1Report.totals.pdfLayers}/{technicalWallElevationSheetsV1Report.totals.dxfLayers}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Punti tecnici</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{technicalWallElevationSheetsV1Report.totals.technicalPointLayers}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Layer prospetto</th>
+                    <th className="px-4 py-3">Colore</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {technicalWallElevationSheetsV1Report.layers.map((layer) => (
+                    <tr key={layer.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{layer.label}</p>
+                        <p className="mt-1 text-slate-500">{layer.note}</p>
+                        <p className="mt-1 text-[11px] text-cyan-200">{layer.layerName}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{layer.colorHint}</td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          layer.status === "ready"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : layer.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {layer.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Regole prospetti</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Mobili in prospetto: {technicalWallElevationSheetsV1Report.wallElevationRules.drawFurnitureFrontElevations ? "obbligatori" : "facoltativi"}</p>
+                  <p>Acqua calda/fredda: {technicalWallElevationSheetsV1Report.wallElevationRules.requireHotColdWaterPoints ? "obbligatoria" : "facoltativa"}</p>
+                  <p>Scarico: {technicalWallElevationSheetsV1Report.wallElevationRules.requireDrainPoints ? "obbligatorio" : "facoltativo"}</p>
+                  <p>Prese cassettiere: {technicalWallElevationSheetsV1Report.wallElevationRules.requireDrawerIntegratedSockets ? "obbligatorie" : "facoltative"}</p>
+                  <p>Colori/layer separati: {technicalWallElevationSheetsV1Report.wallElevationRules.requireColorSeparatedLayers ? "attivi" : "non attivi"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {technicalWallElevationSheetsV1Report.recommendations.map((item, index) => (
+                    <li key={`technical-wall-elevation-sheets-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#06111f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Wall Technical Points Validation V1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Validazione punti tecnici parete</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Controlla prospetti parete, quote lavandino, acqua calda/fredda, scarico, prese nelle cassettiere, fissaggi, battiscopa e qualità grafica della scheda tecnica.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallTechnicalPointsValidationV1Report.status === "TECHNICAL_POINTS_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallTechnicalPointsValidationV1Report.status === "TECHNICAL_POINTS_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallTechnicalPointsValidationV1Report.status.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallTechnicalPointsValidationV1Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta validazione punti
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Regole</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallTechnicalPointsValidationV1Report.totals.rules}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Passed</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallTechnicalPointsValidationV1Report.totals.passed}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallTechnicalPointsValidationV1Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallTechnicalPointsValidationV1Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/15 bg-orange-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-orange-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-orange-100">{wallTechnicalPointsValidationV1Report.totals.warnings}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Errori</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallTechnicalPointsValidationV1Report.totals.errors}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="max-h-[360px] overflow-auto rounded-2xl border border-white/10 bg-black/25">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
+                <thead className="bg-black/30 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Controllo</th>
+                    <th className="px-4 py-3">Atteso</th>
+                    <th className="px-4 py-3">Stato</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {wallTechnicalPointsValidationV1Report.rules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-black text-white">{rule.label}</p>
+                        <p className="mt-1 text-slate-500">{rule.note}</p>
+                        <p className="mt-1 text-[11px] text-sky-200">{rule.kind} / {rule.severity}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <p>{rule.expected}</p>
+                        <p className="mt-1 text-slate-500">{rule.actual}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={
+                          rule.status === "passed"
+                            ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                            : rule.status === "blocked"
+                              ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                              : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                        }>
+                          {rule.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Regole lavandino</p>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <p>Lavandino da appoggio: piano a <span className="font-black text-white">{wallTechnicalPointsValidationV1Report.sinkRules.countertopSinkTopHeightMm} mm</span></p>
+                  <p>Lavandino da incasso: piano a <span className="font-black text-white">{wallTechnicalPointsValidationV1Report.sinkRules.insetSinkTopHeightMm} mm</span></p>
+                  <p>Propaga quote a idraulica: {wallTechnicalPointsValidationV1Report.sinkRules.propagateHeightToPlumbingPoints ? "sì" : "no"}</p>
+                  <p>Propaga quote a prospetti: {wallTechnicalPointsValidationV1Report.sinkRules.propagateHeightToWallElevations ? "sì" : "no"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Raccomandazioni</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallTechnicalPointsValidationV1Report.recommendations.map((item, index) => (
+                    <li key={`wall-technical-points-validation-v1-recommendation-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <section className="rounded-[28px] border border-emerald-400/15 bg-[#071a13]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
