@@ -105,7 +105,7 @@ export function buildParametricEditV1Report(
   const targetThickness = readCollisionNumberV1(targetThicknessValue);
 
   const items: ParametricEditV1Item[] = meshes.map((mesh, index) => {
-    const componentId = buildStablePartId(mesh, index);
+    const componentId = resolveStablePartId(mesh, index);
     const displayName = mesh.displayName || mesh.meshName || componentId;
     const production = productionByComponent.get(componentId) || null;
     const meshAny = mesh as any;
