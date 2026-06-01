@@ -22,6 +22,7 @@ import {
   type CsvCixMatch,
   type CsvPart,
 } from "@/lib/importer/csvCixMatcher";
+import { buildEvidenceToRenderArBridgeV47Report } from "@/lib/layout-room-intelligence/evidenceToRenderArBridgeV47";
 
 type MeshConfig = {
   meshName: string;
@@ -12421,6 +12422,1610 @@ function downloadTechnicalApprovalWorkflowV39Report() {
   downloadJsonFile(`bagastudio-technical-approval-workflow-v3-9-${Date.now()}.json`, technicalApprovalWorkflowV39Report);
 }
 
+
+type WallEvidenceV40Source = "customer" | "photo" | "dwg" | "dxf" | "installer_note";
+type WallEvidenceV40Status = "accepted" | "review" | "conflict" | "future_ready";
+type WallEvidenceV40ConflictSeverity = "none" | "info" | "warning" | "blocking";
+
+type WallEvidenceV40 = {
+  id: string;
+  label: string;
+  source: WallEvidenceV40Source;
+  linkedWallId: string;
+  declaredWallType: WallIntelligenceV30WallType;
+  detectedWallType: WallIntelligenceV30WallType | null;
+  confidenceScore: number;
+  status: WallEvidenceV40Status;
+  conflictSeverity: WallEvidenceV40ConflictSeverity;
+  notes: string[];
+  requiredAction: string;
+};
+
+type WallAssistedRecognitionV40Report = {
+  schema: "bagastudio-wall-assisted-recognition-v4-0";
+  version: "4.0";
+  generatedAt: string;
+  recognitionStatus: "ASSISTED_RECOGNITION_READY" | "ASSISTED_RECOGNITION_REVIEW_REQUIRED" | "ASSISTED_RECOGNITION_BLOCKED";
+  strategy: {
+    primarySource: "customer";
+    confirmationSources: WallEvidenceV40Source[];
+    mergePolicy: string[];
+    manualDescriptionFirst: boolean;
+    photoDwgCanConfirmOrCorrect: boolean;
+  };
+  sourceApprovalSchema: TechnicalApprovalWorkflowV39Report["schema"];
+  sourceConfidenceSchema: WallIntelligenceConfidenceEngineV32Report["schema"];
+  evidences: WallEvidenceV40[];
+  conflicts: Array<{
+    id: string;
+    linkedWallId: string;
+    customerWallType: WallIntelligenceV30WallType;
+    evidenceWallType: WallIntelligenceV30WallType | null;
+    severity: WallEvidenceV40ConflictSeverity;
+    message: string;
+    action: string;
+  }>;
+  confidenceFusion: Array<{
+    wallId: string;
+    wallLabel: string;
+    customerScore: number;
+    evidenceScore: number;
+    fusedScore: number;
+    fusedLevel: WallIntelligenceV32ConfidenceLevel;
+    note: string;
+  }>;
+  totals: {
+    evidences: number;
+    customerInputs: number;
+    photoSlots: number;
+    dwgDxfSlots: number;
+    accepted: number;
+    review: number;
+    conflicts: number;
+    blockingConflicts: number;
+  };
+  requiredActions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function resolveWallAssistedRecognitionV40Level(score: number): WallIntelligenceV32ConfidenceLevel {
+  if (score >= 71) return "alta";
+  if (score >= 41) return "media";
+  return "bassa";
+}
+
+function buildWallAssistedRecognitionV40Report(params: {
+  wallEngineV30: WallIntelligenceEngineV30Report;
+  confidenceEngineV32: WallIntelligenceConfidenceEngineV32Report;
+  technicalApprovalV39: TechnicalApprovalWorkflowV39Report;
+}): WallAssistedRecognitionV40Report {
+  const customerScoreByWall = new Map<string, number>();
+  params.confidenceEngineV32.confidenceCards.forEach((card) => {
+    customerScoreByWall.set(card.wallId, card.confidenceScore);
+  });
+
+  const evidences: WallEvidenceV40[] = [];
+
+  params.wallEngineV30.wallProfiles.forEach((wall) => {
+    const customerScore = customerScoreByWall.get(wall.id) ?? (wall.confidence === "high" ? 85 : wall.confidence === "medium" ? 60 : 30);
+
+    evidences.push({
+      id: `v4-0-customer-${wall.id}`,
+      label: `${wall.label} · descrizione cliente`,
+      source: "customer",
+      linkedWallId: wall.id,
+      declaredWallType: wall.wallType,
+      detectedWallType: wall.wallType,
+      confidenceScore: customerScore,
+      status: customerScore >= 71 ? "accepted" : "review",
+      conflictSeverity: "none",
+      notes: [
+        "Fonte primaria V4.0: descrizione cliente/utente.",
+        "Foto e DWG/DXF potranno confermare, correggere o integrare questo profilo senza rifare il motore.",
+      ],
+      requiredAction: customerScore >= 71
+        ? "Usare come base tecnica preliminare, mantenendo verifica installatore dove prevista."
+        : "Richiedere più dettagli cliente o evidenza foto/DWG prima dell'approvazione definitiva.",
+    });
+
+    evidences.push({
+      id: `v4-0-photo-slot-${wall.id}`,
+      label: `${wall.label} · slot foto parete`,
+      source: "photo",
+      linkedWallId: wall.id,
+      declaredWallType: wall.wallType,
+      detectedWallType: null,
+      confidenceScore: 0,
+      status: "future_ready",
+      conflictSeverity: "info",
+      notes: [
+        "Slot predisposto per riconoscimento assistito da foto.",
+        "In V4.1 la foto potrà aumentare confidence, segnalare conflitti o richiedere sopralluogo.",
+      ],
+      requiredAction: "Quando disponibile, allegare foto parete/ancoraggi/montanti per conferma tecnica.",
+    });
+
+    evidences.push({
+      id: `v4-0-dwg-dxf-slot-${wall.id}`,
+      label: `${wall.label} · slot DWG/DXF`,
+      source: "dwg",
+      linkedWallId: wall.id,
+      declaredWallType: wall.wallType,
+      detectedWallType: null,
+      confidenceScore: 0,
+      status: "future_ready",
+      conflictSeverity: "info",
+      notes: [
+        "Slot predisposto per analisi DWG/DXF/pianta/prospetto.",
+        "In V4.2 DWG/DXF potrà confermare pareti, quote, aperture, ingombri e vincoli tecnici.",
+      ],
+      requiredAction: "Quando disponibile, collegare elaborato DWG/DXF o pianta quotata al profilo parete.",
+    });
+  });
+
+  const conflicts = evidences
+    .filter((evidence) => evidence.status === "conflict" || evidence.conflictSeverity === "blocking")
+    .map((evidence) => ({
+      id: `conflict-${evidence.id}`,
+      linkedWallId: evidence.linkedWallId,
+      customerWallType: evidence.declaredWallType,
+      evidenceWallType: evidence.detectedWallType,
+      severity: evidence.conflictSeverity,
+      message: `Conflitto parete: cliente=${evidence.declaredWallType}, evidenza=${evidence.detectedWallType || "non disponibile"}.`,
+      action: evidence.requiredAction,
+    }));
+
+  const confidenceFusion = params.wallEngineV30.wallProfiles.map((wall) => {
+    const customerScore = customerScoreByWall.get(wall.id) ?? 30;
+    const evidenceScores = evidences
+      .filter((evidence) => evidence.linkedWallId === wall.id && evidence.source !== "customer" && evidence.status === "accepted")
+      .map((evidence) => evidence.confidenceScore);
+    const evidenceScore = evidenceScores.length > 0
+      ? Math.round(evidenceScores.reduce((sum, score) => sum + score, 0) / evidenceScores.length)
+      : 0;
+    const fusedScore = evidenceScore > 0
+      ? Math.round(customerScore * 0.6 + evidenceScore * 0.4)
+      : customerScore;
+
+    return {
+      wallId: wall.id,
+      wallLabel: wall.label,
+      customerScore,
+      evidenceScore,
+      fusedScore,
+      fusedLevel: resolveWallAssistedRecognitionV40Level(fusedScore),
+      note: evidenceScore > 0
+        ? "Confidence fusa tra descrizione cliente e prove allegate."
+        : "Confidence basata solo sulla descrizione cliente: prove foto/DWG ancora mancanti.",
+    };
+  });
+
+  const review = evidences.filter((evidence) => evidence.status === "review").length;
+  const blockingConflicts = conflicts.filter((conflict) => conflict.severity === "blocking").length;
+  const recognitionStatus = blockingConflicts > 0 || params.technicalApprovalV39.approvalStatus === "REJECTED"
+    ? "ASSISTED_RECOGNITION_BLOCKED"
+    : review > 0 || conflicts.length > 0 || params.technicalApprovalV39.approvalStatus === "REVIEW_REQUIRED"
+      ? "ASSISTED_RECOGNITION_REVIEW_REQUIRED"
+      : "ASSISTED_RECOGNITION_READY";
+
+  const requiredActions = [
+    ...(review > 0 ? ["Completare descrizioni cliente con confidence bassa o media prima della scheda approvata."] : []),
+    ...(params.technicalApprovalV39.siteSurveyRequired ? ["Sopralluogo richiesto da V3.9: collegare evidenze foto/DWG o nota installatore."] : []),
+    ...(conflicts.length > 0 ? ["Risolvere conflitti tra descrizione cliente e prove tecniche prima di procedere."] : []),
+    "Mantenere la descrizione cliente come fonte primaria e usare foto/DWG come conferma/correzione.",
+  ];
+
+  return {
+    schema: "bagastudio-wall-assisted-recognition-v4-0",
+    version: "4.0",
+    generatedAt: new Date().toISOString(),
+    recognitionStatus,
+    strategy: {
+      primarySource: "customer",
+      confirmationSources: ["photo", "dwg", "dxf", "installer_note"],
+      mergePolicy: [
+        "La descrizione cliente crea sempre il profilo parete iniziale.",
+        "Foto, DWG e DXF non sostituiscono automaticamente il cliente: confermano, correggono o aprono una review.",
+        "Se una prova contraddice il cliente, il profilo parete entra in REVIEW e blocca approvazione automatica.",
+        "Le evidenze aumentano il confidence score solo se coerenti con la descrizione e con i vincoli tecnici.",
+      ],
+      manualDescriptionFirst: true,
+      photoDwgCanConfirmOrCorrect: true,
+    },
+    sourceApprovalSchema: params.technicalApprovalV39.schema,
+    sourceConfidenceSchema: params.confidenceEngineV32.schema,
+    evidences,
+    conflicts,
+    confidenceFusion,
+    totals: {
+      evidences: evidences.length,
+      customerInputs: evidences.filter((evidence) => evidence.source === "customer").length,
+      photoSlots: evidences.filter((evidence) => evidence.source === "photo").length,
+      dwgDxfSlots: evidences.filter((evidence) => evidence.source === "dwg" || evidence.source === "dxf").length,
+      accepted: evidences.filter((evidence) => evidence.status === "accepted").length,
+      review,
+      conflicts: conflicts.length,
+      blockingConflicts,
+    },
+    requiredActions,
+    exportTargets: [
+      "JSON Assisted Recognition V4.0",
+      "PDF scheda parete con fonti cliente/foto/DWG",
+      "DXF/CAD con layer evidenze parete",
+      "Technical Approval aggiornabile con prove V4",
+    ],
+    nextActions: [
+      "V4.1 Photo Evidence Analyzer: lettura guidata foto parete, montanti, fissaggi e ostacoli.",
+      "V4.2 DWG/DXF Evidence Analyzer: lettura quote, aperture, pareti e vincoli da elaborati tecnici.",
+      "V4.3 Evidence Fusion Engine: fusione pesata tra cliente, foto, DWG/DXF e nota installatore.",
+      "V4.4 Automatic Wall Classification: classificazione assistita parete con review obbligatoria quando incerta.",
+    ],
+  };
+}
+
+const wallAssistedRecognitionV40Report = useMemo(() => {
+  return buildWallAssistedRecognitionV40Report({
+    wallEngineV30: wallIntelligenceEngineV30Report,
+    confidenceEngineV32: wallIntelligenceConfidenceEngineV32Report,
+    technicalApprovalV39: technicalApprovalWorkflowV39Report,
+  });
+}, [wallIntelligenceEngineV30Report, wallIntelligenceConfidenceEngineV32Report, technicalApprovalWorkflowV39Report]);
+
+function downloadWallAssistedRecognitionV40Report() {
+  downloadJsonFile(`bagastudio-wall-assisted-recognition-v4-0-${Date.now()}.json`, wallAssistedRecognitionV40Report);
+}
+
+
+type WallPhotoEvidenceV41Quality = "missing" | "low" | "medium" | "high";
+type WallPhotoEvidenceV41Status = "PHOTO_REQUIRED" | "PHOTO_REVIEW" | "PHOTO_READY" | "PHOTO_BLOCKED";
+
+type WallPhotoEvidenceV41Item = {
+  id: string;
+  linkedWallId: string;
+  wallLabel: string;
+  expectedWallType: WallIntelligenceV30WallType;
+  photoSlotLabel: string;
+  quality: WallPhotoEvidenceV41Quality;
+  status: WallPhotoEvidenceV41Status;
+  confidenceImpact: number;
+  requiredShots: string[];
+  metadataChecklist: string[];
+  detectedHints: string[];
+  conflictPolicy: string;
+  note: string;
+};
+
+type WallPhotoEvidenceV41Report = {
+  schema: "bagastudio-wall-photo-evidence-intake-v4-1";
+  version: "4.1";
+  generatedAt: string;
+  intakeStatus: "PHOTO_INTAKE_READY" | "PHOTO_INTAKE_REVIEW_REQUIRED" | "PHOTO_INTAKE_BLOCKED";
+  sourceRecognitionSchema: WallAssistedRecognitionV40Report["schema"];
+  photoPolicy: {
+    customerInputRemainsPrimary: boolean;
+    photoCanConfirm: boolean;
+    photoCanOpenReview: boolean;
+    photoCannotAutoApproveCriticalInstall: boolean;
+  };
+  items: WallPhotoEvidenceV41Item[];
+  totals: {
+    photoSlots: number;
+    missing: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    potentialConfidenceBoost: number;
+  };
+  requiredActions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function resolveWallPhotoEvidenceV41Status(quality: WallPhotoEvidenceV41Quality, recognitionStatus: WallAssistedRecognitionV40Report["recognitionStatus"]): WallPhotoEvidenceV41Status {
+  if (recognitionStatus === "ASSISTED_RECOGNITION_BLOCKED") return "PHOTO_BLOCKED";
+  if (quality === "high") return "PHOTO_READY";
+  if (quality === "medium") return "PHOTO_REVIEW";
+  return "PHOTO_REQUIRED";
+}
+
+function buildWallPhotoEvidenceV41Report(params: {
+  assistedRecognitionV40: WallAssistedRecognitionV40Report;
+}): WallPhotoEvidenceV41Report {
+  const photoSlots = params.assistedRecognitionV40.evidences.filter((evidence) => evidence.source === "photo");
+
+  const items: WallPhotoEvidenceV41Item[] = photoSlots.map((slot, index) => {
+    const fusion = params.assistedRecognitionV40.confidenceFusion.find((item) => item.wallId === slot.linkedWallId);
+    const customerScore = fusion?.customerScore ?? 0;
+    const quality: WallPhotoEvidenceV41Quality = customerScore >= 80 ? "medium" : customerScore >= 55 ? "low" : "missing";
+    const status = resolveWallPhotoEvidenceV41Status(quality, params.assistedRecognitionV40.recognitionStatus);
+    const confidenceImpact = quality === "high" ? 18 : quality === "medium" ? 10 : quality === "low" ? 5 : 0;
+
+    return {
+      id: `v4-1-photo-intake-${index + 1}-${slot.linkedWallId}`,
+      linkedWallId: slot.linkedWallId,
+      wallLabel: slot.label.replace(" · slot foto parete", ""),
+      expectedWallType: slot.declaredWallType,
+      photoSlotLabel: slot.label,
+      quality,
+      status,
+      confidenceImpact,
+      requiredShots: [
+        "Foto frontale parete completa con riferimento scala/metri.",
+        "Foto dettagliata zona fissaggi prevista per specchi, mensole o pensili.",
+        "Foto eventuali prese, scarichi, ostacoli, battiscopa e passaggi tecnici.",
+        slot.declaredWallType === "drywall" ? "Foto o nota su montanti/cartongesso, se disponibili." : "Foto superficie e supporto parete per confermare tipologia.",
+      ],
+      metadataChecklist: [
+        "Parete collegata al profilo cliente corretto.",
+        "Foto non sfocata e non troppo scura.",
+        "Inquadratura utile per capire altezza, larghezza e ostacoli.",
+        "Presenza note cliente/installatore dove la foto non basta.",
+      ],
+      detectedHints: [
+        "V4.1 è intake strutturato: non esegue ancora classificazione automatica pesante.",
+        "Le foto preparano V4.4 Automatic Wall Classification e V4.5 AI Technical Suggestions.",
+      ],
+      conflictPolicy: "Se la foto suggerisce una parete diversa da quella dichiarata, il profilo entra in review e non viene approvato automaticamente.",
+      note: status === "PHOTO_BLOCKED"
+        ? "Recognition V4.0 bloccato: le foto servono come evidenza ma non sbloccano senza review tecnica."
+        : status === "PHOTO_READY"
+          ? "Foto/slot considerabile pronto per alimentare confidence fusion."
+          : "Foto richiesta o da revisionare prima dell'approvazione tecnica definitiva.",
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "PHOTO_BLOCKED").length;
+  const review = items.filter((item) => item.status === "PHOTO_REVIEW").length;
+  const missing = items.filter((item) => item.status === "PHOTO_REQUIRED").length;
+  const ready = items.filter((item) => item.status === "PHOTO_READY").length;
+
+  return {
+    schema: "bagastudio-wall-photo-evidence-intake-v4-1",
+    version: "4.1",
+    generatedAt: new Date().toISOString(),
+    intakeStatus: blocked > 0
+      ? "PHOTO_INTAKE_BLOCKED"
+      : review > 0 || missing > 0
+        ? "PHOTO_INTAKE_REVIEW_REQUIRED"
+        : "PHOTO_INTAKE_READY",
+    sourceRecognitionSchema: params.assistedRecognitionV40.schema,
+    photoPolicy: {
+      customerInputRemainsPrimary: true,
+      photoCanConfirm: true,
+      photoCanOpenReview: true,
+      photoCannotAutoApproveCriticalInstall: true,
+    },
+    items,
+    totals: {
+      photoSlots: items.length,
+      missing,
+      ready,
+      review,
+      blocked,
+      potentialConfidenceBoost: items.reduce((sum, item) => sum + item.confidenceImpact, 0),
+    },
+    requiredActions: [
+      ...(missing > 0 ? ["Caricare o richiedere foto parete per gli slot ancora mancanti."] : []),
+      ...(review > 0 ? ["Revisionare foto con qualità media/bassa prima di approvare la parete."] : []),
+      ...(blocked > 0 ? ["Risolvere prima i blocchi V4.0/V3.9: la foto non deve forzare l'approvazione automatica."] : []),
+      "Usare le foto come conferma/correzione della descrizione cliente, non come unica fonte decisionale.",
+    ],
+    exportTargets: [
+      "JSON Photo Evidence Intake V4.1",
+      "PDF scheda parete con checklist foto richieste",
+      "Archivio evidenze cliente/installatore",
+      "Bridge futuro verso Automatic Wall Classification V4.4",
+    ],
+    nextActions: [
+      "V4.2 DWG/DXF Evidence Intake: struttura per elaborati tecnici allegati.",
+      "V4.3 Evidence Fusion Engine: ricalcolo pesato con cliente, foto, DWG/DXF e note installatore.",
+      "V4.4 Automatic Wall Classification: lettura assistita della tipologia parete con review obbligatoria.",
+    ],
+  };
+}
+
+const wallPhotoEvidenceV41Report = useMemo(() => {
+  return buildWallPhotoEvidenceV41Report({
+    assistedRecognitionV40: wallAssistedRecognitionV40Report,
+  });
+}, [wallAssistedRecognitionV40Report]);
+
+function downloadWallPhotoEvidenceV41Report() {
+  downloadJsonFile(`bagastudio-wall-photo-evidence-intake-v4-1-${Date.now()}.json`, wallPhotoEvidenceV41Report);
+}
+
+
+type WallDwgDxfEvidenceV42Quality = "missing" | "low" | "medium" | "high";
+type WallDwgDxfEvidenceV42Status = "DWG_REQUIRED" | "DWG_REVIEW" | "DWG_READY" | "DWG_BLOCKED";
+type WallDwgDxfEvidenceV42Source = "dwg" | "dxf" | "pdf_plan" | "image_plan";
+
+type WallDwgDxfEvidenceV42Item = {
+  id: string;
+  linkedWallId: string;
+  wallLabel: string;
+  source: WallDwgDxfEvidenceV42Source;
+  expectedWallType: WallIntelligenceV30WallType;
+  quality: WallDwgDxfEvidenceV42Quality;
+  status: WallDwgDxfEvidenceV42Status;
+  confidenceImpact: number;
+  technicalLayers: string[];
+  extractionTargets: string[];
+  requiredChecks: string[];
+  conflictPolicy: string;
+  note: string;
+};
+
+type WallDwgDxfEvidenceV42Report = {
+  schema: "bagastudio-wall-dwg-dxf-evidence-intake-v4-2";
+  version: "4.2";
+  generatedAt: string;
+  intakeStatus: "DWG_DXF_INTAKE_READY" | "DWG_DXF_INTAKE_REVIEW_REQUIRED" | "DWG_DXF_INTAKE_BLOCKED";
+  sourceRecognitionSchema: WallAssistedRecognitionV40Report["schema"];
+  sourcePhotoSchema: WallPhotoEvidenceV41Report["schema"];
+  drawingPolicy: {
+    customerInputRemainsPrimary: boolean;
+    dwgDxfCanConfirmGeometry: boolean;
+    dwgDxfCanOpenReview: boolean;
+    dwgDxfCannotAutoApproveCriticalInstall: boolean;
+    photoAndDwgCanBeCrossChecked: boolean;
+  };
+  items: WallDwgDxfEvidenceV42Item[];
+  totals: {
+    drawingSlots: number;
+    missing: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    potentialConfidenceBoost: number;
+  };
+  requiredActions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function resolveWallDwgDxfEvidenceV42Status(
+  quality: WallDwgDxfEvidenceV42Quality,
+  recognitionStatus: WallAssistedRecognitionV40Report["recognitionStatus"]
+): WallDwgDxfEvidenceV42Status {
+  if (recognitionStatus === "ASSISTED_RECOGNITION_BLOCKED") return "DWG_BLOCKED";
+  if (quality === "high") return "DWG_READY";
+  if (quality === "medium") return "DWG_REVIEW";
+  return "DWG_REQUIRED";
+}
+
+function buildWallDwgDxfEvidenceV42Report(params: {
+  assistedRecognitionV40: WallAssistedRecognitionV40Report;
+  photoEvidenceV41: WallPhotoEvidenceV41Report;
+}): WallDwgDxfEvidenceV42Report {
+  const drawingSlots = params.assistedRecognitionV40.evidences.filter((evidence) => evidence.source === "dwg" || evidence.source === "dxf");
+  const photoByWall = new Map(params.photoEvidenceV41.items.map((item) => [item.linkedWallId, item]));
+
+  const items: WallDwgDxfEvidenceV42Item[] = drawingSlots.map((slot, index) => {
+    const fusion = params.assistedRecognitionV40.confidenceFusion.find((item) => item.wallId === slot.linkedWallId);
+    const photo = photoByWall.get(slot.linkedWallId);
+    const customerScore = fusion?.customerScore ?? 0;
+    const photoScore = photo?.confidenceImpact ?? 0;
+    const quality: WallDwgDxfEvidenceV42Quality = customerScore >= 82 && photoScore >= 10 ? "medium" : customerScore >= 65 ? "low" : "missing";
+    const status = resolveWallDwgDxfEvidenceV42Status(quality, params.assistedRecognitionV40.recognitionStatus);
+    const confidenceImpact = quality === "high" ? 22 : quality === "medium" ? 14 : quality === "low" ? 6 : 0;
+
+    return {
+      id: `v4-2-dwg-dxf-intake-${index + 1}-${slot.linkedWallId}`,
+      linkedWallId: slot.linkedWallId,
+      wallLabel: slot.label.replace(" · slot DWG/DXF", ""),
+      source: "dwg",
+      expectedWallType: slot.declaredWallType,
+      quality,
+      status,
+      confidenceImpact,
+      technicalLayers: [
+        "WALLS / PARETI",
+        "OPENINGS / APERTURE",
+        "FURNITURE_FOOTPRINTS / INGOMBRI MOBILI",
+        "ELECTRICAL_POINTS / PUNTI ELETTRICI",
+        "PLUMBING_POINTS / PUNTI IDRAULICI",
+        "FIXING_POINTS / PUNTI FISSAGGIO",
+        "DIMENSIONS / QUOTE",
+      ],
+      extractionTargets: [
+        "quote parete e lunghezze utili",
+        "spessori e tipologia parete quando indicati",
+        "aperture porte/finestre e ingombri anta",
+        "posizione mobili e passaggi minimi",
+        "punti elettrici/idraulici collegabili al prospetto parete",
+        "vincoli battiscopa, nicchie, colonne e ostacoli",
+      ],
+      requiredChecks: [
+        "Verificare scala/dimensione reale del DWG/DXF prima di usare quote tecniche.",
+        "Controllare che i layer siano leggibili o mappabili in Admin.",
+        "Confrontare pianta/prospetto con descrizione cliente e foto V4.1.",
+        "Aprire review se DWG/DXF contraddice tipo parete, aperture o ingombri dichiarati.",
+      ],
+      conflictPolicy: "DWG/DXF può aumentare confidence solo se coerente con descrizione cliente e foto; se contraddice quote o parete, blocca approvazione automatica e apre review tecnica.",
+      note: status === "DWG_BLOCKED"
+        ? "Recognition V4.0 bloccato: elaborato tecnico utilizzabile solo come evidenza per review."
+        : status === "DWG_READY"
+          ? "Elaborato tecnico pronto per alimentare quote, prospetti e fusion engine."
+          : "DWG/DXF richiesto o da revisionare prima della generazione tecnica definitiva.",
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "DWG_BLOCKED").length;
+  const review = items.filter((item) => item.status === "DWG_REVIEW").length;
+  const missing = items.filter((item) => item.status === "DWG_REQUIRED").length;
+  const ready = items.filter((item) => item.status === "DWG_READY").length;
+
+  return {
+    schema: "bagastudio-wall-dwg-dxf-evidence-intake-v4-2",
+    version: "4.2",
+    generatedAt: new Date().toISOString(),
+    intakeStatus: blocked > 0
+      ? "DWG_DXF_INTAKE_BLOCKED"
+      : review > 0 || missing > 0
+        ? "DWG_DXF_INTAKE_REVIEW_REQUIRED"
+        : "DWG_DXF_INTAKE_READY",
+    sourceRecognitionSchema: params.assistedRecognitionV40.schema,
+    sourcePhotoSchema: params.photoEvidenceV41.schema,
+    drawingPolicy: {
+      customerInputRemainsPrimary: true,
+      dwgDxfCanConfirmGeometry: true,
+      dwgDxfCanOpenReview: true,
+      dwgDxfCannotAutoApproveCriticalInstall: true,
+      photoAndDwgCanBeCrossChecked: true,
+    },
+    items,
+    totals: {
+      drawingSlots: items.length,
+      missing,
+      ready,
+      review,
+      blocked,
+      potentialConfidenceBoost: items.reduce((sum, item) => sum + item.confidenceImpact, 0),
+    },
+    requiredActions: [
+      ...(missing > 0 ? ["Caricare DWG/DXF/PDF pianta o indicare che il rilievo tecnico non è disponibile."] : []),
+      ...(review > 0 ? ["Revisionare elaborati con qualità bassa/media prima dell'approvazione tecnica definitiva."] : []),
+      ...(blocked > 0 ? ["Risolvere blocchi V4.0/V3.9: DWG/DXF non deve forzare approvazioni automatiche."] : []),
+      "Usare DWG/DXF per quote, aperture, layer tecnici e controllo incrociato con foto/descrizione cliente.",
+    ],
+    exportTargets: [
+      "JSON DWG/DXF Evidence Intake V4.2",
+      "PDF scheda parete con elenco layer richiesti",
+      "DXF/CAD con mapping layer tecnico",
+      "Bridge verso Evidence Fusion Engine V4.3 e Technical Wall Elevation Sheets",
+    ],
+    nextActions: [
+      "V4.3 Evidence Fusion Engine: fusione pesata tra cliente, foto, DWG/DXF e nota installatore.",
+      "V4.4 Automatic Wall Classification: classificazione assistita parete con review obbligatoria.",
+      "V4.5 Photo Environment Intelligence Bridge: collegare foto locale a render e AR del mobile nel locale reale.",
+    ],
+  };
+}
+
+const wallDwgDxfEvidenceV42Report = useMemo(() => {
+  return buildWallDwgDxfEvidenceV42Report({
+    assistedRecognitionV40: wallAssistedRecognitionV40Report,
+    photoEvidenceV41: wallPhotoEvidenceV41Report,
+  });
+}, [wallAssistedRecognitionV40Report, wallPhotoEvidenceV41Report]);
+
+function downloadWallDwgDxfEvidenceV42Report() {
+  downloadJsonFile(`bagastudio-wall-dwg-dxf-evidence-intake-v4-2-${Date.now()}.json`, wallDwgDxfEvidenceV42Report);
+}
+
+type WallEvidenceFusionV43Source = "customer" | "photo" | "dwg_dxf" | "technical_approval" | "installer_note";
+type WallEvidenceFusionV43Status = "FUSION_READY" | "FUSION_REVIEW_REQUIRED" | "FUSION_BLOCKED";
+type WallEvidenceFusionV43ConflictSeverity = "info" | "warning" | "critical";
+
+type WallEvidenceFusionV43SourceScore = {
+  source: WallEvidenceFusionV43Source;
+  score: number;
+  weight: number;
+  contribution: number;
+  status: string;
+  note: string;
+};
+
+type WallEvidenceFusionV43Conflict = {
+  id: string;
+  wallId: string;
+  severity: WallEvidenceFusionV43ConflictSeverity;
+  sourceA: WallEvidenceFusionV43Source;
+  sourceB: WallEvidenceFusionV43Source;
+  code: string;
+  message: string;
+  requiredAction: string;
+};
+
+type WallEvidenceFusionV43Item = {
+  wallId: string;
+  wallLabel: string;
+  declaredWallType: WallIntelligenceV30WallType;
+  fusedConfidence: number;
+  confidenceLevel: "low" | "medium" | "high";
+  status: WallEvidenceFusionV43Status;
+  customerRemainsPrimary: boolean;
+  sourceScores: WallEvidenceFusionV43SourceScore[];
+  conflicts: WallEvidenceFusionV43Conflict[];
+  finalRecommendation: string;
+};
+
+type WallEvidenceFusionV43Report = {
+  schema: "bagastudio-wall-evidence-fusion-engine-v4-3";
+  version: "4.3";
+  generatedAt: string;
+  fusionStatus: WallEvidenceFusionV43Status;
+  sourceRecognitionSchema: WallAssistedRecognitionV40Report["schema"];
+  sourcePhotoSchema: WallPhotoEvidenceV41Report["schema"];
+  sourceDrawingSchema: WallDwgDxfEvidenceV42Report["schema"];
+  fusionPolicy: {
+    customerInputRemainsPrimary: boolean;
+    evidenceCanIncreaseConfidence: boolean;
+    conflictsForceReview: boolean;
+    criticalInstallCannotBeAutoApproved: boolean;
+    photoEnvironmentReadyForRenderArBridge: boolean;
+  };
+  items: WallEvidenceFusionV43Item[];
+  totals: {
+    walls: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    conflicts: number;
+    criticalConflicts: number;
+    averageFusedConfidence: number;
+  };
+  requiredActions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function clampWallEvidenceFusionV43(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function resolveWallEvidenceFusionV43Level(score: number): "low" | "medium" | "high" {
+  if (score >= 76) return "high";
+  if (score >= 51) return "medium";
+  return "low";
+}
+
+function resolveWallEvidenceFusionV43Status(params: {
+  baseRecognitionStatus: WallAssistedRecognitionV40Report["recognitionStatus"];
+  technicalApprovalStatus: TechnicalApprovalWorkflowV39Report["approvalStatus"];
+  fusedConfidence: number;
+  conflicts: WallEvidenceFusionV43Conflict[];
+}): WallEvidenceFusionV43Status {
+  if (params.baseRecognitionStatus === "ASSISTED_RECOGNITION_BLOCKED") return "FUSION_BLOCKED";
+  if (params.technicalApprovalStatus === "rejected") return "FUSION_BLOCKED";
+  if (params.conflicts.some((conflict) => conflict.severity === "critical")) return "FUSION_BLOCKED";
+  if (params.conflicts.length > 0) return "FUSION_REVIEW_REQUIRED";
+  if (params.fusedConfidence < 70) return "FUSION_REVIEW_REQUIRED";
+  if (params.technicalApprovalStatus === "review") return "FUSION_REVIEW_REQUIRED";
+  return "FUSION_READY";
+}
+
+function buildWallEvidenceFusionV43Report(params: {
+  assistedRecognitionV40: WallAssistedRecognitionV40Report;
+  photoEvidenceV41: WallPhotoEvidenceV41Report;
+  drawingEvidenceV42: WallDwgDxfEvidenceV42Report;
+  technicalApprovalV39: TechnicalApprovalWorkflowV39Report;
+}): WallEvidenceFusionV43Report {
+  const photoByWall = new Map(params.photoEvidenceV41.items.map((item) => [item.linkedWallId, item]));
+  const drawingByWall = new Map(params.drawingEvidenceV42.items.map((item) => [item.linkedWallId, item]));
+
+  const items: WallEvidenceFusionV43Item[] = params.assistedRecognitionV40.confidenceFusion.map((fusion) => {
+    const photo = photoByWall.get(fusion.wallId) || null;
+    const drawing = drawingByWall.get(fusion.wallId) || null;
+    const conflicts: WallEvidenceFusionV43Conflict[] = [];
+
+    const customerScore = clampWallEvidenceFusionV43(fusion.customerScore || 0);
+    const photoScore = photo
+      ? photo.status === "PHOTO_READY"
+        ? 82
+        : photo.status === "PHOTO_REVIEW"
+          ? 58
+          : photo.status === "PHOTO_BLOCKED"
+            ? 18
+            : 35
+      : 0;
+    const drawingScore = drawing
+      ? drawing.status === "DWG_READY"
+        ? 88
+        : drawing.status === "DWG_REVIEW"
+          ? 62
+          : drawing.status === "DWG_BLOCKED"
+            ? 15
+            : 32
+      : 0;
+    const approvalScore = params.technicalApprovalV39.approvalStatus === "approved"
+      ? 92
+      : params.technicalApprovalV39.approvalStatus === "review"
+        ? 55
+        : params.technicalApprovalV39.approvalStatus === "rejected"
+          ? 0
+          : 45;
+
+    if (photo?.status === "PHOTO_BLOCKED") {
+      conflicts.push({
+        id: `v4-3-conflict-photo-${fusion.wallId}`,
+        wallId: fusion.wallId,
+        severity: "critical",
+        sourceA: "customer",
+        sourceB: "photo",
+        code: "PHOTO_EVIDENCE_BLOCKED",
+        message: "La foto collegata alla parete è bloccata o non utilizzabile per confermare il profilo tecnico.",
+        requiredAction: "Richiedere nuova foto o review installatore prima di procedere.",
+      });
+    }
+
+    if (drawing?.status === "DWG_BLOCKED") {
+      conflicts.push({
+        id: `v4-3-conflict-drawing-${fusion.wallId}`,
+        wallId: fusion.wallId,
+        severity: "critical",
+        sourceA: "customer",
+        sourceB: "dwg_dxf",
+        code: "DRAWING_EVIDENCE_BLOCKED",
+        message: "L'elaborato tecnico collegato è bloccato o incoerente con il workflow di approvazione.",
+        requiredAction: "Verificare scala/layer/quote o richiedere elaborato corretto.",
+      });
+    }
+
+    if (photo && drawing && photo.status === "PHOTO_REQUIRED" && drawing.status === "DWG_REQUIRED") {
+      conflicts.push({
+        id: `v4-3-conflict-missing-evidence-${fusion.wallId}`,
+        wallId: fusion.wallId,
+        severity: "warning",
+        sourceA: "photo",
+        sourceB: "dwg_dxf",
+        code: "EVIDENCE_MISSING",
+        message: "Mancano sia foto sia elaborato tecnico utilizzabile per confermare la descrizione cliente.",
+        requiredAction: "Procedere solo in review o richiedere almeno una evidenza tecnica aggiuntiva.",
+      });
+    }
+
+    if (customerScore < 55 && (photoScore < 50 || drawingScore < 50)) {
+      conflicts.push({
+        id: `v4-3-conflict-low-confidence-${fusion.wallId}`,
+        wallId: fusion.wallId,
+        severity: "warning",
+        sourceA: "customer",
+        sourceB: photoScore >= drawingScore ? "photo" : "dwg_dxf",
+        code: "LOW_CONFIDENCE_FUSION",
+        message: "La descrizione cliente ha confidenza bassa e le evidenze disponibili non la compensano.",
+        requiredAction: "Richiedere sopralluogo, foto migliori o DWG/DXF quotato prima dell'approvazione.",
+      });
+    }
+
+    const sourceScores: WallEvidenceFusionV43SourceScore[] = [
+      {
+        source: "customer",
+        score: customerScore,
+        weight: 0.45,
+        contribution: customerScore * 0.45,
+        status: "PRIMARY_SOURCE",
+        note: "La descrizione cliente resta fonte primaria del profilo parete.",
+      },
+      {
+        source: "photo",
+        score: photoScore,
+        weight: 0.2,
+        contribution: photoScore * 0.2,
+        status: photo?.status || "PHOTO_NOT_AVAILABLE",
+        note: "La foto conferma o apre review, ma non approva da sola installazioni critiche.",
+      },
+      {
+        source: "dwg_dxf",
+        score: drawingScore,
+        weight: 0.25,
+        contribution: drawingScore * 0.25,
+        status: drawing?.status || "DRAWING_NOT_AVAILABLE",
+        note: "DWG/DXF conferma geometrie, quote, aperture e punti tecnici se coerente.",
+      },
+      {
+        source: "technical_approval",
+        score: approvalScore,
+        weight: 0.1,
+        contribution: approvalScore * 0.1,
+        status: params.technicalApprovalV39.approvalStatus,
+        note: "Il workflow tecnico blocca comunque i casi rejected/critical.",
+      },
+    ];
+
+    const rawFusedConfidence = sourceScores.reduce((sum, source) => sum + source.contribution, 0);
+    const conflictPenalty = conflicts.some((conflict) => conflict.severity === "critical") ? 28 : conflicts.length > 0 ? 12 : 0;
+    const fusedConfidence = clampWallEvidenceFusionV43(rawFusedConfidence - conflictPenalty);
+    const status = resolveWallEvidenceFusionV43Status({
+      baseRecognitionStatus: params.assistedRecognitionV40.recognitionStatus,
+      technicalApprovalStatus: params.technicalApprovalV39.approvalStatus,
+      fusedConfidence,
+      conflicts,
+    });
+
+    return {
+      wallId: fusion.wallId,
+      wallLabel: fusion.wallLabel,
+      declaredWallType: fusion.declaredWallType,
+      fusedConfidence,
+      confidenceLevel: resolveWallEvidenceFusionV43Level(fusedConfidence),
+      status,
+      customerRemainsPrimary: true,
+      sourceScores,
+      conflicts,
+      finalRecommendation: status === "FUSION_READY"
+        ? "Profilo parete pronto per alimentare Technical Wall Report, preventivo e workflow installazione."
+        : status === "FUSION_BLOCKED"
+          ? "Profilo parete bloccato: correggere conflitti critici o completare sopralluogo prima dell'approvazione."
+          : "Profilo parete da revisionare: servono evidenze migliori o conferma tecnica.",
+    };
+  });
+
+  const allConflicts = items.flatMap((item) => item.conflicts);
+  const blocked = items.filter((item) => item.status === "FUSION_BLOCKED").length;
+  const review = items.filter((item) => item.status === "FUSION_REVIEW_REQUIRED").length;
+  const ready = items.filter((item) => item.status === "FUSION_READY").length;
+  const averageFusedConfidence = items.length > 0
+    ? Math.round(items.reduce((sum, item) => sum + item.fusedConfidence, 0) / items.length)
+    : 0;
+
+  return {
+    schema: "bagastudio-wall-evidence-fusion-engine-v4-3",
+    version: "4.3",
+    generatedAt: new Date().toISOString(),
+    fusionStatus: blocked > 0
+      ? "FUSION_BLOCKED"
+      : review > 0
+        ? "FUSION_REVIEW_REQUIRED"
+        : "FUSION_READY",
+    sourceRecognitionSchema: params.assistedRecognitionV40.schema,
+    sourcePhotoSchema: params.photoEvidenceV41.schema,
+    sourceDrawingSchema: params.drawingEvidenceV42.schema,
+    fusionPolicy: {
+      customerInputRemainsPrimary: true,
+      evidenceCanIncreaseConfidence: true,
+      conflictsForceReview: true,
+      criticalInstallCannotBeAutoApproved: true,
+      photoEnvironmentReadyForRenderArBridge: true,
+    },
+    items,
+    totals: {
+      walls: items.length,
+      ready,
+      review,
+      blocked,
+      conflicts: allConflicts.length,
+      criticalConflicts: allConflicts.filter((conflict) => conflict.severity === "critical").length,
+      averageFusedConfidence,
+    },
+    requiredActions: [
+      ...(blocked > 0 ? ["Risolvere conflitti critici prima di approvare parete/installazione."] : []),
+      ...(review > 0 ? ["Revisionare profili parete con confidence bassa/media o evidenze mancanti."] : []),
+      "Mantenere la descrizione cliente come fonte primaria e usare foto/DWG come conferma o apertura review.",
+      "Collegare il risultato V4.3 ai prossimi step di classificazione automatica e render/AR da foto ambiente.",
+    ],
+    exportTargets: [
+      "JSON Evidence Fusion Engine V4.3",
+      "Technical Wall Report aggiornato con confidence fusa",
+      "Bridge verso Automatic Wall Classification V4.4",
+      "Bridge verso Photo Environment Intelligence / Render / AR",
+    ],
+    nextActions: [
+      "V4.4 Automatic Wall Classification: classificazione assistita parete con review obbligatoria.",
+      "V4.5 Photo Environment Intelligence Bridge: usare foto locale anche per render e AR contestualizzati.",
+      "V4.6 Technical Evidence Approval: approvazione evidenze prima del PDF finale.",
+    ],
+  };
+}
+
+const wallEvidenceFusionV43Report = useMemo(() => {
+  return buildWallEvidenceFusionV43Report({
+    assistedRecognitionV40: wallAssistedRecognitionV40Report,
+    photoEvidenceV41: wallPhotoEvidenceV41Report,
+    drawingEvidenceV42: wallDwgDxfEvidenceV42Report,
+    technicalApprovalV39: technicalApprovalWorkflowV39Report,
+  });
+}, [wallAssistedRecognitionV40Report, wallPhotoEvidenceV41Report, wallDwgDxfEvidenceV42Report, technicalApprovalWorkflowV39Report]);
+
+function downloadWallEvidenceFusionV43Report() {
+  downloadJsonFile(`bagastudio-wall-evidence-fusion-engine-v4-3-${Date.now()}.json`, wallEvidenceFusionV43Report);
+}
+
+
+type AutomaticWallClassificationV44Status = "CLASSIFICATION_READY" | "CLASSIFICATION_REVIEW_REQUIRED" | "CLASSIFICATION_BLOCKED";
+type AutomaticWallClassificationV44CandidateSource = "customer" | "photo" | "dwg_dxf" | "fusion" | "technical_rule";
+
+type AutomaticWallClassificationV44Candidate = {
+  wallType: WallIntelligenceV30WallType;
+  source: AutomaticWallClassificationV44CandidateSource;
+  confidence: number;
+  reason: string;
+};
+
+type AutomaticWallClassificationV44Item = {
+  wallId: string;
+  wallLabel: string;
+  declaredWallType: WallIntelligenceV30WallType;
+  classifiedWallType: WallIntelligenceV30WallType;
+  finalConfidence: number;
+  status: AutomaticWallClassificationV44Status;
+  reviewRequired: boolean;
+  customerInputRemainsPrimary: boolean;
+  candidates: AutomaticWallClassificationV44Candidate[];
+  conflicts: WallEvidenceFusionV43Conflict[];
+  classificationNotes: string[];
+  requiredAction: string;
+};
+
+type AutomaticWallClassificationV44Report = {
+  schema: "bagastudio-automatic-wall-classification-v4-4";
+  version: "4.4";
+  generatedAt: string;
+  classificationStatus: AutomaticWallClassificationV44Status;
+  policy: {
+    customerInputRemainsPrimary: boolean;
+    automaticClassificationIsAssistive: boolean;
+    conflictsForceReview: boolean;
+    criticalFusionBlocksAutoClassification: boolean;
+    photoDwgCanSuggestButNotOverwrite: boolean;
+  };
+  items: AutomaticWallClassificationV44Item[];
+  totals: {
+    walls: number;
+    ready: number;
+    review: number;
+    blocked: number;
+    changedSuggestions: number;
+    averageConfidence: number;
+  };
+  requiredActions: string[];
+  exportTargets: string[];
+  nextActions: string[];
+};
+
+function normalizeAutomaticWallClassificationV44Score(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function scoreAutomaticWallCandidateV44(params: {
+  declaredWallType: WallIntelligenceV30WallType;
+  candidateWallType: WallIntelligenceV30WallType;
+  source: AutomaticWallClassificationV44CandidateSource;
+  baseConfidence: number;
+}) {
+  const sameTypeBonus = params.declaredWallType === params.candidateWallType ? 8 : -18;
+  const sourceWeight =
+    params.source === "customer" ? 1 :
+    params.source === "dwg_dxf" ? 0.92 :
+    params.source === "photo" ? 0.82 :
+    params.source === "fusion" ? 0.96 :
+    0.74;
+
+  return normalizeAutomaticWallClassificationV44Score(params.baseConfidence * sourceWeight + sameTypeBonus);
+}
+
+function inferAutomaticWallTypeFromEvidenceV44(params: {
+  fusionItem: WallEvidenceFusionV43Item;
+  photoItem?: WallPhotoEvidenceV41Report["items"][number] | null;
+  drawingItem?: WallDwgDxfEvidenceV42Report["items"][number] | null;
+}): AutomaticWallClassificationV44Candidate[] {
+  const candidates: AutomaticWallClassificationV44Candidate[] = [];
+  const declaredWallType = params.fusionItem.declaredWallType;
+
+  candidates.push({
+    wallType: declaredWallType,
+    source: "customer",
+    confidence: scoreAutomaticWallCandidateV44({
+      declaredWallType,
+      candidateWallType: declaredWallType,
+      source: "customer",
+      baseConfidence: params.fusionItem.sourceScores.find((source) => source.source === "customer")?.score || params.fusionItem.fusedConfidence,
+    }),
+    reason: "Tipo parete dichiarato dal cliente/utente: resta la fonte primaria del workflow V4.4.",
+  });
+
+  if (params.photoItem) {
+    const photoCandidateConfidence = params.photoItem.status === "PHOTO_READY" ? 74 : params.photoItem.status === "PHOTO_REVIEW" ? 52 : 28;
+    candidates.push({
+      wallType: declaredWallType,
+      source: "photo",
+      confidence: scoreAutomaticWallCandidateV44({
+        declaredWallType,
+        candidateWallType: declaredWallType,
+        source: "photo",
+        baseConfidence: photoCandidateConfidence,
+      }),
+      reason: "Foto collegata: in V4.4 conferma o apre review, senza sovrascrivere automaticamente la descrizione cliente.",
+    });
+  }
+
+  if (params.drawingItem) {
+    const drawingCandidateConfidence = params.drawingItem.status === "DWG_READY" ? 82 : params.drawingItem.status === "DWG_REVIEW" ? 58 : 24;
+    candidates.push({
+      wallType: declaredWallType,
+      source: "dwg_dxf",
+      confidence: scoreAutomaticWallCandidateV44({
+        declaredWallType,
+        candidateWallType: declaredWallType,
+        source: "dwg_dxf",
+        baseConfidence: drawingCandidateConfidence,
+      }),
+      reason: "DWG/DXF/PDF collegato: conferma quote/layer/geometria e aumenta la confidenza se coerente.",
+    });
+  }
+
+  candidates.push({
+    wallType: declaredWallType,
+    source: "fusion",
+    confidence: scoreAutomaticWallCandidateV44({
+      declaredWallType,
+      candidateWallType: declaredWallType,
+      source: "fusion",
+      baseConfidence: params.fusionItem.fusedConfidence,
+    }),
+    reason: "Evidence Fusion V4.3 combina cliente, foto, DWG/DXF e workflow tecnico.",
+  });
+
+  if (declaredWallType === "unknown") {
+    candidates.push({
+      wallType: "masonry",
+      source: "technical_rule",
+      confidence: 32,
+      reason: "Parete sconosciuta: suggerimento tecnico debole, da confermare con foto/DWG o sopralluogo.",
+    });
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+function resolveAutomaticWallClassificationV44Status(params: {
+  fusionStatus: WallEvidenceFusionV43Status;
+  finalConfidence: number;
+  conflicts: WallEvidenceFusionV43Conflict[];
+  declaredWallType: WallIntelligenceV30WallType;
+}): AutomaticWallClassificationV44Status {
+  if (params.fusionStatus === "FUSION_BLOCKED") return "CLASSIFICATION_BLOCKED";
+  if (params.conflicts.some((conflict) => conflict.severity === "critical")) return "CLASSIFICATION_BLOCKED";
+  if (params.declaredWallType === "unknown") return "CLASSIFICATION_REVIEW_REQUIRED";
+  if (params.conflicts.length > 0) return "CLASSIFICATION_REVIEW_REQUIRED";
+  if (params.finalConfidence < 72) return "CLASSIFICATION_REVIEW_REQUIRED";
+  if (params.fusionStatus === "FUSION_REVIEW_REQUIRED") return "CLASSIFICATION_REVIEW_REQUIRED";
+  return "CLASSIFICATION_READY";
+}
+
+function buildAutomaticWallClassificationV44Report(params: {
+  fusionV43: WallEvidenceFusionV43Report;
+  photoEvidenceV41: WallPhotoEvidenceV41Report;
+  drawingEvidenceV42: WallDwgDxfEvidenceV42Report;
+}): AutomaticWallClassificationV44Report {
+  const photoByWall = new Map(params.photoEvidenceV41.items.map((item) => [item.linkedWallId, item]));
+  const drawingByWall = new Map(params.drawingEvidenceV42.items.map((item) => [item.linkedWallId, item]));
+
+  const items: AutomaticWallClassificationV44Item[] = params.fusionV43.items.map((fusionItem) => {
+    const candidates = inferAutomaticWallTypeFromEvidenceV44({
+      fusionItem,
+      photoItem: photoByWall.get(fusionItem.wallId) || null,
+      drawingItem: drawingByWall.get(fusionItem.wallId) || null,
+    });
+
+    const bestCandidate = candidates[0];
+    const classifiedWallType = bestCandidate?.wallType || fusionItem.declaredWallType;
+    const changedSuggestion = classifiedWallType !== fusionItem.declaredWallType;
+    const conflictPenalty = fusionItem.conflicts.some((conflict) => conflict.severity === "critical") ? 22 : fusionItem.conflicts.length > 0 ? 9 : 0;
+    const finalConfidence = normalizeAutomaticWallClassificationV44Score((bestCandidate?.confidence || fusionItem.fusedConfidence) - conflictPenalty);
+    const status = resolveAutomaticWallClassificationV44Status({
+      fusionStatus: fusionItem.status,
+      finalConfidence,
+      conflicts: fusionItem.conflicts,
+      declaredWallType: fusionItem.declaredWallType,
+    });
+
+    const classificationNotes = [
+      "Classificazione automatica assistita: non sovrascrive il profilo cliente senza review.",
+      changedSuggestion
+        ? "Il motore suggerisce un tipo parete diverso: serve conferma tecnica prima di applicarlo."
+        : "Il motore conferma il tipo parete dichiarato come ipotesi principale.",
+      finalConfidence < 72
+        ? "Confidence sotto soglia: richiedere evidenza migliore, sopralluogo o conferma installatore."
+        : "Confidence sufficiente per alimentare i prossimi report tecnici, salvo blocchi installazione.",
+    ];
+
+    return {
+      wallId: fusionItem.wallId,
+      wallLabel: fusionItem.wallLabel,
+      declaredWallType: fusionItem.declaredWallType,
+      classifiedWallType,
+      finalConfidence,
+      status,
+      reviewRequired: status !== "CLASSIFICATION_READY" || changedSuggestion,
+      customerInputRemainsPrimary: true,
+      candidates,
+      conflicts: fusionItem.conflicts,
+      classificationNotes,
+      requiredAction: status === "CLASSIFICATION_READY"
+        ? "Classificazione pronta: usare per Technical Wall Report e prossimi step foto/render/AR."
+        : status === "CLASSIFICATION_BLOCKED"
+          ? "Classificazione bloccata: risolvere conflitti critici o completare sopralluogo."
+          : "Classificazione da revisionare: confermare parete con cliente, foto, DWG/DXF o tecnico.",
+    };
+  });
+
+  const blocked = items.filter((item) => item.status === "CLASSIFICATION_BLOCKED").length;
+  const review = items.filter((item) => item.status === "CLASSIFICATION_REVIEW_REQUIRED").length;
+  const ready = items.filter((item) => item.status === "CLASSIFICATION_READY").length;
+  const changedSuggestions = items.filter((item) => item.classifiedWallType !== item.declaredWallType).length;
+  const averageConfidence = items.length > 0
+    ? Math.round(items.reduce((sum, item) => sum + item.finalConfidence, 0) / items.length)
+    : 0;
+
+  return {
+    schema: "bagastudio-automatic-wall-classification-v4-4",
+    version: "4.4",
+    generatedAt: new Date().toISOString(),
+    classificationStatus: blocked > 0
+      ? "CLASSIFICATION_BLOCKED"
+      : review > 0
+        ? "CLASSIFICATION_REVIEW_REQUIRED"
+        : "CLASSIFICATION_READY",
+    policy: {
+      customerInputRemainsPrimary: true,
+      automaticClassificationIsAssistive: true,
+      conflictsForceReview: true,
+      criticalFusionBlocksAutoClassification: true,
+      photoDwgCanSuggestButNotOverwrite: true,
+    },
+    items,
+    totals: {
+      walls: items.length,
+      ready,
+      review,
+      blocked,
+      changedSuggestions,
+      averageConfidence,
+    },
+    requiredActions: [
+      ...(blocked > 0 ? ["Risolvere classificazioni bloccate prima di generare approvazione tecnica finale."] : []),
+      ...(review > 0 ? ["Revisionare pareti con tipo sconosciuto, confidence bassa o suggerimento diverso dal dichiarato."] : []),
+      "Non sovrascrivere automaticamente la descrizione cliente: applicare suggerimenti solo dopo conferma tecnica.",
+      "Usare classificazione V4.4 come base per Photo Environment Intelligence e render/AR contestualizzati.",
+    ],
+    exportTargets: [
+      "JSON Automatic Wall Classification V4.4",
+      "Technical Wall Report con classificazione assistita",
+      "Bridge verso Photo Environment Intelligence / Render / AR",
+      "Bridge verso Technical Evidence Approval V4.6",
+    ],
+    nextActions: [
+      "V4.5 Photo Environment Intelligence Bridge: utilizzare foto locale per render e AR del mobile configurato.",
+      "V4.6 Technical Evidence Approval: approvazione evidenze e classificazione prima del PDF finale.",
+      "V4.7 Automatic Wall Report Update: aggiornare prospetti e schede con confidence/classificazione finale.",
+    ],
+  };
+}
+
+const automaticWallClassificationV44Report = useMemo(() => {
+  return buildAutomaticWallClassificationV44Report({
+    fusionV43: wallEvidenceFusionV43Report,
+    photoEvidenceV41: wallPhotoEvidenceV41Report,
+    drawingEvidenceV42: wallDwgDxfEvidenceV42Report,
+  });
+}, [wallEvidenceFusionV43Report, wallPhotoEvidenceV41Report, wallDwgDxfEvidenceV42Report]);
+
+function downloadAutomaticWallClassificationV44Report() {
+  downloadJsonFile(`bagastudio-automatic-wall-classification-v4-4-${Date.now()}.json`, automaticWallClassificationV44Report);
+}
+
+
+type AiTechnicalSuggestionV45Severity = "info" | "warning" | "critical";
+type AiTechnicalSuggestionV45Category =
+  | "wall"
+  | "evidence"
+  | "fixing"
+  | "installation"
+  | "render_ar"
+  | "approval";
+
+type AiTechnicalSuggestionV45Item = {
+  id: string;
+  category: AiTechnicalSuggestionV45Category;
+  severity: AiTechnicalSuggestionV45Severity;
+  wallId: string;
+  wallLabel: string;
+  title: string;
+  reason: string;
+  suggestedAction: string;
+  blocksApproval: boolean;
+  exportTargets: string[];
+};
+
+type AiTechnicalSuggestionsV45Report = {
+  schema: "bagastudio-ai-technical-suggestions-v4-5";
+  version: "4.5";
+  generatedAt: string;
+  suggestionStatus: "SUGGESTIONS_READY" | "SUGGESTIONS_REVIEW_REQUIRED" | "SUGGESTIONS_BLOCKED";
+  policy: {
+    assistiveOnly: boolean;
+    customerInputRemainsPrimary: boolean;
+    noAutomaticApproval: boolean;
+    photoEnvironmentBridgeEnabled: boolean;
+  };
+  totals: {
+    suggestions: number;
+    critical: number;
+    warning: number;
+    info: number;
+    blockedWalls: number;
+    renderArReadyWalls: number;
+  };
+  suggestions: AiTechnicalSuggestionV45Item[];
+  executiveSummary: string[];
+  nextActions: string[];
+};
+
+function pushAiTechnicalSuggestionV45(
+  suggestions: AiTechnicalSuggestionV45Item[],
+  item: Omit<AiTechnicalSuggestionV45Item, "id">
+) {
+  const id = `ai-v4-5-${item.wallId}-${item.category}-${suggestions.length + 1}`;
+  suggestions.push({ id, ...item });
+}
+
+function resolveAiTechnicalSuggestionsV45Status(suggestions: AiTechnicalSuggestionV45Item[]) {
+  if (suggestions.some((item) => item.blocksApproval || item.severity === "critical")) return "SUGGESTIONS_BLOCKED" as const;
+  if (suggestions.some((item) => item.severity === "warning")) return "SUGGESTIONS_REVIEW_REQUIRED" as const;
+  return "SUGGESTIONS_READY" as const;
+}
+
+function buildAiTechnicalSuggestionsV45Report(params: {
+  classificationV44: AutomaticWallClassificationV44Report;
+  fusionV43: WallEvidenceFusionV43Report;
+  photoEvidenceV41: WallPhotoEvidenceV41Report;
+  drawingEvidenceV42: WallDwgDxfEvidenceV42Report;
+  technicalApprovalV39: TechnicalApprovalWorkflowV39Report;
+  installerChecklistV38: InstallerChecklistV38Report;
+}): AiTechnicalSuggestionsV45Report {
+  const suggestions: AiTechnicalSuggestionV45Item[] = [];
+  const fusionByWall = new Map(params.fusionV43.items.map((item) => [item.wallId, item]));
+  const photoByWall = new Map(params.photoEvidenceV41.items.map((item) => [item.linkedWallId, item]));
+  const drawingByWall = new Map(params.drawingEvidenceV42.items.map((item) => [item.linkedWallId, item]));
+
+  params.classificationV44.items.forEach((classification) => {
+    const fusion = fusionByWall.get(classification.wallId) || null;
+    const photo = photoByWall.get(classification.wallId) || null;
+    const drawing = drawingByWall.get(classification.wallId) || null;
+    const wallExportTargets = [
+      "Technical Wall Report",
+      "Installer Checklist",
+      "Technical Approval",
+      "Photo Environment Intelligence",
+    ];
+
+    if (classification.status === "CLASSIFICATION_BLOCKED") {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "wall",
+        severity: "critical",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Classificazione parete bloccata",
+        reason: "La classificazione V4.4 contiene conflitti critici o dati non utilizzabili per approvazione tecnica.",
+        suggestedAction: "Richiedere sopralluogo o evidenza tecnica più affidabile prima di procedere con installazione, PDF finale o AR commerciale.",
+        blocksApproval: true,
+        exportTargets: wallExportTargets,
+      });
+    }
+
+    if (classification.reviewRequired && classification.status !== "CLASSIFICATION_BLOCKED") {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "wall",
+        severity: "warning",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Conferma tecnica parete richiesta",
+        reason: "Il motore V4.4 richiede review perché confidence, conflitti o suggerimenti assistiti non sono ancora definitivi.",
+        suggestedAction: "Far confermare la parete da cliente/installatore e salvare la nota prima dell'approvazione tecnica.",
+        blocksApproval: false,
+        exportTargets: ["Technical Approval Workflow", "Technical Wall Report"],
+      });
+    }
+
+    if (classification.finalConfidence < 70) {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "evidence",
+        severity: classification.finalConfidence < 45 ? "critical" : "warning",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Confidence evidenze insufficiente",
+        reason: `Confidence classificazione ${classification.finalConfidence}% sotto soglia tecnica consigliata.`,
+        suggestedAction: "Richiedere almeno una foto frontale nitida, una foto laterale/angolo e, se possibile, pianta PDF/DXF quotata.",
+        blocksApproval: classification.finalConfidence < 45,
+        exportTargets: ["Photo Evidence Intake V4.1", "DWG/DXF Evidence Intake V4.2"],
+      });
+    }
+
+    if (!photo || photo.status === "PHOTO_MISSING" || photo.status === "PHOTO_BLOCKED") {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "render_ar",
+        severity: "info",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Foto ambiente consigliata per render e AR",
+        reason: "La parete non ha ancora un set foto sufficiente per Photo Environment Intelligence.",
+        suggestedAction: "Richiedere foto locale pulita e ben illuminata per inserire il mobile configurato nel locale reale del cliente.",
+        blocksApproval: false,
+        exportTargets: ["Photo Environment Intelligence", "Render contestualizzato", "AR mobile"],
+      });
+    }
+
+    if (!drawing || drawing.status === "DWG_MISSING" || drawing.status === "DWG_BLOCKED") {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "evidence",
+        severity: "info",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Pianta/DWG consigliata per quote tecniche",
+        reason: "DWG/DXF/PDF non disponibile o non abbastanza leggibile per confermare aperture, ingombri e punti tecnici.",
+        suggestedAction: "Richiedere pianta quotata o file DXF/DWG quando il progetto prevede installazione complessa o più mobili sulla stessa parete.",
+        blocksApproval: false,
+        exportTargets: ["DWG/DXF Evidence Intake V4.2", "Technical Wall Elevation Sheets"],
+      });
+    }
+
+    if (classification.declaredWallType === "drywall" || classification.classifiedWallType === "drywall") {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "fixing",
+        severity: "warning",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Parete cartongesso: fissaggio da verificare",
+        reason: "Cartongesso richiede montanti, tasselli idonei o barra di distribuzione carico per specchi, mensole e pensili.",
+        suggestedAction: "Segnalare in scheda tecnica: individuare montanti, usare fissaggi idonei e vietare installazione pesante senza verifica.",
+        blocksApproval: false,
+        exportTargets: ["Fixing Recommendation Engine V3.4", "Installer Checklist V3.8"],
+      });
+    }
+
+    if (fusion?.conflicts?.length) {
+      pushAiTechnicalSuggestionV45(suggestions, {
+        category: "evidence",
+        severity: fusion.conflicts.some((conflict) => conflict.severity === "critical") ? "critical" : "warning",
+        wallId: classification.wallId,
+        wallLabel: classification.wallLabel,
+        title: "Conflitto tra evidenze rilevato",
+        reason: "Evidence Fusion V4.3 ha rilevato incoerenze tra descrizione cliente, foto, DWG/DXF o approvazione tecnica.",
+        suggestedAction: "Aprire review tecnica e risolvere il conflitto prima di generare PDF finale o approvazione installazione.",
+        blocksApproval: fusion.conflicts.some((conflict) => conflict.severity === "critical"),
+        exportTargets: ["Evidence Fusion V4.3", "Technical Approval Workflow V3.9"],
+      });
+    }
+  });
+
+  if (params.technicalApprovalV39.approvalStatus === "rejected" || params.technicalApprovalV39.installAllowed === false) {
+    pushAiTechnicalSuggestionV45(suggestions, {
+      category: "approval",
+      severity: "critical",
+      wallId: "global-approval",
+      wallLabel: "Approvazione tecnica",
+      title: "Installazione non approvata",
+      reason: "Il Technical Approval Workflow V3.9 non consente l'installazione nello stato attuale.",
+      suggestedAction: "Bloccare preventivo/installazione finale finché non vengono risolti i punti tecnici e completato eventuale sopralluogo.",
+      blocksApproval: true,
+      exportTargets: ["Technical Approval Workflow", "Preventivo installazione", "PDF finale"],
+    });
+  }
+
+  if (params.installerChecklistV38.installChecklistStatus === "INSTALL_BLOCKED") {
+    pushAiTechnicalSuggestionV45(suggestions, {
+      category: "installation",
+      severity: "critical",
+      wallId: "global-checklist",
+      wallLabel: "Checklist installatore",
+      title: "Checklist installatore bloccata",
+      reason: "La checklist V3.8 contiene passaggi bloccanti non risolti.",
+      suggestedAction: "Completare checklist, evidenze e note installatore prima di generare scheda approvata.",
+      blocksApproval: true,
+      exportTargets: ["Installer Checklist", "Technical Wall Report"],
+    });
+  }
+
+  const critical = suggestions.filter((item) => item.severity === "critical").length;
+  const warning = suggestions.filter((item) => item.severity === "warning").length;
+  const info = suggestions.filter((item) => item.severity === "info").length;
+  const blockedWalls = new Set(suggestions.filter((item) => item.blocksApproval).map((item) => item.wallId)).size;
+  const renderArReadyWalls = params.classificationV44.items.filter((item) => {
+    const photo = photoByWall.get(item.wallId);
+    return item.status === "CLASSIFICATION_READY" && Boolean(photo && photo.status === "PHOTO_READY");
+  }).length;
+
+  return {
+    schema: "bagastudio-ai-technical-suggestions-v4-5",
+    version: "4.5",
+    generatedAt: new Date().toISOString(),
+    suggestionStatus: resolveAiTechnicalSuggestionsV45Status(suggestions),
+    policy: {
+      assistiveOnly: true,
+      customerInputRemainsPrimary: true,
+      noAutomaticApproval: true,
+      photoEnvironmentBridgeEnabled: true,
+    },
+    totals: {
+      suggestions: suggestions.length,
+      critical,
+      warning,
+      info,
+      blockedWalls,
+      renderArReadyWalls,
+    },
+    suggestions,
+    executiveSummary: [
+      critical > 0 ? "Sono presenti suggerimenti critici: non approvare automaticamente l'installazione." : "Nessun suggerimento critico automatico rilevato.",
+      warning > 0 ? "Sono presenti warning tecnici da revisionare prima del PDF finale." : "Nessun warning tecnico rilevante rilevato.",
+      renderArReadyWalls > 0 ? "Almeno una parete è pronta per bridge render/AR con foto ambiente." : "Per render/AR servono foto ambiente migliori o classificazione pronta.",
+    ],
+    nextActions: [
+      "V4.6 Technical Evidence Approval: trasformare suggerimenti AI in approvazioni/review tracciate.",
+      "V4.7 Photo Environment Bridge: collegare foto locale a render contestualizzato e AR.",
+      "V4.8 Final Technical Package: unire PDF, DXF, checklist, evidenze e approvazione.",
+    ],
+  };
+}
+
+const aiTechnicalSuggestionsV45Report = useMemo(() => {
+  return buildAiTechnicalSuggestionsV45Report({
+    classificationV44: automaticWallClassificationV44Report,
+    fusionV43: wallEvidenceFusionV43Report,
+    photoEvidenceV41: wallPhotoEvidenceV41Report,
+    drawingEvidenceV42: wallDwgDxfEvidenceV42Report,
+    technicalApprovalV39: technicalApprovalWorkflowV39Report,
+    installerChecklistV38: installerChecklistEngineV38Report,
+  });
+}, [
+  automaticWallClassificationV44Report,
+  wallEvidenceFusionV43Report,
+  wallPhotoEvidenceV41Report,
+  wallDwgDxfEvidenceV42Report,
+  technicalApprovalWorkflowV39Report,
+  installerChecklistEngineV38Report,
+]);
+
+function downloadAiTechnicalSuggestionsV45Report() {
+  downloadJsonFile(`bagastudio-ai-technical-suggestions-v4-5-${Date.now()}.json`, aiTechnicalSuggestionsV45Report);
+}
+
+
+type TechnicalEvidenceApprovalV46Status = "EVIDENCE_APPROVED" | "EVIDENCE_REVIEW_REQUIRED" | "EVIDENCE_BLOCKED";
+
+type TechnicalEvidenceApprovalV46Item = {
+  id: string;
+  sourceSuggestionId: string;
+  wallId: string;
+  wallLabel: string;
+  severity: "info" | "warning" | "critical";
+  decision: "approved" | "review" | "blocked";
+  approvalRequired: boolean;
+  reason: string;
+  requiredAction: string;
+  exportTargets: string[];
+};
+
+type TechnicalEvidenceApprovalV46Report = {
+  schema: "bagastudio-technical-evidence-approval-v4-6";
+  version: "4.6";
+  generatedAt: string;
+  approvalStatus: TechnicalEvidenceApprovalV46Status;
+  totals: {
+    items: number;
+    approved: number;
+    review: number;
+    blocked: number;
+    approvalRequired: number;
+  };
+  policy: {
+    aiSuggestionsAreNotFinalApproval: boolean;
+    customerInputRemainsPrimary: boolean;
+    installerOrTechnicianMustConfirmCriticalItems: boolean;
+    photoDwgCanIncreaseConfidenceButNotOverrideApproval: boolean;
+  };
+  items: TechnicalEvidenceApprovalV46Item[];
+  approvalGate: {
+    canGenerateFinalPdf: boolean;
+    canApproveInstallation: boolean;
+    canProceedToRenderAr: boolean;
+    blockerReasons: string[];
+  };
+  nextActions: string[];
+};
+
+function resolveTechnicalEvidenceApprovalV46Status(items: TechnicalEvidenceApprovalV46Item[]): TechnicalEvidenceApprovalV46Status {
+  if (items.some((item) => item.decision === "blocked")) return "EVIDENCE_BLOCKED";
+  if (items.some((item) => item.decision === "review")) return "EVIDENCE_REVIEW_REQUIRED";
+  return "EVIDENCE_APPROVED";
+}
+
+function buildTechnicalEvidenceApprovalV46Report(
+  aiSuggestionsReport: typeof aiTechnicalSuggestionsV45Report
+): TechnicalEvidenceApprovalV46Report {
+  const items: TechnicalEvidenceApprovalV46Item[] = aiSuggestionsReport.suggestions.map((suggestion) => {
+    const decision = suggestion.blocksApproval || suggestion.severity === "critical"
+      ? "blocked"
+      : suggestion.severity === "warning"
+        ? "review"
+        : "approved";
+
+    return {
+      id: `technical-evidence-v4-6-${suggestion.id}`,
+      sourceSuggestionId: suggestion.id,
+      wallId: suggestion.wallId,
+      wallLabel: suggestion.wallLabel,
+      severity: suggestion.severity,
+      decision,
+      approvalRequired: decision !== "approved",
+      reason: suggestion.reason,
+      requiredAction: suggestion.suggestedAction,
+      exportTargets: suggestion.exportTargets,
+    };
+  });
+
+  const approvalStatus = resolveTechnicalEvidenceApprovalV46Status(items);
+  const blockerReasons = items
+    .filter((item) => item.decision === "blocked")
+    .map((item) => `${item.wallLabel}: ${item.requiredAction}`);
+
+  return {
+    schema: "bagastudio-technical-evidence-approval-v4-6",
+    version: "4.6",
+    generatedAt: new Date().toISOString(),
+    approvalStatus,
+    totals: {
+      items: items.length,
+      approved: items.filter((item) => item.decision === "approved").length,
+      review: items.filter((item) => item.decision === "review").length,
+      blocked: items.filter((item) => item.decision === "blocked").length,
+      approvalRequired: items.filter((item) => item.approvalRequired).length,
+    },
+    policy: {
+      aiSuggestionsAreNotFinalApproval: true,
+      customerInputRemainsPrimary: true,
+      installerOrTechnicianMustConfirmCriticalItems: true,
+      photoDwgCanIncreaseConfidenceButNotOverrideApproval: true,
+    },
+    items,
+    approvalGate: {
+      canGenerateFinalPdf: approvalStatus !== "EVIDENCE_BLOCKED",
+      canApproveInstallation: approvalStatus === "EVIDENCE_APPROVED",
+      canProceedToRenderAr: aiSuggestionsReport.totals.renderArReadyWalls > 0 && approvalStatus !== "EVIDENCE_BLOCKED",
+      blockerReasons,
+    },
+    nextActions: [
+      "V4.7 Photo Environment Bridge: preparare foto locale per render contestualizzato e AR.",
+      "V4.8 Final Technical Package: unire PDF, DXF, checklist, evidenze e approvazione.",
+      "V5.0 Customer Photo Render Workflow: portare il mobile configurato nella foto del cliente.",
+    ],
+  };
+}
+
+const technicalEvidenceApprovalV46Report = useMemo(() => {
+  return buildTechnicalEvidenceApprovalV46Report(aiTechnicalSuggestionsV45Report);
+}, [aiTechnicalSuggestionsV45Report]);
+
+function downloadTechnicalEvidenceApprovalV46Report() {
+  downloadJsonFile(`bagastudio-technical-evidence-approval-v4-6-${Date.now()}.json`, technicalEvidenceApprovalV46Report);
+}
+
+
+
+const evidenceToRenderArBridgeV47Report = useMemo(() => {
+  return buildEvidenceToRenderArBridgeV47Report({
+    photoEvidenceReport: wallPhotoEvidenceV41Report,
+    fusionReport: wallEvidenceFusionV43Report,
+    approvalReport: technicalEvidenceApprovalV46Report,
+  });
+}, [wallPhotoEvidenceV41Report, wallEvidenceFusionV43Report, technicalEvidenceApprovalV46Report]);
+
+function downloadEvidenceToRenderArBridgeV47Report() {
+  downloadJsonFile(`bagastudio-evidence-to-render-ar-bridge-v4-7-${Date.now()}.json`, evidenceToRenderArBridgeV47Report);
+}
+
 const buildAdminBackup = (includeHeavyModelData = true) => ({
   schema: "bagastudio-admin-backup",
   version: 1,
@@ -18424,6 +20029,979 @@ function downloadImporterDiagnosticJson() {
               </div>
             </div>
           </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061922]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V4.0</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Photo / DWG Assisted Recognition Framework</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Prepara il passaggio alle prove reali: descrizione cliente come fonte primaria, foto/DWG/DXF come conferma, correzione o review tecnica.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallAssistedRecognitionV40Report.recognitionStatus === "ASSISTED_RECOGNITION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallAssistedRecognitionV40Report.recognitionStatus === "ASSISTED_RECOGNITION_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallAssistedRecognitionV40Report.recognitionStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallAssistedRecognitionV40Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Recognition V4.0
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Evidenze</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallAssistedRecognitionV40Report.totals.evidences}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Cliente</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{wallAssistedRecognitionV40Report.totals.customerInputs}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Foto</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{wallAssistedRecognitionV40Report.totals.photoSlots}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-400/15 bg-indigo-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-indigo-200">DWG/DXF</p>
+              <p className="mt-1 text-2xl font-black text-indigo-100">{wallAssistedRecognitionV40Report.totals.dwgDxfSlots}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Accepted</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallAssistedRecognitionV40Report.totals.accepted}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallAssistedRecognitionV40Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Conflitti</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallAssistedRecognitionV40Report.totals.conflicts}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Evidenze parete V4.0</p>
+              <div className="mt-3 grid gap-3">
+                {wallAssistedRecognitionV40Report.evidences.slice(0, 8).map((evidence) => (
+                  <div key={evidence.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{evidence.label}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Fonte {evidence.source} · dichiarato {evidence.declaredWallType} · rilevato {evidence.detectedWallType || "non disponibile"}
+                        </p>
+                      </div>
+                      <span className={
+                        evidence.status === "accepted"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : evidence.status === "conflict"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : evidence.status === "review"
+                              ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                              : "rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100"
+                      }>
+                        {evidence.status}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-300">Azione: {evidence.requiredAction}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Fusion confidence</p>
+                <div className="mt-3 space-y-3 text-sm text-slate-300">
+                  {wallAssistedRecognitionV40Report.confidenceFusion.map((item) => (
+                    <div key={item.wallId} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-white">{item.wallLabel}</span>
+                        <span className="text-xs font-black uppercase tracking-[0.12em] text-cyan-100">{item.fusedScore}% · {item.fusedLevel}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">Cliente {item.customerScore}% · Evidenze {item.evidenceScore}% · {item.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallAssistedRecognitionV40Report.requiredActions.map((item, index) => (
+                    <li key={`recognition-v4-0-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallAssistedRecognitionV40Report.nextActions.map((item, index) => (
+                    <li key={`recognition-v4-0-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-sky-400/15 bg-[#071827]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">Layout / Room Intelligence V4.1</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Photo Evidence Intake</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Registra le foto parete come evidenze guidate: la descrizione cliente resta primaria, mentre la foto conferma, integra o apre una review tecnica.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallPhotoEvidenceV41Report.intakeStatus === "PHOTO_INTAKE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallPhotoEvidenceV41Report.intakeStatus === "PHOTO_INTAKE_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallPhotoEvidenceV41Report.intakeStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallPhotoEvidenceV41Report}
+                className="rounded-2xl border border-sky-400/25 bg-sky-400/10 px-5 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-400/20"
+              >
+                Esporta Photo Evidence V4.1
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Slot foto</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallPhotoEvidenceV41Report.totals.photoSlots}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallPhotoEvidenceV41Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallPhotoEvidenceV41Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallPhotoEvidenceV41Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Boost potenziale</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">+{wallPhotoEvidenceV41Report.totals.potentialConfidenceBoost}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Checklist foto parete</p>
+              <div className="mt-3 grid gap-3">
+                {wallPhotoEvidenceV41Report.items.slice(0, 6).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.wallLabel}</p>
+                        <p className="mt-1 text-xs text-slate-400">Tipo atteso {item.expectedWallType} · qualità {item.quality} · impatto confidence +{item.confidenceImpact}</p>
+                      </div>
+                      <span className={
+                        item.status === "PHOTO_READY"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "PHOTO_BLOCKED"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : item.status === "PHOTO_REVIEW"
+                              ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                              : "rounded-full bg-sky-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-xs text-slate-300">
+                      {item.requiredShots.slice(0, 3).map((shot, index) => (
+                        <li key={`${item.id}-shot-${index}`}>• {shot}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Policy foto</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Descrizione cliente primaria: {wallPhotoEvidenceV41Report.photoPolicy.customerInputRemainsPrimary ? "sì" : "no"}</li>
+                  <li>• Foto può confermare: {wallPhotoEvidenceV41Report.photoPolicy.photoCanConfirm ? "sì" : "no"}</li>
+                  <li>• Foto può aprire review: {wallPhotoEvidenceV41Report.photoPolicy.photoCanOpenReview ? "sì" : "no"}</li>
+                  <li>• Foto non approva criticità da sola: {wallPhotoEvidenceV41Report.photoPolicy.photoCannotAutoApproveCriticalInstall ? "sì" : "no"}</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallPhotoEvidenceV41Report.requiredActions.map((item, index) => (
+                    <li key={`photo-v4-1-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-sky-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-sky-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallPhotoEvidenceV41Report.nextActions.map((item, index) => (
+                    <li key={`photo-v4-1-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section className="rounded-[28px] border border-indigo-400/15 bg-[#081426]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-200">Layout / Room Intelligence V4.2</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">DWG / DXF Evidence Intake</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Registra elaborati tecnici DWG/DXF/PDF come evidenze di conferma: quote, aperture, layer tecnici e vincoli restano collegati alla descrizione cliente e alle foto V4.1.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallDwgDxfEvidenceV42Report.intakeStatus === "DWG_DXF_INTAKE_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallDwgDxfEvidenceV42Report.intakeStatus === "DWG_DXF_INTAKE_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallDwgDxfEvidenceV42Report.intakeStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallDwgDxfEvidenceV42Report}
+                className="rounded-2xl border border-indigo-400/25 bg-indigo-400/10 px-5 py-3 text-sm font-black text-indigo-100 transition hover:bg-indigo-400/20"
+              >
+                Esporta DWG/DXF Evidence V4.2
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Slot elaborati</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallDwgDxfEvidenceV42Report.totals.drawingSlots}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallDwgDxfEvidenceV42Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallDwgDxfEvidenceV42Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallDwgDxfEvidenceV42Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-400/15 bg-indigo-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-indigo-200">Boost potenziale</p>
+              <p className="mt-1 text-2xl font-black text-indigo-100">+{wallDwgDxfEvidenceV42Report.totals.potentialConfidenceBoost}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Layer e controlli elaborati</p>
+              <div className="mt-3 grid gap-3">
+                {wallDwgDxfEvidenceV42Report.items.slice(0, 6).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.wallLabel}</p>
+                        <p className="mt-1 text-xs text-slate-400">Fonte {item.source.toUpperCase()} · qualità {item.quality} · impatto confidence +{item.confidenceImpact}</p>
+                      </div>
+                      <span className={
+                        item.status === "DWG_READY"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "DWG_BLOCKED"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : item.status === "DWG_REVIEW"
+                              ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                              : "rounded-full bg-indigo-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-indigo-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-xs text-slate-300">
+                      {item.technicalLayers.slice(0, 4).map((layer, index) => (
+                        <li key={`${item.id}-layer-${index}`}>• {layer}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-indigo-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Policy DWG/DXF</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Cliente resta fonte primaria: {wallDwgDxfEvidenceV42Report.drawingPolicy.customerInputRemainsPrimary ? "sì" : "no"}</li>
+                  <li>• DWG/DXF conferma geometrie: {wallDwgDxfEvidenceV42Report.drawingPolicy.dwgDxfCanConfirmGeometry ? "sì" : "no"}</li>
+                  <li>• Può aprire review: {wallDwgDxfEvidenceV42Report.drawingPolicy.dwgDxfCanOpenReview ? "sì" : "no"}</li>
+                  <li>• Cross-check con foto: {wallDwgDxfEvidenceV42Report.drawingPolicy.photoAndDwgCanBeCrossChecked ? "sì" : "no"}</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallDwgDxfEvidenceV42Report.requiredActions.map((item, index) => (
+                    <li key={`dwg-v4-2-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallDwgDxfEvidenceV42Report.nextActions.map((item, index) => (
+                    <li key={`dwg-v4-2-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#14081f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V4.3</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Evidence Fusion Engine</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Fonde descrizione cliente, foto, DWG/DXF e approvazione tecnica. La descrizione cliente resta primaria; le evidenze possono aumentare confidence o aprire review/blocco.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                wallEvidenceFusionV43Report.fusionStatus === "FUSION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : wallEvidenceFusionV43Report.fusionStatus === "FUSION_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {wallEvidenceFusionV43Report.fusionStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadWallEvidenceFusionV43Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Evidence Fusion V4.3
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pareti</p>
+              <p className="mt-1 text-2xl font-black text-white">{wallEvidenceFusionV43Report.totals.walls}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{wallEvidenceFusionV43Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{wallEvidenceFusionV43Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{wallEvidenceFusionV43Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Conflicts</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{wallEvidenceFusionV43Report.totals.conflicts}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Confidence media</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{wallEvidenceFusionV43Report.totals.averageFusedConfidence}%</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Fusione evidenze per parete</p>
+              <div className="mt-3 grid gap-3">
+                {wallEvidenceFusionV43Report.items.slice(0, 6).map((item) => (
+                  <div key={item.wallId} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.wallLabel}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Parete {item.declaredWallType} · confidence fusa {item.fusedConfidence}% · livello {item.confidenceLevel}
+                        </p>
+                      </div>
+                      <span className={
+                        item.status === "FUSION_READY"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "FUSION_BLOCKED"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      {item.sourceScores.map((source) => (
+                        <div key={`${item.wallId}-${source.source}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{source.source.replace(/_/g, " ")}</p>
+                          <p className="mt-1 text-lg font-black text-white">{source.score}%</p>
+                          <p className="text-[10px] text-slate-500">peso {Math.round(source.weight * 100)}%</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {item.conflicts.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs text-yellow-100">
+                        {item.conflicts.map((conflict) => (
+                          <li key={conflict.id}>• {conflict.message}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Policy V4.3</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Cliente fonte primaria: {wallEvidenceFusionV43Report.fusionPolicy.customerInputRemainsPrimary ? "sì" : "no"}</li>
+                  <li>• Evidenze aumentano confidence: {wallEvidenceFusionV43Report.fusionPolicy.evidenceCanIncreaseConfidence ? "sì" : "no"}</li>
+                  <li>• Conflitti forzano review: {wallEvidenceFusionV43Report.fusionPolicy.conflictsForceReview ? "sì" : "no"}</li>
+                  <li>• Bridge render/AR da foto: {wallEvidenceFusionV43Report.fusionPolicy.photoEnvironmentReadyForRenderArBridge ? "sì" : "no"}</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallEvidenceFusionV43Report.requiredActions.map((item, index) => (
+                    <li key={`fusion-v4-3-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-fuchsia-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {wallEvidenceFusionV43Report.nextActions.map((item, index) => (
+                    <li key={`fusion-v4-3-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061825]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V4.4</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Automatic Wall Classification</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Classificazione assistita della parete basata su descrizione cliente, foto, DWG/DXF ed Evidence Fusion V4.3. Il cliente resta fonte primaria: i suggerimenti automatici aprono review, non sovrascrivono da soli.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                automaticWallClassificationV44Report.classificationStatus === "CLASSIFICATION_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : automaticWallClassificationV44Report.classificationStatus === "CLASSIFICATION_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {automaticWallClassificationV44Report.classificationStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadAutomaticWallClassificationV44Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Classification V4.4
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pareti</p>
+              <p className="mt-1 text-2xl font-black text-white">{automaticWallClassificationV44Report.totals.walls}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{automaticWallClassificationV44Report.totals.ready}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{automaticWallClassificationV44Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{automaticWallClassificationV44Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">Suggerimenti diversi</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{automaticWallClassificationV44Report.totals.changedSuggestions}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Confidence media</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{automaticWallClassificationV44Report.totals.averageConfidence}%</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Classificazione assistita per parete</p>
+              <div className="mt-3 grid gap-3">
+                {automaticWallClassificationV44Report.items.slice(0, 6).map((item) => (
+                  <div key={item.wallId} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.wallLabel}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          dichiarata {item.declaredWallType} · classificata {item.classifiedWallType} · confidence {item.finalConfidence}%
+                        </p>
+                      </div>
+                      <span className={
+                        item.status === "CLASSIFICATION_READY"
+                          ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                          : item.status === "CLASSIFICATION_BLOCKED"
+                            ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                            : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                      }>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      {item.candidates.slice(0, 4).map((candidate, index) => (
+                        <div key={`${item.wallId}-${candidate.source}-${index}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{candidate.source.replace(/_/g, " ")}</p>
+                          <p className="mt-1 text-sm font-black text-white">{candidate.wallType}</p>
+                          <p className="text-[10px] text-slate-500">confidence {candidate.confidence}%</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <ul className="mt-3 space-y-1 text-xs text-slate-300">
+                      {item.classificationNotes.map((note, index) => (
+                        <li key={`${item.wallId}-classification-note-${index}`}>• {note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Policy V4.4</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Cliente fonte primaria: {automaticWallClassificationV44Report.policy.customerInputRemainsPrimary ? "sì" : "no"}</li>
+                  <li>• Classificazione assistita: {automaticWallClassificationV44Report.policy.automaticClassificationIsAssistive ? "sì" : "no"}</li>
+                  <li>• Conflitti forzano review: {automaticWallClassificationV44Report.policy.conflictsForceReview ? "sì" : "no"}</li>
+                  <li>• Foto/DWG suggeriscono senza sovrascrivere: {automaticWallClassificationV44Report.policy.photoDwgCanSuggestButNotOverwrite ? "sì" : "no"}</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Azioni richieste</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {automaticWallClassificationV44Report.requiredActions.map((item, index) => (
+                    <li key={`classification-v4-4-action-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {automaticWallClassificationV44Report.nextActions.map((item, index) => (
+                    <li key={`classification-v4-4-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+
+        <section className="rounded-[28px] border border-violet-400/15 bg-[#120b22]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">Layout / Room Intelligence V4.5</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">AI Technical Suggestions</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Suggerimenti tecnici assistiti basati su classificazione parete, evidenze foto/DWG, fissaggi, checklist installatore e approvazione tecnica. Il motore suggerisce e blocca i casi critici, ma non approva automaticamente.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                aiTechnicalSuggestionsV45Report.suggestionStatus === "SUGGESTIONS_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : aiTechnicalSuggestionsV45Report.suggestionStatus === "SUGGESTIONS_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {aiTechnicalSuggestionsV45Report.suggestionStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadAiTechnicalSuggestionsV45Report}
+                className="rounded-2xl border border-violet-400/25 bg-violet-400/10 px-5 py-3 text-sm font-black text-violet-100 transition hover:bg-violet-400/20"
+              >
+                Esporta Suggestions V4.5
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Suggerimenti</p>
+              <p className="mt-1 text-2xl font-black text-white">{aiTechnicalSuggestionsV45Report.totals.suggestions}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Critici</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{aiTechnicalSuggestionsV45Report.totals.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Warning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{aiTechnicalSuggestionsV45Report.totals.warning}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-sky-200">Info</p>
+              <p className="mt-1 text-2xl font-black text-sky-100">{aiTechnicalSuggestionsV45Report.totals.info}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocchi</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{aiTechnicalSuggestionsV45Report.totals.blockedWalls}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Render/AR ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{aiTechnicalSuggestionsV45Report.totals.renderArReadyWalls}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Suggerimenti tecnici</p>
+              <div className="mt-3 grid gap-3">
+                {aiTechnicalSuggestionsV45Report.suggestions.slice(0, 8).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{item.title}</p>
+                        <p className="mt-1 text-xs text-slate-400">{item.wallLabel} · {item.category.replace(/_/g, " ")}</p>
+                      </div>
+                      <span className={
+                        item.severity === "critical"
+                          ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                          : item.severity === "warning"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-sky-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100"
+                      }>
+                        {item.severity}
+                      </span>
+                    </div>
+
+                    <p className="mt-3 text-sm text-slate-300">{item.reason}</p>
+                    <p className="mt-2 text-sm font-semibold text-violet-100">Azione: {item.suggestedAction}</p>
+                    <p className="mt-2 text-xs text-slate-500">Blocca approvazione: {item.blocksApproval ? "sì" : "no"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Policy V4.5</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  <li>• Assistivo: {aiTechnicalSuggestionsV45Report.policy.assistiveOnly ? "sì" : "no"}</li>
+                  <li>• Cliente fonte primaria: {aiTechnicalSuggestionsV45Report.policy.customerInputRemainsPrimary ? "sì" : "no"}</li>
+                  <li>• Nessuna approvazione automatica: {aiTechnicalSuggestionsV45Report.policy.noAutomaticApproval ? "sì" : "no"}</li>
+                  <li>• Bridge render/AR foto: {aiTechnicalSuggestionsV45Report.policy.photoEnvironmentBridgeEnabled ? "attivo" : "non attivo"}</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Executive summary</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {aiTechnicalSuggestionsV45Report.executiveSummary.map((item, index) => (
+                    <li key={`ai-v4-5-summary-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-violet-400/10 bg-black/20 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-violet-200">Prossimi step</p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                  {aiTechnicalSuggestionsV45Report.nextActions.map((item, index) => (
+                    <li key={`ai-v4-5-next-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-fuchsia-400/15 bg-[#19091f]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-fuchsia-200">Layout / Room Intelligence V4.6</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Technical Evidence Approval</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Trasforma i suggerimenti tecnici V4.5 in un gate di approvazione tracciabile: cosa è approvato, cosa richiede review e cosa blocca PDF finale, installazione o render/AR.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                technicalEvidenceApprovalV46Report.approvalStatus === "EVIDENCE_APPROVED"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : technicalEvidenceApprovalV46Report.approvalStatus === "EVIDENCE_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {technicalEvidenceApprovalV46Report.approvalStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadTechnicalEvidenceApprovalV46Report}
+                className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-black text-fuchsia-100 transition hover:bg-fuchsia-400/20"
+              >
+                Esporta Approval V4.6
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Elementi</p>
+              <p className="mt-1 text-2xl font-black text-white">{technicalEvidenceApprovalV46Report.totals.items}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Approved</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{technicalEvidenceApprovalV46Report.totals.approved}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{technicalEvidenceApprovalV46Report.totals.review}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{technicalEvidenceApprovalV46Report.totals.blocked}</p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-fuchsia-200">Approval richiesti</p>
+              <p className="mt-1 text-2xl font-black text-fuchsia-100">{technicalEvidenceApprovalV46Report.totals.approvalRequired}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Gate approvazione</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                <li>• PDF finale: {technicalEvidenceApprovalV46Report.approvalGate.canGenerateFinalPdf ? "consentito" : "bloccato"}</li>
+                <li>• Installazione: {technicalEvidenceApprovalV46Report.approvalGate.canApproveInstallation ? "approvabile" : "non approvabile"}</li>
+                <li>• Render/AR da foto: {technicalEvidenceApprovalV46Report.approvalGate.canProceedToRenderAr ? "consentito" : "in attesa"}</li>
+              </ul>
+
+              {technicalEvidenceApprovalV46Report.approvalGate.blockerReasons.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-red-400/15 bg-red-400/5 p-3">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-red-200">Blocchi rilevati</p>
+                  <ul className="mt-2 space-y-1 text-xs text-red-100">
+                    {technicalEvidenceApprovalV46Report.approvalGate.blockerReasons.slice(0, 5).map((item, index) => (
+                      <li key={`approval-v4-6-blocker-${index}`}>• {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-200">Decisioni evidence</p>
+              <div className="mt-3 grid gap-2">
+                {technicalEvidenceApprovalV46Report.items.slice(0, 6).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-black text-white">{item.wallLabel}</p>
+                      <span className={
+                        item.decision === "blocked"
+                          ? "rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-100"
+                          : item.decision === "review"
+                            ? "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                            : "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                      }>
+                        {item.decision}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">{item.requiredAction}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section className="rounded-[28px] border border-cyan-400/15 bg-[#061c24]/85 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-200">Layout / Room Intelligence V4.7</p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Evidence-to-Render / AR Bridge</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-400">
+                Collega foto e approvazioni tecniche al futuro Photo Environment Intelligence: render del mobile nel locale cliente e preview AR senza confondere estetica e installabilità.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              <span className={
+                evidenceToRenderArBridgeV47Report.bridgeStatus === "RENDER_AR_READY"
+                  ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100"
+                  : evidenceToRenderArBridgeV47Report.bridgeStatus === "RENDER_AR_BLOCKED"
+                    ? "rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-red-100"
+                    : "rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-yellow-100"
+              }>
+                {evidenceToRenderArBridgeV47Report.bridgeStatus.replace(/_/g, " ")}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadEvidenceToRenderArBridgeV47Report}
+                className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Esporta Render/AR Bridge V4.7
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Pareti</p>
+              <p className="mt-1 text-2xl font-black text-white">{evidenceToRenderArBridgeV47Report.totals.walls}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-200">Render ready</p>
+              <p className="mt-1 text-2xl font-black text-emerald-100">{evidenceToRenderArBridgeV47Report.totals.photoRenderReady}</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-cyan-200">AR ready</p>
+              <p className="mt-1 text-2xl font-black text-cyan-100">{evidenceToRenderArBridgeV47Report.totals.arPreviewReady}</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-yellow-200">Review</p>
+              <p className="mt-1 text-2xl font-black text-yellow-100">{evidenceToRenderArBridgeV47Report.totals.reviewRequired}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/15 bg-red-400/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-red-200">Blocked</p>
+              <p className="mt-1 text-2xl font-black text-red-100">{evidenceToRenderArBridgeV47Report.totals.blocked}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Pipeline render foto</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {evidenceToRenderArBridgeV47Report.renderPipeline.map((item, index) => (
+                  <li key={`render-pipeline-v4-7-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-cyan-200">Pipeline AR</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                {evidenceToRenderArBridgeV47Report.arPipeline.map((item, index) => (
+                  <li key={`ar-pipeline-v4-7-${index}`}>• {item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3">
+            {evidenceToRenderArBridgeV47Report.items.slice(0, 6).map((item) => (
+              <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-black text-white">{item.wallLabel}</p>
+                  <span className={
+                    item.arPreviewReady
+                      ? "rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100"
+                      : item.photoRenderReady
+                        ? "rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100"
+                        : "rounded-full bg-yellow-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100"
+                  }>
+                    {item.arPreviewReady ? "AR READY" : item.photoRenderReady ? "RENDER READY" : "REVIEW"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-400">{item.recommendedAction}</p>
+                {item.warnings.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs text-yellow-100">
+                    {item.warnings.map((warning, index) => (
+                      <li key={`${item.id}-warning-${index}`}>• {warning}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
         </section>
 
 
