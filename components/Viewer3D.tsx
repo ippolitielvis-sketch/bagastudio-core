@@ -31,6 +31,48 @@ import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
 const textureWaiters = new Map<string, Array<(texture: THREE.Texture) => void>>();
+let bagastudioRendererMaxAnisotropy = 8;
+
+function configureBagastudioTexture(texture: THREE.Texture, options?: {
+  repeatX?: number;
+  repeatY?: number;
+  rotate?: boolean;
+}) {
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  // Recovery Texture V2: default uniform texture on each part.
+  // RepeatWrapping + automatic repeat caused visible "quadrati/piastrelle" on panels.
+  // ClampToEdge keeps the texture stretched uniformly over the component surface.
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.flipY = false;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.max(8, bagastudioRendererMaxAnisotropy || 8);
+
+  // Forced 1:1. No runtime tiling in Viewer client; texture must be visually uniform on the part.
+  texture.repeat.set(1, 1);
+  texture.offset.set(0, 0);
+  texture.center.set(0.5, 0.5);
+  // Wood direction is handled by UV coordinates, not by rotating the bitmap texture.
+  // Rotating both UVs and texture caused the direction toggle to look like a mirror/flip.
+  texture.rotation = 0;
+  texture.needsUpdate = true;
+}
+
+function getBagastudioTextureRepeat(mesh: THREE.Mesh, materialData: any, rotateWood = false) {
+  const explicitRepeatX = Number(materialData?.repeatX ?? materialData?.scaleX);
+  const explicitRepeatY = Number(materialData?.repeatY ?? materialData?.scaleY);
+
+  // Only use tiling when the material explicitly asks for it.
+  // The safe default must be uniform, otherwise Spazio3D panels show square repetition.
+  if (Number.isFinite(explicitRepeatX) && explicitRepeatX > 0 && Number.isFinite(explicitRepeatY) && explicitRepeatY > 0) {
+    return { repeatX: explicitRepeatX, repeatY: explicitRepeatY, rotate: false };
+  }
+
+  return { repeatX: 1, repeatY: 1, rotate: false };
+}
 
 type Viewer3DProps = {
   width?: number;
@@ -3101,6 +3143,15 @@ const applyBagastudioXRayMaterialState = (
     if (!loadedRoot) return null;
 
     const clonedScene = loadedRoot.clone(true);
+    clonedScene.updateMatrixWorld(true);
+
+    // Recovery Texture V3: use one global UV reference box for imported models.
+    // Some Spazio3D/DAE panels are split into multiple coplanar meshes; mapping UVs
+    // per single mesh makes the same texture restart on every sub-mesh, causing
+    // visible square repetitions. Global world-space UVs keep the texture continuous.
+    const importedGlobalUvBox = isImportedModelFormat(runtimeModelFormat)
+      ? new THREE.Box3().setFromObject(clonedScene)
+      : null;
 
     clonedScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -3221,46 +3272,105 @@ if (isUnmappedImportedMesh && !materialData) {
   return;
 }
 
-function applyPlanarUV(mesh: THREE.Mesh, rotate = false) {
-  const geometry = mesh.geometry as THREE.BufferGeometry;
-  if (!geometry.attributes.position) return;
+function applyPlanarUV(mesh: THREE.Mesh, rotate = false, worldBox?: THREE.Box3 | null) {
+  const baseGeometry = mesh.geometry as THREE.BufferGeometry;
+  if (!baseGeometry.attributes.position) return;
+
+  // Recovery Texture V4:
+  // Use box-projected UVs by face normal, not one single projection plane.
+  // This avoids both problems seen in tests:
+  // 1) repeated square tiles on coplanar split DAE meshes;
+  // 2) vertical striped distortion when one global projection is forced on all faces.
+  const geometry = baseGeometry.index ? baseGeometry.toNonIndexed() : baseGeometry;
+  if (geometry !== baseGeometry) {
+    mesh.geometry = geometry;
+  }
 
   geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  if (!box) return;
+  if (!geometry.attributes.normal) geometry.computeVertexNormals();
 
-  const pos = geometry.attributes.position;
+  const localBox = geometry.boundingBox;
+  if (!localBox) return;
+
+  const sourceBox = worldBox && !worldBox.isEmpty() ? worldBox : localBox;
+  const sourceSize = sourceBox.getSize(new THREE.Vector3());
+  const sizeX = Math.max(sourceSize.x, 0.0001);
+  const sizeY = Math.max(sourceSize.y, 0.0001);
+  const sizeZ = Math.max(sourceSize.z, 0.0001);
+
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  const normalAttr = geometry.attributes.normal as THREE.BufferAttribute | undefined;
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const vertex = new THREE.Vector3();
+  const normal = new THREE.Vector3();
   const uvs: number[] = [];
 
-  const sizeX = Math.max(box.max.x - box.min.x, 1);
-  const sizeY = Math.max(box.max.y - box.min.y, 1);
-  const sizeZ = Math.max(box.max.z - box.min.z, 1);
+  const readWorldPosition = (index: number) => {
+    vertex.fromBufferAttribute(pos, index);
+    if (worldBox && !worldBox.isEmpty()) mesh.localToWorld(vertex);
+    return vertex;
+  };
 
-  const sizes = [
-    { axis: "x", size: sizeX },
-    { axis: "y", size: sizeY },
-    { axis: "z", size: sizeZ },
-  ].sort((a, b) => b.size - a.size);
+  const readWorldNormal = (index: number) => {
+    if (normalAttr) {
+      normal.fromBufferAttribute(normalAttr, index);
+      if (worldBox && !worldBox.isEmpty()) normal.applyMatrix3(normalMatrix).normalize();
+    } else {
+      normal.set(0, 0, 1);
+    }
+    return normal;
+  };
 
-  const axisU = sizes[0].axis;
-  const axisV = sizes[1].axis;
+  const getLocalU = (value: number, axis: "x" | "y" | "z") => {
+    if (worldBox && !worldBox.isEmpty()) {
+      if (axis === "x") return (value - sourceBox.min.x) / sizeX;
+      if (axis === "y") return (value - sourceBox.min.y) / sizeY;
+      return (value - sourceBox.min.z) / sizeZ;
+    }
 
-  const getValue = (axis: string, index: number) => {
-    if (axis === "x") return (pos.getX(index) - box.min.x) / sizeX;
-    if (axis === "y") return (pos.getY(index) - box.min.y) / sizeY;
-    return (pos.getZ(index) - box.min.z) / sizeZ;
+    if (axis === "x") return (value - localBox.min.x) / Math.max(localBox.max.x - localBox.min.x, 0.0001);
+    if (axis === "y") return (value - localBox.min.y) / Math.max(localBox.max.y - localBox.min.y, 0.0001);
+    return (value - localBox.min.z) / Math.max(localBox.max.z - localBox.min.z, 0.0001);
   };
 
   for (let i = 0; i < pos.count; i++) {
-    const u = getValue(rotate ? axisV : axisU, i);
-    const v = getValue(rotate ? axisU : axisV, i);
-    uvs.push(u, v);
+    const p = readWorldPosition(i);
+    const n = readWorldNormal(i);
+    const ax = Math.abs(n.x);
+    const ay = Math.abs(n.y);
+    const az = Math.abs(n.z);
+
+    let u = 0;
+    let v = 0;
+
+    if (ay >= ax && ay >= az) {
+      // Horizontal top/bottom: project X/Z.
+      u = getLocalU(p.x, "x");
+      v = getLocalU(p.z, "z");
+    } else if (ax >= ay && ax >= az) {
+      // Left/right sides: project Z/Y.
+      u = getLocalU(p.z, "z");
+      v = getLocalU(p.y, "y");
+    } else {
+      // Front/back: project X/Y.
+      u = getLocalU(p.x, "x");
+      v = getLocalU(p.y, "y");
+    }
+
+    if (rotate) {
+      // Real grain direction switch: swap the projection axes in UV space only.
+      // Do not rotate the texture bitmap afterwards, otherwise horizontal/vertical cancels out.
+      const nextU = v;
+      v = u;
+      u = nextU;
+    }
+
+    uvs.push(THREE.MathUtils.clamp(u, 0, 1), THREE.MathUtils.clamp(v, 0, 1));
   }
 
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.attributes.uv.needsUpdate = true;
-geometry.computeVertexNormals();
-  (geometry.attributes.uv as THREE.BufferAttribute).needsUpdate = true;
+  geometry.computeVertexNormals();
 }
 
         let material:
@@ -3288,7 +3398,7 @@ const projection =
 
 const rotateWood = selectedWoodDirection === "z";
 
-applyPlanarUV(mesh, rotateWood);
+applyPlanarUV(mesh, rotateWood, importedGlobalUvBox);
 const textureUrl = materialData.textureUrl;
 const fallbackColor =
   materialData.fallbackColor ||
@@ -3296,27 +3406,17 @@ const fallbackColor =
   "#c8c2b6";
 
 const configureTexture = (loadedTexture: THREE.Texture) => {
-  loadedTexture.colorSpace = THREE.SRGBColorSpace;
-  loadedTexture.wrapS = THREE.RepeatWrapping;
-  loadedTexture.wrapT = THREE.RepeatWrapping;
-  loadedTexture.flipY = false;
-  loadedTexture.generateMipmaps = true;
-  loadedTexture.minFilter = THREE.LinearMipmapLinearFilter;
-  loadedTexture.magFilter = THREE.LinearFilter;
-  loadedTexture.anisotropy = Math.max(8, loadedTexture.anisotropy || 1);
-
-  const repeatX = Number(materialData.repeatX ?? materialData.scaleX ?? 1);
-  const repeatY = Number(materialData.repeatY ?? materialData.scaleY ?? 1);
-  loadedTexture.repeat.set(
-    Number.isFinite(repeatX) && repeatX > 0 ? repeatX : 1,
-    Number.isFinite(repeatY) && repeatY > 0 ? repeatY : 1
+  const runtimeTexture = loadedTexture.clone();
+  runtimeTexture.image = loadedTexture.image;
+  configureBagastudioTexture(
+    runtimeTexture,
+    getBagastudioTextureRepeat(mesh, materialData, rotateWood)
   );
-
-  loadedTexture.needsUpdate = true;
+  return runtimeTexture;
 };
 
 const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
-  configureTexture(loadedTexture);
+  const runtimeTexture = configureTexture(loadedTexture);
 
   const currentMaterial = mesh.material as THREE.MeshStandardMaterial;
 
@@ -3324,7 +3424,7 @@ const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
     currentMaterial &&
     (currentMaterial as any).userData?.bagastudioTextureUrl === textureUrl
   ) {
-    currentMaterial.map = loadedTexture;
+    currentMaterial.map = runtimeTexture;
     currentMaterial.color.set("#ffffff");
     currentMaterial.needsUpdate = true;
     mesh.material = currentMaterial;
@@ -3336,21 +3436,22 @@ const applyLoadedTexture = (loadedTexture: THREE.Texture) => {
 let texture = textureCache.get(textureUrl);
 
 if (texture) {
-  configureTexture(texture);
+  const runtimeTexture = configureTexture(texture);
 
   material = new THREE.MeshStandardMaterial({
-    map: texture,
+    map: runtimeTexture,
     color: "#ffffff",
-    roughness: materialData.roughness ?? 0.65,
+    roughness: materialData.roughness ?? 0.48,
     metalness: materialData.metalness ?? 0,
     side: THREE.FrontSide,
     transparent: false,
     depthWrite: true,
   });
+  (material as any).userData.bagastudioTextureUrl = textureUrl;
 } else {
   material = new THREE.MeshStandardMaterial({
     color: fallbackColor,
-    roughness: materialData.roughness ?? 0.65,
+    roughness: materialData.roughness ?? 0.48,
     metalness: materialData.metalness ?? 0,
     side: THREE.FrontSide,
     transparent: false,
@@ -3490,15 +3591,10 @@ if (!texture) {
   textureCache.set(insertMaterialData.textureUrl, texture);
 }
 
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.flipY = false;
-
- texture.repeat.set(
-  insertMaterialData.repeatX ?? 1,
-  insertMaterialData.repeatY ?? 1
-);
+      configureBagastudioTexture(texture, {
+        repeatX: insertMaterialData.repeatX ?? insertMaterialData.scaleX ?? 1,
+        repeatY: insertMaterialData.repeatY ?? insertMaterialData.scaleY ?? 1,
+      });
 
       insertRenderMaterial = new THREE.MeshStandardMaterial({
         map: texture,
@@ -4614,8 +4710,9 @@ productMaterials?.length
         style={{ touchAction: "none" }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 0.9;
+          gl.toneMappingExposure = 0.95;
           gl.outputColorSpace = THREE.SRGBColorSpace;
+          bagastudioRendererMaxAnisotropy = Math.max(8, gl.capabilities.getMaxAnisotropy?.() || 8);
         }}
       >
         <color attach="background" args={["#07111c"]} />
