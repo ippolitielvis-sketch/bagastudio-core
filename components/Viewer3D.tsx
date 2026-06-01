@@ -3075,6 +3075,28 @@ const restoreHighlightedMesh = () => {
   highlightedRef.current.mesh.renderOrder = 0;
   highlightedRef.current = null;
 };
+
+const applyBagastudioXRayMaterialState = (
+  targetMaterial: THREE.Material | THREE.Material[] | null | undefined,
+  enabled: boolean,
+  opacity: number
+) => {
+  if (!targetMaterial) return;
+
+  const safeOpacity = THREE.MathUtils.clamp(Number(opacity), 0.08, 1);
+  const materialsList = Array.isArray(targetMaterial) ? targetMaterial : [targetMaterial];
+
+  materialsList.forEach((mat) => {
+    if (!mat) return;
+
+    mat.side = enabled ? THREE.DoubleSide : THREE.FrontSide;
+    mat.transparent = enabled;
+    mat.opacity = enabled ? safeOpacity : 1;
+    mat.depthWrite = !enabled;
+    mat.depthTest = true;
+    mat.needsUpdate = true;
+  });
+};
   const scene = useMemo(() => {
     if (!loadedRoot) return null;
 
@@ -3192,8 +3214,10 @@ const isUnmappedImportedMesh =
 
 if (isUnmappedImportedMesh && !materialData) {
   mesh.material = createBagastudioNeutralImportMaterial();
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  applyBagastudioXRayMaterialState(mesh.material, xRayEnabled, xRayOpacity);
+  mesh.renderOrder = xRayEnabled ? 5 : 0;
+  mesh.castShadow = !xRayEnabled;
+  mesh.receiveShadow = !xRayEnabled;
   return;
 }
 
@@ -3524,17 +3548,10 @@ if (mesh.geometry) {
   mesh.geometry.computeBoundingSphere();
 }
 
-material.side = xRayEnabled ? THREE.DoubleSide : THREE.FrontSide;
-if (xRayEnabled) {
-  material.transparent = true;
-  material.opacity = THREE.MathUtils.clamp(Number(xRayOpacity), 0.08, 1);
-  material.depthWrite = false;
-} else {
-  material.transparent = false;
-  material.opacity = 1;
-  material.depthWrite = true;
-}
-material.needsUpdate = true;
+applyBagastudioXRayMaterialState(mesh.material, xRayEnabled, xRayOpacity);
+mesh.renderOrder = xRayEnabled ? 5 : 0;
+mesh.castShadow = !xRayEnabled;
+mesh.receiveShadow = !xRayEnabled;
 const visibilityKey = productPart?.id ?? partKey;
 
 mesh.visible =

@@ -1339,12 +1339,12 @@ const availableAccessories = useMemo(() => {
         <div className="flex items-center gap-3">
           <input
             type="range"
-            min={0.12}
-            max={0.85}
+            min={0.08}
+            max={0.9}
             step={0.01}
             value={xRayOpacity}
             onChange={(event) => setXRayOpacity(Number(event.target.value))}
-            className="w-full"
+            className="w-full accent-cyan-400"
           />
           <span className="w-12 text-right text-xs font-bold text-cyan-200">
             {Math.round(xRayOpacity * 100)}%
@@ -1992,6 +1992,40 @@ const availableAccessories = useMemo(() => {
       </div>
     </div>
   )}
+
+  <div className="absolute right-5 top-5 z-30 w-[220px] rounded-2xl border border-cyan-400/20 bg-[#07111c]/92 p-3 shadow-2xl backdrop-blur-xl">
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200">X-Ray</p>
+        <p className="text-[10px] text-neutral-400">Trasparenza modello</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setXRayEnabled((value) => !value)}
+        className={`rounded-xl border px-3 py-1.5 text-xs font-black ${
+          xRayEnabled
+            ? "border-cyan-300 bg-cyan-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
+            : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-cyan-400/50"
+        }`}
+      >
+        {xRayEnabled ? "ON" : "OFF"}
+      </button>
+    </div>
+    <div className="flex items-center gap-2">
+      <input
+        type="range"
+        min={0.08}
+        max={0.9}
+        step={0.01}
+        value={xRayOpacity}
+        onChange={(event) => setXRayOpacity(Number(event.target.value))}
+        className="w-full accent-cyan-400"
+      />
+      <span className="w-10 text-right text-[11px] font-black text-cyan-100">
+        {Math.round(xRayOpacity * 100)}%
+      </span>
+    </div>
+  </div>
 
   <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-2xl border border-white/10 bg-[#07111c]/92 p-1.5 shadow-2xl backdrop-blur-xl">
     {[
