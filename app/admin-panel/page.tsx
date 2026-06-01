@@ -51,6 +51,14 @@ import { buildLayoutRoomIntelligenceV23Report } from "@/lib/layout-room-intellig
 import { buildLayoutRoomIntelligenceV21Report } from "@/lib/layout-room-intelligence/layoutRoomIntelligenceChecklistRiskV21";
 import { buildLayoutRoomIntelligenceV2Report } from "@/lib/layout-room-intelligence/layoutRoomIntelligenceCoreReportV20";
 import {
+  buildLayoutDxfCadExportPrepV1Report,
+  buildLayoutRoomIntelligenceV1Report,
+  buildLayoutTechnicalSheetGeneratorV1Report,
+  buildTechnicalKnowledgeBaseV1Report,
+  buildTechnicalWallElevationSheetsV1Report,
+  buildWallTechnicalPointsValidationV1Report,
+} from "@/lib/layout-room-intelligence/layoutTechnicalFoundationV1";
+import {
   buildHardwareCompatibilityMatrixV1Report,
   type HardwareCompatibilityMatrixV1Report,
   type HardwareCompatibilityV1Item,
@@ -114,14 +122,6 @@ import {
   type ViewerSyncV1Report,
   type ViewerSyncV2Report,
 } from "@/lib/factory/factoryPipelineReportsV1";
-import {
-  buildLayoutRoomIntelligenceV1Report,
-  buildLayoutTechnicalSheetGeneratorV1Report,
-  buildLayoutDxfCadExportPrepV1Report,
-  buildTechnicalWallElevationSheetsV1Report,
-  buildWallTechnicalPointsValidationV1Report,
-  buildTechnicalKnowledgeBaseV1Report,
-} from "@/lib/layout-room-intelligence/layoutTechnicalFoundationV1";
 import {
   MeshConfig,
   BAGASTUDIO_ADMIN_AUTOSAVE_KEY,

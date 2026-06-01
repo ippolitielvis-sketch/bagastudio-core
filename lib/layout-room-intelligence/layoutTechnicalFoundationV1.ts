@@ -1,9 +1,4 @@
-// @ts-nocheck
-
-import {
-  type FactoryProductionPackageV1Report,
-  type FactoryProductionPackageV1Status,
-} from "@/lib/factory/factoryPipelineReportsV1";
+import type { FactoryProductionPackageV1Report, FactoryProductionPackageV1Status } from "@/lib/factory/factoryPipelineReportsV1";
 
 export type LayoutRoomIntelligenceV1Status = "ROOM_READY" | "ROOM_REVIEW_REQUIRED" | "ROOM_BLOCKED";
 
@@ -135,7 +130,6 @@ export function buildLayoutRoomIntelligenceV1Report(params: {
     ],
   };
 }
-
 
 export type LayoutTechnicalSheetGeneratorV1Status = "SHEETS_READY" | "SHEETS_REVIEW_REQUIRED" | "SHEETS_BLOCKED";
 
@@ -280,7 +274,6 @@ export function buildLayoutTechnicalSheetGeneratorV1Report(params: {
     ],
   };
 }
-
 
 export type LayoutDxfCadExportPrepV1Status = "CAD_READY" | "CAD_REVIEW_REQUIRED" | "CAD_BLOCKED";
 
@@ -436,7 +429,6 @@ export function buildLayoutDxfCadExportPrepV1Report(params: {
     ],
   };
 }
-
 
 export type TechnicalWallElevationSheetsV1Status = "ELEVATIONS_READY" | "ELEVATIONS_REVIEW_REQUIRED" | "ELEVATIONS_BLOCKED";
 
@@ -637,7 +629,6 @@ export function buildTechnicalWallElevationSheetsV1Report(params: {
     ],
   };
 }
-
 
 export type WallTechnicalPointsValidationV1Status = "TECHNICAL_POINTS_READY" | "TECHNICAL_POINTS_REVIEW_REQUIRED" | "TECHNICAL_POINTS_BLOCKED";
 
@@ -843,7 +834,6 @@ export function buildWallTechnicalPointsValidationV1Report(params: {
   };
 }
 
-
 export type TechnicalKnowledgeBaseV1Category =
   | "plumbing"
   | "electrical"
@@ -895,7 +885,7 @@ export type TechnicalKnowledgeBaseV1Report = {
   recommendations: string[];
 };
 
-const TECHNICAL_KNOWLEDGE_BASE_V1_RULES: TechnicalKnowledgeBaseV1Rule[] = [
+export const TECHNICAL_KNOWLEDGE_BASE_V1_RULES: TechnicalKnowledgeBaseV1Rule[] = [
   {
     id: "sink-countertop-top-height-850",
     category: "sink",
