@@ -368,6 +368,32 @@ function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?:
 }
 
 
+function getBagastudioImportedAxisCorrection(root: THREE.Object3D | null, format?: string | null): [number, number, number] {
+  if (!root || !isImportedModelFormat(format ?? undefined)) return [0, 0, 0];
+
+  const normalizedFormat = String(format || "").toLowerCase();
+  if (!["dae", "glb", "gltf", "obj", "fbx", "stl"].includes(normalizedFormat)) return [0, 0, 0];
+
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return [0, 0, 0];
+
+  const size = box.getSize(new THREE.Vector3());
+  const y = Math.abs(size.y);
+  const z = Math.abs(size.z);
+
+  // Recovery V18 - Axis guard:
+  // Some Spazio3D/COLLADA imports arrive as Z-up even though the Viewer works in BagaStudio axes:
+  // +Y = alto, +X = destra, +Z = profondità.
+  // Rotate only when the geometry still looks Z-up. If ColladaLoader already converted it to Y-up,
+  // this returns zero and does not disturb the hierarchy or the loader.
+  if (z > y * 1.25) {
+    return [-Math.PI / 2, 0, 0];
+  }
+
+  return [0, 0, 0];
+}
+
+
 type BagaStudioRuntimeComponent = {
   id: string;
   partId?: string;
@@ -3788,6 +3814,11 @@ const importedModelDisplayScale = useMemo(
   [scene, runtimeModelFormat]
 );
 
+const importedModelAxisCorrection = useMemo(
+  () => getBagastudioImportedAxisCorrection(scene, runtimeModelFormat),
+  [scene, runtimeModelFormat]
+);
+
 function createInsertPanel(
   mesh: THREE.Mesh,
   material: THREE.Material,
@@ -3908,6 +3939,7 @@ mesh.renderOrder = 30;
   return (
     <Center>
 <group
+  rotation={importedModelAxisCorrection}
   onPointerMissed={() => {
     restoreHighlightedMesh();
 

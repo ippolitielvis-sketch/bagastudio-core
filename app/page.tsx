@@ -12,36 +12,39 @@ type AnyProduct = any;
 
 const DEFAULT_MATERIALS = MATERIAL_LIBRARY;
 
+// BagaStudio Viewer axes convention:
+// +Y = alto, +X = destra, +Z = profondità/frontale viewer.
+// Target coerente a [0,0,0] perché il modello importato viene centrato nel Viewer.
 const DEFAULT_VIEWS = [
   {
     id: "front",
     name: "Frontale",
-    camera: { position: [0, 5, 22], target: [0, 2, 0] },
+    camera: { position: [0, 6, 28], target: [0, 0, 0] },
   },
   {
     id: "back",
     name: "Retro",
-    camera: { position: [0, 5, -22], target: [0, 2, 0] },
+    camera: { position: [0, 6, -28], target: [0, 0, 0] },
   },
   {
     id: "left",
     name: "Sinistra",
-    camera: { position: [-22, 5, 0], target: [0, 2, 0] },
+    camera: { position: [-28, 6, 0], target: [0, 0, 0] },
   },
   {
     id: "right",
     name: "Destra",
-    camera: { position: [22, 5, 0], target: [0, 2, 0] },
+    camera: { position: [28, 6, 0], target: [0, 0, 0] },
   },
   {
     id: "top",
     name: "Alto",
-    camera: { position: [0, 28, 0.01], target: [0, 0, 0] },
+    camera: { position: [0, 35, 0.1], target: [0, 0, 0] },
   },
   {
     id: "iso",
     name: "3D",
-    camera: { position: [20, 10, 22], target: [0, 2, 0] },
+    camera: { position: [20, 10, 22], target: [0, 0, 0] },
   },
 ];
 
