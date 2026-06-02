@@ -98,6 +98,7 @@ type Viewer3DProps = {
  woodDirection?: Record<string, "x" | "z">;
  xRayEnabled?: boolean;
  xRayOpacity?: number;
+ modelEdgesEnabled?: boolean;
   views?: {
   id: string;
   name: string;
@@ -218,6 +219,45 @@ function materialLooksInvisible(material: THREE.Material | THREE.Material[] | un
   });
 }
 
+function repairBagastudioImportedMeshGeometry(mesh: THREE.Mesh) {
+  const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
+  if (!geometry) return;
+
+  const position = geometry.getAttribute("position");
+  if (position) {
+    const indexedCount = geometry.index?.count;
+    geometry.setDrawRange(0, indexedCount || position.count);
+  }
+
+  const normal = geometry.getAttribute("normal");
+  if (position && (!normal || normal.count !== position.count)) {
+    geometry.computeVertexNormals();
+  }
+
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  mesh.visible = true;
+  mesh.frustumCulled = false;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+}
+
+function repairBagastudioImportedMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
+  if (!material) return;
+
+  const materials = Array.isArray(material) ? material : [material];
+  materials.forEach((mat: any) => {
+    if (!mat) return;
+
+    mat.side = THREE.DoubleSide;
+    mat.visible = true;
+    mat.depthTest = true;
+    mat.depthWrite = true;
+    mat.needsUpdate = true;
+  });
+}
+
 function prepareBagastudioImportedObject(root: THREE.Object3D, format?: string | null) {
   const forceNeutral = shouldUseNeutralImportMaterial(format);
 
@@ -238,27 +278,13 @@ function prepareBagastudioImportedObject(root: THREE.Object3D, format?: string |
     mesh.frustumCulled = false;
     mesh.visible = true;
 
-    if (mesh.geometry) {
-      mesh.geometry.computeBoundingBox();
-      mesh.geometry.computeBoundingSphere();
-
-      if (!mesh.geometry.attributes.normal) {
-        mesh.geometry.computeVertexNormals();
-      }
-    }
+    repairBagastudioImportedMeshGeometry(mesh);
 
     if (forceNeutral || !hasUsableMaterial(mesh.material) || materialLooksInvisible(mesh.material)) {
       mesh.material = createBagastudioNeutralImportMaterial();
     }
 
-    const apply = (mat: THREE.Material) => {
-      mat.side = THREE.DoubleSide;
-      mat.visible = true;
-      mat.needsUpdate = true;
-    };
-
-    if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
-    else if (mesh.material) apply(mesh.material as THREE.Material);
+    repairBagastudioImportedMaterial(mesh.material);
   });
 
   root.updateMatrixWorld(true);
@@ -302,12 +328,7 @@ function buildBagastudioColladaRuntimeRoot(colladaScene: THREE.Object3D) {
       mesh.name = mesh.parent?.name || `dae_part_${meshIndex}`;
     }
 
-    const geometry = mesh.geometry as THREE.BufferGeometry;
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    if (!geometry.attributes.normal) {
-      geometry.computeVertexNormals();
-    }
+    repairBagastudioImportedMeshGeometry(mesh);
 
     const originalName = mesh.name || "";
     const parentName = mesh.parent?.name || "";
@@ -335,14 +356,7 @@ function buildBagastudioColladaRuntimeRoot(colladaScene: THREE.Object3D) {
       mesh.material = createBagastudioNeutralImportMaterial();
     }
 
-    const apply = (mat: THREE.Material) => {
-      mat.side = THREE.DoubleSide;
-      mat.visible = true;
-      mat.needsUpdate = true;
-    };
-
-    if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
-    else if (mesh.material) apply(mesh.material as THREE.Material);
+    repairBagastudioImportedMaterial(mesh.material);
   });
 
   daeRoot.updateMatrixWorld(true);
@@ -2983,6 +2997,16 @@ function ensureBagastudioModelEdgeDefinition(root: THREE.Object3D | null, format
   });
 }
 
+function setBagastudioModelEdgeDefinitionVisible(root: THREE.Object3D | null, visible: boolean) {
+  if (!root) return;
+
+  root.traverse((child) => {
+    if (child.userData?.bagastudioEdgeOverlay) {
+      child.visible = visible;
+    }
+  });
+}
+
 function ProductModel({
   materials = {},
   productMaterials = [],
@@ -3001,6 +3025,7 @@ function ProductModel({
   woodDirection,
   xRayEnabled = false,
   xRayOpacity = 0.35,
+  modelEdgesEnabled = true,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -3038,7 +3063,10 @@ function ProductModel({
     const onLoaded = (object: THREE.Object3D) => {
       if (cancelled) return;
       forcePreviewMaterials(object, format);
-      ensureBagastudioModelEdgeDefinition(object, format);
+      if (modelEdgesEnabled) {
+        ensureBagastudioModelEdgeDefinition(object, format);
+      }
+      setBagastudioModelEdgeDefinitionVisible(object, modelEdgesEnabled);
       const analyzedComponents = analyzeImportedModelComponents(object, format);
 
       if (typeof window !== "undefined") {
@@ -3112,17 +3140,12 @@ function ProductModel({
                   bagastudioRuntimeComponent: true,
                 };
 
-                if (!hasUsableMaterial(mesh.material)) {
+                if (!hasUsableMaterial(mesh.material) || materialLooksInvisible(mesh.material)) {
                   mesh.material = createBagastudioNeutralImportMaterial();
                 }
 
-                const apply = (mat: THREE.Material) => {
-                  mat.side = THREE.DoubleSide;
-                  mat.needsUpdate = true;
-                };
-
-                if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
-                else if (mesh.material) apply(mesh.material as THREE.Material);
+                repairBagastudioImportedMeshGeometry(mesh);
+                repairBagastudioImportedMaterial(mesh.material);
               });
 
               onLoaded(daeGroup);
@@ -3157,6 +3180,14 @@ function ProductModel({
     };
   }, [productModel, runtimeModelFormat]);
 
+  useEffect(() => {
+    if (!loadedRoot) return;
+    if (modelEdgesEnabled) {
+      ensureBagastudioModelEdgeDefinition(loadedRoot, runtimeModelFormat);
+    }
+    setBagastudioModelEdgeDefinitionVisible(loadedRoot, modelEdgesEnabled);
+  }, [loadedRoot, runtimeModelFormat, modelEdgesEnabled]);
+
  const setSelectedPartId = useConfigStore(
   (state) => state.setSelectedPart
 );
@@ -3168,10 +3199,14 @@ const highlightedRef = useRef<{
   material: THREE.Material | THREE.Material[];
 } | null>(null);
 
-const cloneMaterialForRestore = (material: THREE.Material | THREE.Material[]) => {
-  return Array.isArray(material)
-    ? material.map((mat) => mat.clone())
-    : material.clone();
+const cloneMaterialForRestore = (
+  material: THREE.Material | THREE.Material[] | null | undefined
+) => {
+  if (Array.isArray(material)) {
+    return material.filter(Boolean).map((mat) => mat.clone());
+  }
+
+  return material ? material.clone() : createBagastudioNeutralImportMaterial();
 };
 
 const restoreHighlightedMesh = () => {
@@ -3221,6 +3256,11 @@ const applyBagastudioXRayMaterialState = (
       : null;
 
     clonedScene.traverse((child) => {
+      if (child.userData?.bagastudioEdgeOverlay) {
+        child.visible = modelEdgesEnabled;
+        return;
+      }
+
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         if (mesh.name.includes("Piano")) {
@@ -3847,6 +3887,7 @@ return clonedScene;
   woodDirection,
   xRayEnabled,
   xRayOpacity,
+  modelEdgesEnabled,
   materialRefreshKey,
 ]);
 
@@ -4064,6 +4105,124 @@ const realPartKey =
 );
 }
 
+
+function getBagastudioCleanSceneBox(scene: THREE.Scene) {
+  const boxes: THREE.Box3[] = [];
+
+  scene.updateMatrixWorld(true);
+
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (!mesh.visible) return;
+    if (mesh.userData?.bagastudioEdgeOverlay) return;
+    if (mesh.userData?.bagastudioDebugBounds) return;
+    if (String(mesh.name || "").includes("BagaStudio_Runtime_GLB_Debug")) return;
+
+    const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
+    const position = geometry?.attributes?.position;
+    if (!geometry || !position || position.count < 3) return;
+
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const localBox = geometry.boundingBox;
+    if (!localBox || localBox.isEmpty()) return;
+
+    const worldBox = localBox.clone().applyMatrix4(mesh.matrixWorld);
+    const size = new THREE.Vector3();
+    worldBox.getSize(size);
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (!Number.isFinite(maxDim) || maxDim <= 0.0001) return;
+
+    boxes.push(worldBox);
+  });
+
+  if (!boxes.length) return null;
+
+  const box = new THREE.Box3();
+  boxes.forEach((item) => box.union(item));
+  return box.isEmpty() ? null : box;
+}
+
+function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Camera, viewId = "iso") {
+  const box = getBagastudioCleanSceneBox(scene);
+  if (!box) return null;
+
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+
+  const viewKey = viewId === "3d" ? "iso" : viewId;
+  const directionByView: Record<string, THREE.Vector3> = {
+    iso: new THREE.Vector3(1, 0.48, 1),
+    front: new THREE.Vector3(0, 0, 1),
+    back: new THREE.Vector3(0, 0, -1),
+    left: new THREE.Vector3(-1, 0, 0),
+    right: new THREE.Vector3(1, 0, 0),
+    top: new THREE.Vector3(0, 1, 0),
+  };
+
+  const direction = (directionByView[viewKey] || directionByView.iso).clone().normalize();
+  const fov = THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov || 45);
+
+  const viewSize =
+    viewKey === "top"
+      ? Math.max(size.x, size.z)
+      : viewKey === "left" || viewKey === "right"
+        ? Math.max(size.z, size.y)
+        : viewKey === "front" || viewKey === "back"
+          ? Math.max(size.x, size.y)
+          : Math.max(size.x, size.y, size.z);
+
+  const distance = Math.max(
+    viewSize / (2 * Math.tan(fov / 2)) * 0.85,
+    Math.max(size.x, size.y, size.z) * 0.85,
+    3
+  );
+
+  const position = center.clone().add(direction.multiplyScalar(distance));
+  const up = viewKey === "top" ? [0, 0, -1] : [0, 1, 0];
+
+  return {
+    position: position.toArray() as [number, number, number],
+    target: center.toArray() as [number, number, number],
+    up: up as [number, number, number],
+  };
+}
+
+function applyBagastudioCameraData(camera: THREE.Camera, gl: THREE.WebGLRenderer, cameraData: any) {
+  if (cameraData?.up) {
+    camera.up.set(cameraData.up[0], cameraData.up[1], cameraData.up[2]);
+  } else {
+    camera.up.set(0, 1, 0);
+  }
+
+  camera.position.set(
+    cameraData.position[0],
+    cameraData.position[1],
+    cameraData.position[2]
+  );
+
+  camera.lookAt(
+    cameraData.target[0],
+    cameraData.target[1],
+    cameraData.target[2]
+  );
+
+  (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+
+  const controls = (gl as any).__r3f?.root?.getState?.().controls;
+  if (controls?.target) {
+    controls.target.set(
+      cameraData.target[0],
+      cameraData.target[1],
+      cameraData.target[2]
+    );
+    controls.update?.();
+  }
+}
+
 function CameraController({
   activeViewId,
   views,
@@ -4071,7 +4230,7 @@ function CameraController({
   activeViewId?: string | null;
   views?: any[];
 }) {
-  const { camera } = useThree();
+  const { camera, gl, scene } = useThree();
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -4092,24 +4251,13 @@ function CameraController({
     const selectedView = views?.find((v) => v.id === viewId);
 
     const cameraData =
+      buildBagastudioDynamicCameraView(scene, camera, viewId) ||
       selectedView?.camera ||
       DEFAULT_CAMERA_VIEWS[viewId] ||
       DEFAULT_CAMERA_VIEWS.iso;
 
-    camera.position.set(
-      cameraData.position[0],
-      cameraData.position[1],
-      cameraData.position[2]
-    );
-
-    camera.lookAt(
-      cameraData.target[0],
-      cameraData.target[1],
-      cameraData.target[2]
-    );
-
-    camera.updateProjectionMatrix();
-  }, [activeViewId, views, camera]);
+    applyBagastudioCameraData(camera, gl, cameraData);
+  }, [activeViewId, views, camera, gl, scene]);
 
   return null;
 }
@@ -4143,33 +4291,12 @@ function ViewerRuntimeControls({
     const applyCameraView = (viewId = activeViewId || "iso") => {
       const selectedView = views?.find((v) => v.id === viewId);
       const cameraData =
+        buildBagastudioDynamicCameraView(scene, camera, viewId) ||
         selectedView?.camera ||
         DEFAULT_CAMERA_VIEWS[viewId] ||
         DEFAULT_CAMERA_VIEWS.iso;
 
-      camera.position.set(
-        cameraData.position[0],
-        cameraData.position[1],
-        cameraData.position[2]
-      );
-
-      camera.lookAt(
-        cameraData.target[0],
-        cameraData.target[1],
-        cameraData.target[2]
-      );
-
-      camera.updateProjectionMatrix();
-
-      const controls = (gl as any).__r3f?.root?.getState?.().controls;
-      if (controls?.target) {
-        controls.target.set(
-          cameraData.target[0],
-          cameraData.target[1],
-          cameraData.target[2]
-        );
-        controls.update?.();
-      }
+      applyBagastudioCameraData(camera, gl, cameraData);
     };
 
     const getTargetObjects = () => {
@@ -4461,6 +4588,7 @@ export default function Viewer3D({
   woodDirection,
   xRayEnabled = false,
   xRayOpacity = 0.35,
+  modelEdgesEnabled = true,
 }: Viewer3DProps) {
   const materialsSource =
 productMaterials?.length
@@ -4472,6 +4600,7 @@ productMaterials?.length
   const setRuntimeSelectedPartId = useConfigStore((state) => state.setSelectedPart);
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
   const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<BagaStudioRuntimeComponent[]>([]);
+  const [viewerModelEdgesEnabled, setViewerModelEdgesEnabled] = useState(modelEdgesEnabled);
   const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
     url: string;
@@ -4801,6 +4930,29 @@ productMaterials?.length
         </div>
       )}
 
+      <div className="absolute right-3 top-[7.25rem] z-20 rounded-xl border border-cyan-500/25 bg-black/65 p-3 text-xs text-cyan-50 shadow-lg backdrop-blur">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div className="font-black uppercase tracking-[0.2em] text-cyan-300">Contorni</div>
+            <div className="text-[10px] text-slate-300">Diagnosi bordi modello</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewerModelEdgesEnabled((current) => !current)}
+            className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide transition ${
+              viewerModelEdgesEnabled
+                ? "border-cyan-300/50 bg-cyan-500/20 text-cyan-100"
+                : "border-slate-500/50 bg-slate-900/80 text-slate-300"
+            }`}
+          >
+            {viewerModelEdgesEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <div className="max-w-[210px] text-[10px] leading-snug text-slate-400">
+          Spegni per verificare triangoli/linee del DAE senza overlay.
+        </div>
+      </div>
+
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
 
       <Canvas
@@ -4867,6 +5019,7 @@ productMaterials?.length
   woodDirection={woodDirection}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
+  modelEdgesEnabled={viewerModelEdgesEnabled}
 />
 
       <OrbitControls
