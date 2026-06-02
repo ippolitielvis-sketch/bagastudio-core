@@ -3224,15 +3224,18 @@ const isMirrorPart =
   productPart?.name?.toLowerCase().includes("specchio") ||
   productPart?.name?.toLowerCase().includes("specchiera");
 
+const explicitImportedMaterialId = isImportedRuntimeMesh
+  ? materials[effectivePartId] ||
+    materials[meshPartId] ||
+    materials[meshRuntimeMeshName] ||
+    ""
+  : "";
+
 const materialId =
-  isMirrorPart
-    ? "specchio"
-    : isImportedRuntimeMesh
-      ? materials[effectivePartId] ||
-        productPart?.defaultMaterialId ||
-        (mesh.name.includes("Piede") || mesh.name.includes("Maniglia")
-          ? "oro_satinato"
-          : "barok")
+  isImportedRuntimeMesh
+    ? explicitImportedMaterialId || "__bagastudio_neutral_import__"
+    : isMirrorPart
+      ? "specchio"
       : meshAliases.map((alias) => materials[String(alias)]).find(Boolean) ||
         materials[productPart?.id ?? ""] ||
         materials[materialStoreKey] ||
@@ -3269,6 +3272,19 @@ const materialData =
   materialsSource.find(
   (m: any) => normalizeKey(m.name) === normalizeKey(materialId)
 );
+
+const shouldUseNeutralRuntimeMaterial =
+  isImportedRuntimeMesh && materialId === "__bagastudio_neutral_import__";
+
+if (shouldUseNeutralRuntimeMaterial) {
+  mesh.material = createBagastudioNeutralImportMaterial();
+  applyBagastudioXRayMaterialState(mesh.material, xRayEnabled, xRayOpacity);
+  mesh.renderOrder = xRayEnabled ? 5 : 0;
+  mesh.castShadow = !xRayEnabled;
+  mesh.receiveShadow = !xRayEnabled;
+  return;
+}
+
 const isUnmappedImportedMesh =
   isImportedRuntimeMesh &&
   !productPart &&
@@ -3961,6 +3977,9 @@ const realPartKey =
               meshName: clickedMesh.name || clickedName,
               displayName: String(clickedMesh.userData?.bagastudioDisplayName || clickedMesh.name || clickedName),
               originalName: String(clickedMesh.userData?.bagastudioOriginalName || clickedName),
+              multiSelect: Boolean(e?.nativeEvent?.ctrlKey || e?.nativeEvent?.metaKey || e?.nativeEvent?.shiftKey),
+              additive: Boolean(e?.nativeEvent?.ctrlKey || e?.nativeEvent?.metaKey),
+              range: Boolean(e?.nativeEvent?.shiftKey),
             },
           })
         );

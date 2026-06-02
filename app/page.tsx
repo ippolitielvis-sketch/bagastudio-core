@@ -608,6 +608,7 @@ const [isImporterDragging, setIsImporterDragging] = useState(false);
 const [importerUiState, setImporterUiState] = useState<any>(null);
 const [lastImporterEvent, setLastImporterEvent] = useState("");
 const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
+const [selectedPartIds, setSelectedPartIds] = useState<string[]>([]);
 const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
 useEffect(() => {
@@ -624,6 +625,19 @@ useEffect(() => {
     behavior: "smooth",
   });
 }, [selectedPartId, viewerRuntimeComponents]);
+
+useEffect(() => {
+  const currentId = String(selectedPartId || "");
+  if (!currentId) {
+    setSelectedPartIds([]);
+    return;
+  }
+
+  setSelectedPartIds((current) => {
+    if (current.includes(currentId)) return current;
+    return [currentId];
+  });
+}, [selectedPartId]);
 
 const [viewerRuntimeMetadata, setViewerRuntimeMetadata] = useState<any>(null);
 const [viewerRuntimeProduct, setViewerRuntimeProduct] = useState<any>(null);
@@ -687,6 +701,13 @@ useEffect(() => {
     const nextId = String(detail?.partId || detail?.id || detail?.meshName || "");
     if (!nextId) return;
 
+    const wantsMultiSelect = Boolean(detail?.multiSelect || detail?.additive || detail?.range);
+    setSelectedPartIds((current) => {
+      if (!wantsMultiSelect) return [nextId];
+      return current.includes(nextId)
+        ? current.filter((id) => id !== nextId)
+        : [...current, nextId];
+    });
     setSelectedPart(nextId);
     setActivePanel("materials");
 
@@ -815,6 +836,8 @@ const displayPricing = useMemo(() => {
   }, [runtimeProduct, selectedPartId, viewerRuntimeComponents]);
 
   const selectedStoreKey = selectedPart?.id || selectedPartId || "";
+  const effectiveSelectedPartIds = selectedPartIds.length > 0 ? selectedPartIds : selectedStoreKey ? [selectedStoreKey] : [];
+  const hasMultiSelection = effectiveSelectedPartIds.length > 1;
 
  const filteredMaterials = useMemo(() => {
   if (!runtimeProduct) return [];
@@ -927,6 +950,7 @@ const availableAccessories = useMemo(() => {
     setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
     setActiveView("iso");
     setSelectedPart(null);
+                  setSelectedPartIds([]);
     setImportName(file.name);
     setImportedModelName(file.name);
     setImportedModelFormat(format.toUpperCase());
@@ -993,6 +1017,7 @@ const availableAccessories = useMemo(() => {
         setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
         setActiveView("iso");
         setSelectedPart(null);
+                  setSelectedPartIds([]);
         setViewerRuntimeComponents([]);
         componentRowRefs.current = {};
         setImporterUiState((current: any) => ({
@@ -1035,6 +1060,7 @@ const availableAccessories = useMemo(() => {
 
       setActiveView("iso");
       setSelectedPart(null);
+                  setSelectedPartIds([]);
       setImportName(file.name);
       console.info("BagaStudio product imported successfully");
     } catch (error) {
@@ -1388,7 +1414,7 @@ const availableAccessories = useMemo(() => {
     <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
       <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
       <p className="mb-3 text-sm text-neutral-400">
-        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
+        {hasMultiSelection ? `${effectiveSelectedPartIds.length} pezzi selezionati` : selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
       </p>
 
       {selectedStoreKey && (
@@ -1823,27 +1849,15 @@ const availableAccessories = useMemo(() => {
 
       <select
         disabled={!selectedStoreKey}
-        value={selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
+        value={hasMultiSelection ? "" : selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
         onChange={(event) => {
-          if (!selectedStoreKey) return;
+          const targetPartIds = effectiveSelectedPartIds
+            .map((value) => String(value || ""))
+            .filter(Boolean);
+          if (!targetPartIds.length) return;
+
           const nextMaterialId = event.target.value;
-          const materialKeys = Array.from(
-            new Set(
-              [
-                selectedStoreKey,
-                selectedPartId,
-                selectedPart?.id,
-                selectedPart?.partId,
-                selectedPart?.meshName,
-                selectedPart?.name,
-                selectedPart?.displayName,
-                selectedPart?.originalName,
-              ]
-                .map((value) => String(value || ""))
-                .filter(Boolean)
-            )
-          );
-          materialKeys.forEach((key) => setMaterial(key, nextMaterialId));
+          targetPartIds.forEach((key) => setMaterial(key, nextMaterialId));
         }}
         className="w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-white"
       >
@@ -1865,7 +1879,7 @@ const availableAccessories = useMemo(() => {
             <button
               type="button"
               onClick={() =>
-                setWoodDirection(selectedPart?.id || selectedStoreKey, "x")
+                effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "x"))
               }
               className={`rounded-2xl border px-3 py-2 text-sm ${
                 (woodDirection?.[selectedPart?.id || selectedStoreKey] || "x") === "x"
@@ -1879,7 +1893,7 @@ const availableAccessories = useMemo(() => {
             <button
               type="button"
               onClick={() =>
-                setWoodDirection(selectedPart?.id || selectedStoreKey, "z")
+                effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "z"))
               }
               className={`rounded-2xl border px-3 py-2 text-sm ${
                 woodDirection?.[selectedPart?.id || selectedStoreKey] === "z"
@@ -2121,6 +2135,7 @@ const availableAccessories = useMemo(() => {
                 className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
                 onClick={() => {
                   setSelectedPart(null);
+                  setSelectedPartIds([]);
                   window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
                 }}
               >
@@ -2132,10 +2147,12 @@ const availableAccessories = useMemo(() => {
               <div className="max-h-[145px] space-y-1 overflow-auto pr-1">
                 {viewerRuntimeComponents.map((component: any) => {
                   const componentId = component.id || component.partId || component.meshName;
-                  const isSelected =
-                    selectedPartId === component.id ||
-                    selectedPartId === component.partId ||
-                    selectedPartId === component.meshName;
+                  const componentAliases = [component.id, component.partId, component.meshName]
+                    .map((value: any) => String(value || ""))
+                    .filter(Boolean);
+                  const isSelected = componentAliases.some((alias: string) =>
+                    selectedPartIds.includes(alias) || selectedPartId === alias
+                  );
 
                   return (
                     <button
@@ -2153,9 +2170,16 @@ const availableAccessories = useMemo(() => {
                           ? "border-sky-400 bg-sky-500/20 text-white"
                           : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
                       }`}
-                      onClick={() => {
+                      onClick={(event) => {
                         if (!componentId) return;
 
+                        const wantsMultiSelect = event.ctrlKey || event.metaKey || event.shiftKey;
+                        setSelectedPartIds((current) => {
+                          if (!wantsMultiSelect) return [componentId];
+                          return current.includes(componentId)
+                            ? current.filter((id) => id !== componentId)
+                            : [...current, componentId];
+                        });
                         setSelectedPart(componentId);
                         setActivePanel("materials");
                         window.dispatchEvent(
@@ -2163,6 +2187,7 @@ const availableAccessories = useMemo(() => {
                             detail: {
                               ...component,
                               partId: componentId,
+                              multiSelect: wantsMultiSelect,
                             },
                           })
                         );
