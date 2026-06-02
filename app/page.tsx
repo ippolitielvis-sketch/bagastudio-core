@@ -842,6 +842,26 @@ const displayPricing = useMemo(() => {
   const effectiveSelectedPartIds = selectedPartIds.length > 0 ? selectedPartIds : selectedStoreKey ? [selectedStoreKey] : [];
   const hasMultiSelection = effectiveSelectedPartIds.length > 1;
 
+  const selectedRuntimeComponents = useMemo(() => {
+    if (!effectiveSelectedPartIds.length) return [];
+
+    const selectedSet = new Set(effectiveSelectedPartIds.map((id) => String(id || "")));
+    return viewerRuntimeComponents.filter((component: any) => {
+      const aliases = [
+        component?.id,
+        component?.partId,
+        component?.meshName,
+        component?.name,
+        component?.displayName,
+        component?.originalName,
+      ]
+        .map((value: any) => String(value || ""))
+        .filter(Boolean);
+
+      return aliases.some((alias) => selectedSet.has(alias));
+    });
+  }, [effectiveSelectedPartIds, viewerRuntimeComponents]);
+
  const filteredMaterials = useMemo(() => {
   if (!runtimeProduct) return [];
 
@@ -1094,12 +1114,12 @@ const availableAccessories = useMemo(() => {
   }
 
   return (
-   <main className="min-h-screen bg-[#07090f] text-white">
-  <div className="flex h-screen flex-col">
-   <header className="sticky top-0 z-50 border-b border-sky-500/20 bg-[#07111c]/95 px-3 py-2 backdrop-blur-xl shadow-[0_10px_35px_rgba(0,0,0,0.38)]">
-      <div className="rounded-2xl border border-sky-400/20 bg-[#07111c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+   <main className="min-h-screen bg-[radial-gradient(circle_at_12%_0%,rgba(14,165,233,0.20),transparent_28%),radial-gradient(circle_at_86%_10%,rgba(59,130,246,0.12),transparent_26%),#03070d] text-white">
+  <div className="flex h-screen flex-col overflow-hidden">
+   <header className="sticky top-0 z-50 border-b border-sky-400/20 bg-[#030b13]/90 px-3 py-2 backdrop-blur-2xl shadow-[0_18px_70px_rgba(0,0,0,0.42)]">
+      <div className="rounded-[26px] border border-sky-400/20 bg-gradient-to-r from-[#05131f]/95 via-[#07111c]/95 to-[#03101b]/95 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_0_45px_rgba(14,165,233,0.08)]">
         <div className="flex items-center justify-between gap-6">
-          <div className="flex min-w-[170px] items-center gap-3">
+          <div className="flex min-w-[220px] items-center gap-4">
             <button
               type="button"
               onClick={() => setIsLogoModalOpen(true)}
@@ -1109,12 +1129,12 @@ const availableAccessories = useMemo(() => {
               <img
                 src="/bagastudio-core-brand.png"
                 alt="BagaStudio Core"
-                className="h-12 w-auto shrink-0 object-contain drop-shadow-[0_0_14px_rgba(14,165,233,0.3)] transition group-hover:scale-[1.02]"
+                className="h-14 w-auto shrink-0 object-contain drop-shadow-[0_0_28px_rgba(14,165,233,0.46)] transition group-hover:scale-[1.045]"
               />
             </button>
           </div>
 
-          <div className="hidden flex-1 items-center justify-center gap-0 2xl:flex">
+          <div className="hidden flex-1 items-center justify-center gap-1 xl:flex">
             {[
               ["⬡", t.configurator],
               ["◉", t.realisticRender],
@@ -1123,8 +1143,14 @@ const availableAccessories = useMemo(() => {
             ].map((item, index) => (
               <div
                 key={item[1]}
-                className={`flex min-w-[105px] flex-col items-center justify-center gap-1 border-white/10 px-3 ${
-                  index > 0 ? "border-l" : ""
+                className={`flex min-w-[124px] flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ${
+                  index === 0
+                    ? "border-sky-400/20 bg-sky-500/10"
+                    : index === 1
+                    ? "border-cyan-400/20 bg-cyan-500/10"
+                    : index === 2
+                    ? "border-violet-400/20 bg-violet-500/10"
+                    : "border-emerald-400/20 bg-emerald-500/10"
                 }`}
               >
                 <div className="text-lg font-black text-sky-400 drop-shadow-[0_0_12px_rgba(14,165,233,0.35)]">
@@ -1138,9 +1164,9 @@ const availableAccessories = useMemo(() => {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="rounded-2xl border border-sky-400/20 bg-[#0b1826] px-4 py-2 shadow-[0_0_18px_rgba(14,165,233,0.08)]">
+            <div className="rounded-2xl border border-sky-300/25 bg-sky-500/10 px-4 py-2 shadow-[0_0_25px_rgba(14,165,233,0.16)]">
               <p className="text-xs font-bold uppercase tracking-widest text-neutral-300">{t.totalPrice}</p>
-              <p className="mt-0 text-2xl font-black text-sky-400">
+              <p className="mt-0 text-[26px] font-black leading-none text-sky-300 drop-shadow-[0_0_15px_rgba(14,165,233,0.32)]">
                 € {displayPricing.total.toFixed(2)}
               </p>
               <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
@@ -1180,7 +1206,7 @@ const availableAccessories = useMemo(() => {
           </div>
         </div>
 
-        <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+        <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
           <div className="flex items-center gap-2">
             {[
               ["config", "⌂", t.project],
@@ -1192,10 +1218,10 @@ const availableAccessories = useMemo(() => {
               <button
                 key={tab[0]}
                 onClick={() => setActivePanel(tab[0])}
-                className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
+                className={`rounded-2xl px-4 py-2.5 text-sm font-black tracking-wide transition ${
                   activePanel === tab[0]
-                    ? "bg-sky-500 text-white shadow-[0_0_22px_rgba(14,165,233,0.35)]"
-                    : "bg-white/[0.03] text-neutral-300 hover:bg-white/[0.07]"
+                    ? "bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 text-white shadow-[0_0_28px_rgba(14,165,233,0.42)]"
+                    : "bg-white/[0.045] text-neutral-300 hover:bg-sky-500/10 hover:text-white"
                 }`}
               >
                 <span className="mr-2">{tab[1]}</span>{tab[2]}
@@ -1218,11 +1244,68 @@ const availableAccessories = useMemo(() => {
       </div>
     </header>
 
-    <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] gap-2 bg-[#07111c] p-2">
-  <aside className="overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="border-b border-sky-400/10 bg-[#030911]/95 px-3 py-2">
+      <div className="mx-auto flex max-w-[1900px] items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300">
+        <div className="flex items-center gap-3">
+          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/15 px-3 py-1 text-emerald-200 shadow-[0_0_18px_rgba(52,211,153,0.12)]">Runtime stabile</span>
+          <span className="rounded-full border border-sky-400/25 bg-sky-400/15 px-3 py-1 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.12)]">{viewerRuntimeComponents.length || 0} componenti</span>
+          <span className="rounded-full border border-violet-400/25 bg-violet-400/15 px-3 py-1 text-violet-100 shadow-[0_0_18px_rgba(167,139,250,0.12)]">{effectiveSelectedPartIds.length} selezionati</span>
+          <span className="rounded-full border border-amber-400/25 bg-amber-400/15 px-3 py-1 text-amber-100 shadow-[0_0_18px_rgba(251,191,36,0.1)]">X-Ray</span>
+        </div>
+        <div className="hidden items-center gap-3 lg:flex">
+          <span>DAE / JSON</span>
+          <span>PartId</span>
+          <span>X-Ray</span>
+          <span>Multi-select</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid min-h-0 flex-1 grid-cols-[340px_minmax(0,1fr)_350px] gap-3 bg-[#030911] p-3">
+  <aside className="overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+  <section className="mb-4 overflow-hidden rounded-[28px] border border-sky-400/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.28),transparent_36%),linear-gradient(135deg,rgba(8,47,73,0.88),rgba(2,6,23,0.96))] p-5 shadow-[0_0_35px_rgba(14,165,233,0.16)]">
+    <div className="flex items-center gap-4">
+      <button
+        type="button"
+        onClick={() => setIsLogoModalOpen(true)}
+        className="rounded-2xl border border-sky-300/25 bg-black/35 p-2 shadow-[0_0_24px_rgba(14,165,233,0.22)] transition hover:scale-[1.03] hover:border-sky-300/50"
+      >
+        <img src="/bagastudio-core-brand.png" alt="BagaStudio Core" className="h-16 w-auto object-contain" />
+      </button>
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.38em] text-sky-300">BagaStudio</p>
+        <h2 className="text-xl font-black leading-tight text-white">Core Viewer</h2>
+        <p className="mt-1 text-xs font-semibold text-cyan-100/80">Configurazione prodotto professionale</p>
+      </div>
+    </div>
+    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-emerald-200">Runtime</span>
+        <strong className="text-sm text-white">Ready</strong>
+      </div>
+      <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-sky-200">Pezzi</span>
+        <strong className="text-sm text-white">{viewerRuntimeComponents.length || 0}</strong>
+      </div>
+      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-violet-200">Select</span>
+        <strong className="text-sm text-white">{effectiveSelectedPartIds.length}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section className="mb-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+    <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Azioni rapide</p>
+    <div className="grid grid-cols-2 gap-2">
+      <button type="button" onClick={() => setActivePanel("config")} className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20">Import</button>
+      <button type="button" onClick={() => setActivePanel("materials")} className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-500/20">Materiali</button>
+      <button type="button" onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))} className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/20">Focus</button>
+      <button type="button" onClick={() => setXRayEnabled((value) => !value)} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-100 hover:bg-violet-500/20">X-Ray</button>
+    </div>
+  </section>
 {activePanel === "config" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-4 text-lg font-semibold text-white">{t.importProductJson}</h2>
       <input
         type="file"
@@ -1328,7 +1411,7 @@ const availableAccessories = useMemo(() => {
       </div>
     </section>
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
       <p className="text-sm text-neutral-300">
         {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
@@ -1383,7 +1466,7 @@ const availableAccessories = useMemo(() => {
     </section>
 
     {runtimeProduct && (
-      <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
         <h2 className="mb-4 text-xl font-semibold">{t.dimensions}</h2>
 
         {(["width", "height", "depth"] as const).map((key) => {
@@ -1414,7 +1497,7 @@ const availableAccessories = useMemo(() => {
       </section>
     )}
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {hasMultiSelection ? `${effectiveSelectedPartIds.length} pezzi selezionati` : selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
@@ -1677,7 +1760,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "accessories" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-3 text-xl font-semibold">{t.accessories}</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {t.applyAccessoriesTo}: {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
@@ -1844,7 +1927,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "materials" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-3 text-xl font-semibold">{t.materials}</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
@@ -1855,7 +1938,7 @@ const availableAccessories = useMemo(() => {
         value={hasMultiSelection ? "" : selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
         onChange={(event) => {
           const targetPartIds = effectiveSelectedPartIds
-            .map((value) => String(value || ""))
+            .map((value: any) => String(value || ""))
             .filter(Boolean);
           if (!targetPartIds.length) return;
 
@@ -1915,7 +1998,7 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "views" && (
   <>
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-3 text-xl font-semibold">{t.views}</h2>
       <div className="grid grid-cols-2 gap-2">
         {(runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS).map(
@@ -1936,7 +2019,7 @@ const availableAccessories = useMemo(() => {
       </div>
     </section>
 
-    <section className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-3 text-xl font-semibold">{t.runtimeJson}</h2>
       <button
         onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
@@ -1997,7 +2080,7 @@ const availableAccessories = useMemo(() => {
     const file = event.dataTransfer.files?.[0];
     if (file) handleModelFileImport(file);
   }}
-  className={`relative overflow-hidden rounded-2xl border bg-[#0b111b] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.45)] ${
+  className={`relative overflow-hidden rounded-[30px] border bg-[#050d16] p-3 shadow-[0_25px_100px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)] ${
     isImporterDragging ? "border-sky-300 ring-2 ring-sky-400/60" : "border-sky-400/15"
   }`}
 >
@@ -2010,7 +2093,7 @@ const availableAccessories = useMemo(() => {
     </div>
   )}
 
-  <div className="absolute right-5 top-5 z-30 w-[220px] rounded-2xl border border-cyan-400/20 bg-[#07111c]/92 p-3 shadow-2xl backdrop-blur-xl">
+  <div className="absolute right-5 top-5 z-30 w-[230px] rounded-3xl border border-cyan-400/25 bg-[#061522]/88 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45),0_0_28px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
     <div className="mb-2 flex items-center justify-between gap-2">
       <div>
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200">X-Ray</p>
@@ -2044,7 +2127,7 @@ const availableAccessories = useMemo(() => {
     </div>
   </div>
 
-  <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-2xl border border-white/10 bg-[#07111c]/92 p-1.5 shadow-2xl backdrop-blur-xl">
+  <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 gap-1.5 rounded-[22px] border border-white/10 bg-[#06111d]/94 p-2 shadow-[0_18px_55px_rgba(0,0,0,0.48),0_0_22px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
     {[
       ["3D", t.viewIso, "iso"],
       ["FR", t.viewFront, "front"],
@@ -2078,7 +2161,7 @@ const availableAccessories = useMemo(() => {
               setActiveView(action);
             }
           }}
-          className={`flex h-9 min-w-11 items-center justify-center rounded-xl px-2 text-[11px] font-black uppercase tracking-[0.08em] transition ${
+          className={`flex h-10 min-w-12 items-center justify-center rounded-2xl px-2.5 text-[11px] font-black uppercase tracking-[0.08em] transition ${
             isActiveView
               ? "bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
               : "text-neutral-200 hover:bg-sky-500/20 hover:text-white"
@@ -2120,9 +2203,9 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-sky-400/15 bg-[#07111c] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
           {/* bagastudio-sidebar-components-right-final-v1 */}
-          <section className="max-h-[240px] shrink-0 overflow-hidden rounded-2xl border border-cyan-400/15 bg-white/[0.03] p-3">
+          <section className="max-h-[300px] shrink-0 overflow-hidden rounded-[24px] border border-cyan-400/20 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
@@ -2147,7 +2230,7 @@ const availableAccessories = useMemo(() => {
             </div>
 
             {viewerRuntimeComponents.length > 0 ? (
-              <div className="max-h-[145px] space-y-1 overflow-auto pr-1">
+              <div className="max-h-[200px] space-y-1.5 overflow-auto pr-1">
                 {viewerRuntimeComponents.map((component: any) => {
                   const componentId = component.id || component.partId || component.meshName;
                   const componentAliases = [component.id, component.partId, component.meshName]
@@ -2168,7 +2251,7 @@ const availableAccessories = useMemo(() => {
                         if (component.meshName) componentRowRefs.current[component.meshName] = node;
                       }}
                       type="button"
-                      className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                      className={`w-full rounded-2xl border px-3 py-2.5 text-left transition ${
                         isSelected
                           ? "border-sky-400 bg-sky-500/20 text-white"
                           : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
@@ -2218,7 +2301,63 @@ const availableAccessories = useMemo(() => {
             )}
           </section>
 
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          {effectiveSelectedPartIds.length > 0 && (
+            <section className="shrink-0 rounded-[24px] border border-sky-400/25 bg-sky-500/[0.08] p-4 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
+                    {hasMultiSelection ? "Selezione multipla" : "Selezione attiva"}
+                  </h2>
+                  <p className="text-xs font-semibold text-white">
+                    {effectiveSelectedPartIds.length} {effectiveSelectedPartIds.length === 1 ? "pezzo selezionato" : "pezzi selezionati"}
+                  </p>
+                </div>
+                {hasMultiSelection && (
+                  <span className="rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-100">
+                    gruppo
+                  </span>
+                )}
+              </div>
+
+              <div className="max-h-[180px] space-y-1.5 overflow-auto pr-1">
+                {(selectedRuntimeComponents.length
+                  ? selectedRuntimeComponents
+                  : effectiveSelectedPartIds.map((id) => ({ id, partId: id, displayName: id }))
+                ).map((component: any, index: number) => {
+                  const componentId = String(component?.id || component?.partId || component?.meshName || effectiveSelectedPartIds[index] || "");
+                  const isActive = componentId === selectedPartId || component?.partId === selectedPartId || component?.meshName === selectedPartId;
+                  return (
+                    <div
+                      key={`selected-${componentId}-${index}`}
+                      className={`rounded-xl border px-3 py-2 text-xs ${
+                        isActive
+                          ? "border-amber-300/40 bg-amber-300/10 text-white"
+                          : "border-white/10 bg-black/20 text-neutral-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-semibold">
+                          {component?.displayName || component?.name || component?.meshName || componentId}
+                        </span>
+                        {isActive && <span className="text-[10px] text-amber-200">attivo</span>}
+                      </div>
+                      <div className="mt-1 truncate text-[10px] text-neutral-400">
+                        {component?.partId || component?.id || componentId}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {hasMultiSelection && (
+                <p className="mt-2 text-[11px] leading-snug text-sky-100/80">
+                  Materiale, venatura e azioni condivise vengono applicate al gruppo selezionato.
+                </p>
+              )}
+            </section>
+          )}
+
+          <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.objectProperties}</h2>
               <span className="text-neutral-400">⌃</span>
@@ -2236,7 +2375,7 @@ const availableAccessories = useMemo(() => {
           </section>
 
           <div className="mt-auto space-y-3">
-            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.projectSummary}</h2>
                 <span className="text-neutral-400">⌃</span>

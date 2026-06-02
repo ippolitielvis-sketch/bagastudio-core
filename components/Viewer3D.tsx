@@ -2943,6 +2943,46 @@ function buildBagastudioSpazio3DColladaRuntimeRootFromText(daeText: string, file
   }
 }
 
+
+function ensureBagastudioModelEdgeDefinition(root: THREE.Object3D | null, format?: string | null) {
+  if (!root || !isImportedModelFormat(format ?? undefined)) return;
+
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    if (mesh.userData?.bagastudioEdgeOverlay) return;
+
+    const existing = mesh.children.find((item) => item.userData?.bagastudioEdgeOverlay);
+    if (existing) return;
+
+    // Edge Smart V21: soglia alta per mostrare solo spigoli reali del mobile.
+    // I DAE Spazio3D sono spesso triangolati: soglie basse mostrano diagonali/ventagli
+    // interni che sembrano errori grafici. Con 74 gradi restano leggibili gli spigoli
+    // dei pannelli, ma vengono nascosti quasi tutti gli edge di triangolazione.
+    const edgeGeometry = new THREE.EdgesGeometry(mesh.geometry as THREE.BufferGeometry, 74);
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: new THREE.Color("#475569"),
+      transparent: true,
+      opacity: 0.42,
+      depthTest: true,
+      depthWrite: false,
+      toneMapped: false,
+    });
+
+    const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    edges.name = `${mesh.name || "bagastudio_part"}_edge_definition`;
+    edges.renderOrder = 8;
+    edges.userData = {
+      bagastudioEdgeOverlay: true,
+      bagastudioSelectable: false,
+      bagastudioRuntimeComponent: false,
+      bagastudioIgnoreRaycast: true,
+    };
+    edges.raycast = () => null;
+    mesh.add(edges);
+  });
+}
+
 function ProductModel({
   materials = {},
   productMaterials = [],
@@ -2998,6 +3038,7 @@ function ProductModel({
     const onLoaded = (object: THREE.Object3D) => {
       if (cancelled) return;
       forcePreviewMaterials(object, format);
+      ensureBagastudioModelEdgeDefinition(object, format);
       const analyzedComponents = analyzeImportedModelComponents(object, format);
 
       if (typeof window !== "undefined") {
