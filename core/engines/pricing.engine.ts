@@ -15,6 +15,8 @@ export function calculatePricing(productOverride?: any) {
   const store = useConfigStore.getState();
 const product = productOverride || store.runtimeProduct || store.product;
 
+  const pricingConfig = product.pricing || {};
+
   if (!product) {
     return {
       subtotal: 0,
@@ -23,9 +25,21 @@ const product = productOverride || store.runtimeProduct || store.product;
     };
   }
 
-  let subtotal = product.pricing.basePrice;
+  let subtotal = Number(pricingConfig.basePrice || 0);
 
-  const width = store.dimensions.width || 0;
+  const width = Number(store.dimensions?.width || 0);
+  const height = Number(store.dimensions?.height || 0);
+  const depth = Number(store.dimensions?.depth || 0);
+
+  // Pricing Engine Recovery V1:
+  // dimensioni base temporanee per rendere il prezzo reattivo nel Viewer.
+  // V2 dovrà usare superficie/BOM reale quando Product Package + Factory Engine saranno consolidati.
+  const BASE_WIDTH_CM = 100;
+  const BASE_HEIGHT_CM = 85;
+  const BASE_DEPTH_CM = 50;
+  const WIDTH_PRICE_PER_CM = 8;
+  const HEIGHT_PRICE_PER_CM = 4;
+  const DEPTH_PRICE_PER_CM = 6;
   let accessoriesTotal = 0;
 
 Object.entries(store.accessories || {}).forEach(
@@ -91,9 +105,17 @@ console.log("SUBTOTAL BEFORE MARGIN:", subtotal);
 
 const hasBlackMaterial = Object.values(store.materials).includes("black");
 
-  // supplemento larghezza oltre 200 cm
-  if (width > 200) {
-    subtotal += (width - 200) * 8;
+  // supplementi dimensionali temporanei V1
+  if (width > BASE_WIDTH_CM) {
+    subtotal += (width - BASE_WIDTH_CM) * WIDTH_PRICE_PER_CM;
+  }
+
+  if (height > BASE_HEIGHT_CM) {
+    subtotal += (height - BASE_HEIGHT_CM) * HEIGHT_PRICE_PER_CM;
+  }
+
+  if (depth > BASE_DEPTH_CM) {
+    subtotal += (depth - BASE_DEPTH_CM) * DEPTH_PRICE_PER_CM;
   }
 
   // supplemento LED
@@ -102,8 +124,8 @@ const hasBlackMaterial = Object.values(store.materials).includes("black");
     subtotal *= 1.1;
   }
 
-  const margin = product.pricing.margin || 0;
-  const vatRate = product.pricing.vat || 0;
+  const margin = Number(pricingConfig.margin || 0);
+  const vatRate = Number(pricingConfig.vat || 0);
 
   subtotal = subtotal + subtotal * (margin / 100);
 
