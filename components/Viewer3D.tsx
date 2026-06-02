@@ -3164,15 +3164,19 @@ const applyBagastudioXRayMaterialState = (
         const meshDisplayName = String(mesh.userData?.bagastudioDisplayName || "");
         const meshOriginalName = String(mesh.userData?.bagastudioOriginalName || "");
         const meshMaterialGroup = String(mesh.userData?.bagastudioMaterialGroup || "");
-        const meshAliases = [
-          partKey,
-          mesh.name,
-          meshPartId,
-          meshRuntimeMeshName,
-          meshDisplayName,
-          meshOriginalName,
-          meshMaterialGroup,
-        ].filter(Boolean);
+        const isImportedRuntimeMesh = isImportedModelFormat(runtimeModelFormat);
+        const effectivePartId = meshPartId || meshRuntimeMeshName || partKey;
+        const meshAliases = isImportedRuntimeMesh
+          ? [effectivePartId].filter(Boolean)
+          : [
+              partKey,
+              mesh.name,
+              meshPartId,
+              meshRuntimeMeshName,
+              meshDisplayName,
+              meshOriginalName,
+              meshMaterialGroup,
+            ].filter(Boolean);
 
         const productPart =
   productParts.find((p) => meshAliases.includes(String(p.id))) ||
@@ -3195,7 +3199,7 @@ const insertMount = productPart?.mountPoints?.insert;
 const defaultInsert = getDefaultInsertConfig();
         
 
-      const storeKey = productPart?.id || partKey;
+      const storeKey = isImportedRuntimeMesh ? effectivePartId : (productPart?.id || partKey);
 
 const hasLed = (productPart as any)?.compatibleLed === true || Boolean(ledMount);
 
@@ -3205,9 +3209,9 @@ const ledIsActive =
   (accessories as any)?.[storeKey] === true ||
   (accessories as any)?.[partKey] === true;
 
-        const materialStoreKey = productPart?.id ?? partKey;
+        const materialStoreKey = isImportedRuntimeMesh ? effectivePartId : (productPart?.id ?? partKey);
 
-const insertKey = productPart?.id ?? storeKey ?? partKey;
+const insertKey = isImportedRuntimeMesh ? effectivePartId : (productPart?.id ?? storeKey ?? partKey);
 
 const hasInsert = Boolean(
   inserts[insertKey]
@@ -3223,21 +3227,28 @@ const isMirrorPart =
 const materialId =
   isMirrorPart
     ? "specchio"
-    : meshAliases.map((alias) => materials[String(alias)]).find(Boolean) ||
-  materials[productPart?.id ?? ""] ||
-  materials[materialStoreKey] ||
-  materials[partKey] ||
-  productPart?.defaultMaterialId ||
-      (mesh.name.includes("Piede") || mesh.name.includes("Maniglia")
-        ? "oro_satinato"
-        : "barok");
+    : isImportedRuntimeMesh
+      ? materials[effectivePartId] ||
+        productPart?.defaultMaterialId ||
+        (mesh.name.includes("Piede") || mesh.name.includes("Maniglia")
+          ? "oro_satinato"
+          : "barok")
+      : meshAliases.map((alias) => materials[String(alias)]).find(Boolean) ||
+        materials[productPart?.id ?? ""] ||
+        materials[materialStoreKey] ||
+        materials[partKey] ||
+        productPart?.defaultMaterialId ||
+        (mesh.name.includes("Piede") || mesh.name.includes("Maniglia")
+          ? "oro_satinato"
+          : "barok");
 
    const isSelected =
   Boolean(selectedPartId) &&
   (
-    selectedPartId === productPart?.id ||
-    selectedPartId === partKey ||
-    selectedPartId === mesh.name ||
+    selectedPartId === (isImportedRuntimeMesh ? effectivePartId : productPart?.id) ||
+    selectedPartId === effectivePartId ||
+    (!isImportedRuntimeMesh && selectedPartId === partKey) ||
+    (!isImportedRuntimeMesh && selectedPartId === mesh.name) ||
     meshAliases.includes(String(selectedPartId))
   );
 const ledColor =
@@ -3259,9 +3270,9 @@ const materialData =
   (m: any) => normalizeKey(m.name) === normalizeKey(materialId)
 );
 const isUnmappedImportedMesh =
-  isImportedModelFormat(runtimeModelFormat) &&
+  isImportedRuntimeMesh &&
   !productPart &&
-  !meshAliases.some((alias) => Boolean(materials[String(alias)]));
+  !Boolean(materials[effectivePartId]);
 
 if (isUnmappedImportedMesh && !materialData) {
   mesh.material = createBagastudioNeutralImportMaterial();
@@ -3920,11 +3931,14 @@ const clickedPart =
   );
 
 const clickedMeshObject = e.object as THREE.Mesh;
+const clickedMeshPartId = String(clickedMeshObject.userData?.bagastudioPartId || "");
+const clickedMeshRuntimeName = String(clickedMeshObject.userData?.bagastudioMeshName || "");
+const clickedIsImported = isImportedModelFormat(runtimeModelFormat);
+
 const realPartKey =
-  clickedPart?.id ||
-  String(clickedMeshObject.userData?.bagastudioPartId || "") ||
-  String(clickedMeshObject.userData?.bagastudioMeshName || "") ||
-  clickedName;
+  clickedIsImported
+    ? (clickedMeshPartId || clickedMeshRuntimeName || clickedName)
+    : (clickedPart?.id || clickedMeshPartId || clickedMeshRuntimeName || clickedName);
 
     const clickedMesh =
   scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
