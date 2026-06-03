@@ -701,6 +701,126 @@ useEffect(() => {
   };
 }, []);
 
+useEffect(() => {
+  const isEditableTarget = (target: EventTarget | null) => {
+    const element = target as HTMLElement | null;
+    if (!element) return false;
+
+    const tagName = element.tagName?.toLowerCase();
+    return (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      tagName === "select" ||
+      element.isContentEditable
+    );
+  };
+
+  const openProjectFromShortcut = async () => {
+    try {
+      const openFilePicker = (window as any).showOpenFilePicker;
+
+      if (typeof openFilePicker === "function") {
+        const [handle] = await openFilePicker({
+          multiple: false,
+          types: [
+            {
+              description: "BagaStudio Project",
+              accept: { "application/json": [".baga", ".json"] },
+            },
+          ],
+        });
+
+        const file = await handle.getFile();
+        if (file) await openProject(file);
+        return;
+      }
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".baga,.json,application/json";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (file) await openProject(file);
+      };
+      input.click();
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        showUiNotice("Apertura progetto annullata", "info");
+        return;
+      }
+
+      console.error("BagaStudio project open picker error", error);
+      showUiNotice("Errore apertura progetto", "error");
+    }
+  };
+
+  const handleKeyboardShortcut = (event: KeyboardEvent) => {
+    if (isEditableTarget(event.target)) return;
+
+    const key = event.key.toLowerCase();
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && key === "s") {
+      event.preventDefault();
+      void saveProject();
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && key === "o") {
+      event.preventDefault();
+      void openProjectFromShortcut();
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && key === "n") {
+      event.preventDefault();
+      newProject();
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && key === "f") {
+      event.preventDefault();
+      window.dispatchEvent(new Event("bagastudio:focus-selection"));
+      showUiNotice("Focus modello", "info");
+      return;
+    }
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && key === "x") {
+      event.preventDefault();
+      setXRayEnabled((value) => !value);
+      showUiNotice("X-Ray aggiornato", "info");
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    if (event.key === "Escape") {
+      setSelectedPart(null);
+      setSelectedPartIds([]);
+      window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+      showUiNotice("Selezione annullata", "info");
+      return;
+    }
+
+
+    const viewShortcuts: Record<string, string> = {
+      "1": "iso",
+      "2": "front",
+      "3": "left",
+      "4": "right",
+      "5": "top",
+    };
+
+    const nextView = viewShortcuts[event.key];
+    if (nextView) {
+      setActiveView(nextView);
+      showUiNotice(`Vista ${event.key} attivata`, "info");
+    }
+  };
+
+  window.addEventListener("keydown", handleKeyboardShortcut);
+  return () => window.removeEventListener("keydown", handleKeyboardShortcut);
+}, [openProject, saveProject, newProject, setActiveView, setSelectedPart]);
+
 
 useEffect(() => {
   const refreshImporterUiState = () => {
@@ -867,12 +987,44 @@ function newProject() {
   setSelectedPartIds([]);
 }
 
-function saveProject() {
+async function saveProject() {
   const projectName = getCurrentProjectName();
   const project = createBagaStudioProject(exportConfiguration(), projectName);
-  downloadJson(getSafeProjectFilename(projectName), project);
-  setLastProjectAction(`Progetto salvato: ${projectName}`);
-  showUiNotice(`Progetto salvato: ${projectName}`);
+  const fileName = getSafeProjectFilename(projectName);
+
+  try {
+    const saveFilePicker = (window as any).showSaveFilePicker;
+
+    if (typeof saveFilePicker === "function") {
+      const handle = await saveFilePicker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: "BagaStudio Project",
+            accept: { "application/json": [".baga", ".json"] },
+          },
+        ],
+      });
+
+      const writable = await handle.createWritable();
+      await writable.write(JSON.stringify(project, null, 2));
+      await writable.close();
+    } else {
+      downloadJson(fileName, project);
+    }
+
+    setLastProjectAction(`Progetto salvato: ${projectName}`);
+    showUiNotice(`Progetto salvato: ${projectName}`);
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      showUiNotice("Salvataggio annullato", "info");
+      return;
+    }
+
+    console.error("BagaStudio project save error", error);
+    setLastProjectAction("Errore: progetto non salvato.");
+    showUiNotice("Errore: progetto non salvato.", "error");
+  }
 }
 
 async function openProject(file: File) {
@@ -2160,6 +2312,27 @@ const availableAccessories = useMemo(() => {
         <p><strong className="text-emerald-200">SALVA</strong>: conserva il lavoro e ripristina configurazioni o backup.</p>
         <p><strong className="text-amber-200">PRODUCI</strong>: genera preventivo, Product Package e GLB.</p>
         <p><strong className="text-neutral-100">STRUMENTI</strong>: area tecnica avanzata, non necessaria per il flusso quotidiano.</p>
+      </div>
+
+      <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-4">
+        <p className="mb-3 text-[10px] font-black uppercase tracking-[0.24em] text-violet-200">Scorciatoie da tastiera</p>
+        <div className="grid grid-cols-1 gap-2 text-xs text-neutral-300">
+          {[
+            ["Alt+S", "Salva progetto"],
+            ["Alt+O", "Apri progetto"],
+            ["Alt+N", "Nuovo progetto"],
+            ["Esc", "Deseleziona"],
+            ["Alt+F", "Focus modello"],
+            ["Alt+X", "X-Ray"],
+            ["1 / 2 / 3 / 4 / 5", "3D / Frontale / Sinistra / Destra / Top"],
+          ].map(([shortcut, action]) => (
+            <div key={shortcut} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2">
+              <span className="font-black text-white">{shortcut}</span>
+              <span className="text-right text-neutral-300">{action}</span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-neutral-500">Le scorciatoie Alt sono disattivate mentre scrivi in campi testo, misure, nomi progetto o input.</p>
       </div>
     </section>
   </>
