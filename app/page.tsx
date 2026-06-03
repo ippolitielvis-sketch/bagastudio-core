@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
 import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
 import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
+import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
 import { useConfigStore } from "@/core/state/config.state";
 import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
@@ -925,7 +926,6 @@ useEffect(() => {
         : [...current, nextId];
     });
     setSelectedPart(nextId);
-    setActivePanel("materials");
 
     setViewerRuntimeComponents((current) => {
       if (!Array.isArray(current)) return current;
@@ -1236,7 +1236,7 @@ async function handleGenericImportFile(file: File) {
   return product ? normalizeProduct(product) : null;
 }, [product]);
 
-const displayPricing = useMemo(() => {
+const basePricing = useMemo(() => {
  return calculatePricing(runtimeProduct);
 }, [
   runtimeProduct,
@@ -1321,6 +1321,88 @@ const bomRows = useMemo(() => {
 
   const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
 
+  const getPartStoreKey = (part: any) => String(
+    part?.id ||
+    part?.partId ||
+    part?.meshName ||
+    part?.name ||
+    part?.displayName ||
+    part?.originalName ||
+    ""
+  ).trim();
+
+  const getPartMaterialId = (part: any) => {
+    const storeKey = getPartStoreKey(part);
+    return String(
+      materials?.[storeKey] ||
+      part?.materialId ||
+      part?.material ||
+      part?.runtimeMetadata?.materialId ||
+      ""
+    ).trim();
+  };
+
+  const getMaterialRecord = (materialId: string) => {
+    const materialKey = String(materialId || "").toLowerCase().trim();
+    if (!materialKey) return null;
+
+    const sourceMaterials = [
+      ...(Array.isArray(runtimeProduct?.materials) ? runtimeProduct.materials : []),
+      ...MATERIAL_LIBRARY,
+    ];
+
+    return sourceMaterials.find((material: any) => {
+      const id = String(material?.id || "").toLowerCase().trim();
+      const name = String(material?.name || "").toLowerCase().trim();
+      return id === materialKey || name === materialKey;
+    }) || null;
+  };
+
+  const getMaterialPricePerSqm = (material: any, materialId?: string) => {
+    const candidates = [
+      material?.pricePerSqm,
+      material?.priceSqm,
+      material?.costPerSqm,
+      material?.costSqm,
+      material?.eurPerSqm,
+      material?.priceM2,
+      material?.costM2,
+      material?.pricing?.pricePerSqm,
+      material?.pricing?.costPerSqm,
+      material?.metadata?.pricePerSqm,
+      material?.metadata?.costPerSqm,
+    ];
+
+    for (const candidate of candidates) {
+      const value = Number(candidate);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+
+    const key = `${materialId || material?.id || ""} ${material?.name || ""}`.toLowerCase();
+    if (!key.trim()) return 0;
+    if (/fenix|hpl|compact|laminam|gres|stone|marmo|calacatta|statuario|onice|emperador/.test(key)) return 110;
+    if (/laccat|lucid|opaco|verniciat/.test(key)) return 95;
+    if (/rovere|noce|olmo|legno|wood|truciolato|bilaminato|melaminico|laminato/.test(key)) return 65;
+    if (/metallo|acciaio|alluminio|nero|tortora|bianco|cemento/.test(key)) return 75;
+    return 65;
+  };
+
+  const getPanelAreaSqm = (part: any, category?: string) => {
+    if (category !== "panel") return 0;
+
+    const bounds = getBounds(part);
+    if (!bounds) return 0;
+
+    const dimensionsMm = [
+      Number(bounds.width || 0) * 10,
+      Number(bounds.depth || 0) * 10,
+      Number(bounds.height || 0) * 10,
+    ].filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => b - a);
+
+    if (dimensionsMm.length < 2) return 0;
+    return (Number(dimensionsMm[0] || 0) * Number(dimensionsMm[1] || 0)) / 1000000;
+  };
+
   const getDimensionLabel = (part: any) => {
     const bounds = getBounds(part);
     if (!bounds) return "-";
@@ -1341,7 +1423,13 @@ const bomRows = useMemo(() => {
     const category = normalizeBomCategory(part);
     const groupTitle = getBomGroupTitle(category);
     const dimensionsLabel = getDimensionLabel(part);
-    const key = `${category}|${label.toLowerCase()}|${dimensionsLabel}`;
+    const materialId = getPartMaterialId(part);
+    const materialRecord = getMaterialRecord(materialId);
+    const materialName = materialRecord ? translateMaterialName(materialRecord, t) : materialId || "Materiale non assegnato";
+    const pricePerSqm = category === "panel" ? getMaterialPricePerSqm(materialRecord, materialId) : 0;
+    const areaSqm = getPanelAreaSqm(part, category);
+    const materialCost = areaSqm * pricePerSqm;
+    const key = `${category}|${label.toLowerCase()}|${dimensionsLabel}|${category === "panel" ? materialId.toLowerCase() : ""}`;
     const id = String(part?.partId || part?.id || part?.meshName || part?.name || "").trim();
 
     if (!grouped.has(key)) {
@@ -1354,11 +1442,18 @@ const bomRows = useMemo(() => {
         dimensionsLabel,
         quantity: 0,
         partIds: [],
+        materialId,
+        materialName,
+        pricePerSqm,
+        areaSqm: 0,
+        materialCost: 0,
       });
     }
 
     const row = grouped.get(key);
     row.quantity += 1;
+    row.areaSqm += areaSqm;
+    row.materialCost += materialCost;
     if (id) row.partIds.push(id);
   });
 
@@ -1367,7 +1462,7 @@ const bomRows = useMemo(() => {
     String(a.name).localeCompare(String(b.name)) ||
     String(a.dimensionsLabel).localeCompare(String(b.dimensionsLabel))
   );
-}, [runtimeProduct, viewerRuntimeComponents]);
+}, [runtimeProduct, viewerRuntimeComponents, materials, t]);
 
 const bomSections = useMemo(() => {
   const sections = new Map<string, any>();
@@ -1386,6 +1481,31 @@ const bomSections = useMemo(() => {
 
   return Array.from(sections.values()).sort((a: any, b: any) => Number(a.order || 99) - Number(b.order || 99));
 }, [bomRows]);
+
+const materialPricingSummary = useMemo(() => {
+  const panelRows = bomRows.filter((row: any) => row.category === "panel");
+  const areaSqm = panelRows.reduce((total: number, row: any) => total + Number(row.areaSqm || 0), 0);
+  const materialCost = panelRows.reduce((total: number, row: any) => total + Number(row.materialCost || 0), 0);
+  const pricedRows = panelRows.filter((row: any) => Number(row.pricePerSqm || 0) > 0).length;
+
+  return {
+    areaSqm,
+    materialCost,
+    pricedRows,
+    panelRows: panelRows.length,
+  };
+}, [bomRows]);
+
+const displayPricing = useMemo(() => {
+  const baseTotal = Number(basePricing?.total || 0);
+  const materialCost = Number(materialPricingSummary.materialCost || 0);
+
+  return {
+    ...basePricing,
+    materialCost,
+    total: baseTotal + materialCost,
+  };
+}, [basePricing, materialPricingSummary]);
 
   const selectedPart = useMemo(() => {
     if (!selectedPartId) return null;
@@ -1748,111 +1868,156 @@ const availableAccessories = useMemo(() => {
       selectedCount={effectiveSelectedPartIds.length}
     />
 
-    <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_350px] gap-3 bg-[#030911] p-3">
-  <aside className="overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
-  {/* Sidebar brand card removed: header/status already visible in top runtime bar. */}
-
-
-<section className="rounded-3xl border border-sky-400/20 bg-[#081827]/70 p-3 shadow-[0_0_22px_rgba(14,165,233,0.08)]">
-  <p className="mb-3 text-[10px] font-black uppercase tracking-[0.32em] text-cyan-300">
-    Workflow
-  </p>
-  <div className="grid grid-cols-2 gap-2">
-    <button
-      type="button"
-      onClick={() => setActivePanel("config")}
-      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-        activePanel === "config"
-          ? "border-sky-300 bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
-          : "border-sky-400/20 bg-[#0b1722] text-cyan-50 hover:border-sky-300/60"
-      }`}
-    >
-      Carica
-    </button>
-    <button
-      type="button"
-      onClick={() => setActivePanel("materials")}
-      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-        activePanel === "materials"
-          ? "border-sky-300 bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
-          : "border-sky-400/20 bg-[#0b1722] text-cyan-50 hover:border-sky-300/60"
-      }`}
-    >
-      Configura
-    </button>
-    <button
-      type="button"
-      onClick={() => setActivePanel("save")}
-      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-        activePanel === "save"
-          ? "border-emerald-300 bg-emerald-500 text-white shadow-[0_0_18px_rgba(16,185,129,0.28)]"
-          : "border-emerald-400/20 bg-[#0b1722] text-cyan-50 hover:border-emerald-300/60"
-      }`}
-    >
-      Salva
-    </button>
-    <button
-      type="button"
-      onClick={() => setActivePanel("produce")}
-      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-        activePanel === "produce"
-          ? "border-amber-300 bg-amber-500 text-white shadow-[0_0_18px_rgba(245,158,11,0.28)]"
-          : "border-amber-400/20 bg-[#0b1722] text-cyan-50 hover:border-amber-300/60"
-      }`}
-    >
-      Produci
-    </button>
-    <button
-      type="button"
-      onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))}
-      className="rounded-2xl border border-slate-400/20 bg-[#0b1722] px-3 py-2 text-[11px] font-black uppercase tracking-wide text-cyan-50 transition hover:border-slate-300/60"
-    >
-      Focus
-    </button>
-    <button
-      type="button"
-      onClick={() => setActivePanel("help")}
-      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-        activePanel === "help"
-          ? "border-violet-300 bg-violet-500 text-white shadow-[0_0_18px_rgba(139,92,246,0.28)]"
-          : "border-violet-400/20 bg-[#0b1722] text-cyan-50 hover:border-violet-300/60"
-      }`}
-    >
-      Aiuto
-    </button>
-  </div>
-</section>
+    <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_360px] gap-2 bg-[#030911] p-2">
+  <aside className="overflow-y-auto rounded-[22px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+  <section className="hidden">
+    <div className="flex items-center gap-4">
+      <button
+        type="button"
+        onClick={() => setIsLogoModalOpen(true)}
+        className="rounded-2xl border border-sky-300/25 bg-black/35 p-2 shadow-[0_0_24px_rgba(14,165,233,0.22)] transition hover:scale-[1.03] hover:border-sky-300/50"
+      >
+        <img src="/bagastudio-core-brand.png" alt="BagaStudio Core" className="h-16 w-auto object-contain" />
+      </button>
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.38em] text-sky-300">BagaStudio</p>
+        <h2 className="text-xl font-black leading-tight text-white">Core Viewer</h2>
+        <p className="mt-1 text-xs font-semibold text-cyan-100/80">BagaStudio Core Viewer</p>
+      </div>
+    </div>
+    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-emerald-200">Runtime</span>
+        <strong className="text-sm text-white">Ready</strong>
+      </div>
+      <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-sky-200">Pezzi</span>
+        <strong className="text-sm text-white">{viewerRuntimeComponents.length || 0}</strong>
+      </div>
+      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 px-2 py-2">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-violet-200">Select</span>
+        <strong className="text-sm text-white">{effectiveSelectedPartIds.length}</strong>
+      </div>
+    </div>
+  </section>
 
 {activePanel === "config" && (
-  <section className="mt-3 rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-    <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">CARICA</p>
-    <h2 className="text-lg font-black text-white">Carica prodotto</h2>
-    <p className="mt-2 text-xs leading-5 text-neutral-400">
-      Importa DAE, GLB/GLTF, OBJ, FBX, STL, JSON o progetto .baga.
-    </p>
+  <>
+    <section className="rounded-3xl border border-emerald-400/20 bg-[#081827]/90 p-4 shadow-[0_0_24px_rgba(16,185,129,0.10)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300">Azioni rapide</p>
+          <h3 className="mt-1 text-lg font-black text-white">Materiale modello</h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-400">Seleziona un pezzo e cambia subito texture e venatura.</p>
+        </div>
+        <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100">Quick</span>
+      </div>
 
-    <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-300/30 bg-sky-500/10 px-4 py-6 text-center transition hover:border-sky-300/70 hover:bg-sky-500/15">
-      <span className="text-sm font-black text-white">Seleziona file</span>
-      <span className="mt-2 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-100">
-        DAE / GLB / GLTF / OBJ / FBX / STL / JSON / BAGA
-      </span>
-      <input
-        type="file"
-        accept={SUPPORTED_GENERIC_IMPORT_ACCEPT}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) handleGenericImportFile(file);
-          event.target.value = "";
-        }}
-      />
-    </label>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Materiale</span>
+          <select
+            disabled={!selectedStoreKey}
+            value={hasMultiSelection ? "" : selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
+            onChange={(event) => {
+              const targetPartIds = effectiveSelectedPartIds
+                .map((value: any) => String(value || ""))
+                .filter(Boolean);
+              if (!targetPartIds.length) return;
 
-    <p className="mt-3 rounded-2xl border border-sky-400/10 bg-black/20 px-3 py-2 text-[11px] font-semibold leading-5 text-sky-100/85">
-      Puoi anche trascinare il file direttamente nel riquadro centrale.
-    </p>
-  </section>
+              const nextMaterialId = event.target.value;
+              targetPartIds.forEach((key) => setMaterial(key, nextMaterialId));
+            }}
+            className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 px-3 py-3 text-sm text-white outline-none focus:border-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="">{t.selectMaterial}</option>
+            {filteredMaterials.map((material: any) => (
+              <option key={material.id} value={material.id}>
+                {translateMaterialName(material, t)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">Pezzo selezionato</p>
+          <p className="text-sm font-black text-white">
+            {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
+          </p>
+          {hasMultiSelection && (
+            <p className="mt-1 text-xs font-semibold text-cyan-200">{effectiveSelectedPartIds.length} pezzi selezionati</p>
+          )}
+        </div>
+
+        <div>
+          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Venatura</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={!selectedStoreKey}
+              onClick={() => effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "x"))}
+              className={`rounded-2xl border px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                (woodDirection?.[selectedPart?.id || selectedStoreKey] || "x") === "x"
+                  ? "border-emerald-300 bg-emerald-500 text-white"
+                  : "border-neutral-700 bg-neutral-900 text-white"
+              }`}
+            >
+              {t.horizontal}
+            </button>
+            <button
+              type="button"
+              disabled={!selectedStoreKey}
+              onClick={() => effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "z"))}
+              className={`rounded-2xl border px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                woodDirection?.[selectedPart?.id || selectedStoreKey] === "z"
+                  ? "border-emerald-300 bg-emerald-500 text-white"
+                  : "border-neutral-700 bg-neutral-900 text-white"
+              }`}
+            >
+              {t.vertical}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <ViewerImportWorkflowPanel
+      t={t}
+      importName={importName}
+      importedModelName={importedModelName}
+      importedModelFormat={importedModelFormat}
+      importerStatus={importerStatus}
+      importerUiState={importerUiState}
+      viewerRuntimeComponents={viewerRuntimeComponents}
+      viewerRuntimeMetadata={viewerRuntimeMetadata}
+      lastImporterEvent={lastImporterEvent}
+      supportedModelAccept={SUPPORTED_IMPORT_MODEL_ACCEPT}
+      recentProjects={recentProjects}
+      onRecentProjectOpen={openRecentProject}
+      onModelFileImport={handleModelFileImport}
+      onProductJsonImport={handleProductJsonImport}
+      onRefreshImporterState={() => {
+        const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
+        setImporterUiState(state || null);
+        setLastImporterEvent("Refresh manuale");
+      }}
+      onRestoreAutosave={() => {
+        const ok = restoreAutosave();
+        if (!ok) {
+          setLastProjectAction(t.noAutosaveAvailable);
+          showUiNotice(t.noAutosaveAvailable, "error");
+        }
+        if (ok) {
+          setLastProjectAction(t.autosaveRestored);
+          showUiNotice(t.autosaveRestored);
+        }
+      }}
+      onBackupImport={handleBackupImport}
+    />
+
+  </>
 )}
+
 
 {activePanel === "admin" && (
   <>
@@ -2072,8 +2237,8 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "accessories" && (
   <>
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.accessories}</h2>
+    <section className="rounded-[20px] border border-sky-400/15 bg-white/[0.045] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <h2 className="mb-3 text-lg font-semibold">{t.accessories}</h2>
       <p className="mb-3 text-sm text-neutral-400">
         {t.applyAccessoriesTo}: {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
       </p>
@@ -2239,193 +2404,260 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "materials" && (
   <>
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.materials}</h2>
-      <p className="mb-3 text-sm text-neutral-400">
-        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
+    <section className="rounded-[22px] border border-cyan-400/20 bg-cyan-500/[0.055] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">CONFIGURA</p>
+      <h2 className="mb-2 text-lg font-black text-white">Workspace aperto</h2>
+      <p className="text-xs leading-5 text-neutral-300">
+        Usa la finestra grande per dimensioni, struttura, materiali e accessori. La barra laterale resta solo per azioni rapide.
       </p>
-
-      <select
-        disabled={!selectedStoreKey}
-        value={hasMultiSelection ? "" : selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
-        onChange={(event) => {
-          const targetPartIds = effectiveSelectedPartIds
-            .map((value: any) => String(value || ""))
-            .filter(Boolean);
-          if (!targetPartIds.length) return;
-
-          const nextMaterialId = event.target.value;
-          targetPartIds.forEach((key) => setMaterial(key, nextMaterialId));
-        }}
-        className="w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-white"
-      >
-        <option value="">{t.selectMaterial}</option>
-        {filteredMaterials.map((material: any) => (
-          <option key={material.id} value={material.id}>
-            {translateMaterialName(material, t)}
-          </option>
-        ))}
-      </select>
-
-      {selectedStoreKey && (
-        <div className="mt-3">
-          <label className="mb-2 block text-sm text-neutral-300">
-            {t.woodDirection}
-          </label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "x"))
-              }
-              className={`rounded-2xl border px-3 py-2 text-sm ${
-                (woodDirection?.[selectedPart?.id || selectedStoreKey] || "x") === "x"
-                  ? "border-amber-300 bg-sky-500 text-white"
-                  : "border-neutral-700 bg-neutral-900 text-white"
-              }`}
-            >
-              {t.horizontal}
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "z"))
-              }
-              className={`rounded-2xl border px-3 py-2 text-sm ${
-                woodDirection?.[selectedPart?.id || selectedStoreKey] === "z"
-                  ? "border-amber-300 bg-sky-500 text-white"
-                  : "border-neutral-700 bg-neutral-900 text-white"
-              }`}
-            >
-              {t.vertical}
-            </button>
-          </div>
-        </div>
-      )}
     </section>
 
-    {/* CONFIGURA dettagli pezzo: sotto la scelta materiale per mantenere i materiali subito visibili */}
-
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
-      <p className="text-sm text-neutral-300">
-        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
-      </p>
-      {selectedPart && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">partId</span>
-            <span className="break-all font-bold text-white">{selectedPart.partId || selectedPart.id || "-"}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Categoria</span>
-            <span className="font-bold text-white">{selectedPart.category || selectedPart.runtimeMetadata?.detectedCategory || "-"}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-black/20 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="fixed bottom-5 left-[250px] right-[400px] top-[118px] z-40 overflow-hidden rounded-[30px] border border-cyan-400/25 bg-[#07111c]/96 shadow-[0_30px_90px_rgba(0,0,0,0.58)] backdrop-blur-xl">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-start justify-between gap-5 border-b border-white/10 bg-white/[0.035] px-6 py-5">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-white">Trasparenza / X-Ray</p>
-            <p className="text-xs text-neutral-400">Controllo visivo interno del modello</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.32em] text-cyan-300">BagaStudio Core</p>
+            <h2 className="mt-1 text-2xl font-black text-white">Configura prodotto</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-300">
+              Workspace professionale per dimensionare, modificare struttura, scegliere materiali e preparare gli accessori. V1 crea il guscio UX: i collegamenti parametrici avanzati saranno attivati a step successivi.
+            </p>
           </div>
           <button
             type="button"
-            onClick={() => setXRayEnabled((value) => !value)}
-            className={`rounded-xl border px-3 py-2 text-sm font-bold ${
-              xRayEnabled
-                ? "border-cyan-300 bg-cyan-500 text-white"
-                : "border-neutral-700 bg-neutral-900 text-neutral-200"
-            }`}
+            onClick={() => setActivePanel("views")}
+            className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-neutral-200 hover:border-cyan-300/50 hover:bg-cyan-400/10"
           >
-            {xRayEnabled ? "ON" : "OFF"}
+            Chiudi
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min={0.08}
-            max={0.9}
-            step={0.01}
-            value={xRayOpacity}
-            onChange={(event) => setXRayOpacity(Number(event.target.value))}
-            className="w-full accent-cyan-400"
-          />
-          <span className="w-12 text-right text-xs font-bold text-cyan-200">
-            {Math.round(xRayOpacity * 100)}%
-          </span>
+        <div className="min-h-0 flex-1 overflow-auto p-6">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <section className="rounded-[24px] border border-sky-400/15 bg-black/24 p-5">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-300">01</p>
+                  <h3 className="mt-1 text-xl font-black text-white">Dimensioni</h3>
+                  <p className="mt-1 text-sm text-neutral-400">Larghezza, altezza, profondità e spessori.</p>
+                </div>
+                <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100">Parametric</span>
+              </div>
+
+              {runtimeProduct?.dimensions ? (
+                <div className="grid gap-3">
+                  {(["width", "height", "depth"] as const).map((key) => {
+                    const dim = runtimeProduct.dimensions?.[key];
+                    if (!dim) return null;
+
+                    return (
+                      <div key={key} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <label className="text-sm font-black uppercase tracking-[0.14em] text-neutral-200">{translateDimensionName(key, t)}</label>
+                          <span className="text-lg font-black text-sky-200">{Number(dimensions?.[key] ?? dim.default)} cm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={dim.min}
+                          max={dim.max}
+                          step={dim.step || 1}
+                          value={Number(dimensions?.[key] ?? dim.default)}
+                          onChange={(event) => setDimension(key, Number(event.target.value))}
+                          className="w-full accent-sky-400"
+                        />
+                        <p className="mt-2 text-xs text-neutral-500">Min {dim.min} cm · Max {dim.max} cm · Step {dim.step || 1} cm</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm leading-6 text-neutral-400">
+                  Nessun dato parametrico dimensionale nel Product Package corrente. Qui entreranno larghezza, altezza, profondità e spessori quando il prodotto li espone.
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[24px] border border-violet-400/15 bg-black/24 p-5">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-violet-300">02</p>
+                  <h3 className="mt-1 text-xl font-black text-white">Struttura</h3>
+                  <p className="mt-1 text-sm text-neutral-400">Divisori, ripiani, cassetti, ante e vani aperti.</p>
+                </div>
+                <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-100">V1 shell</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ["Divisori", "Gestione numero e posizione divisori"],
+                  ["Ripiani", "Numero ripiani e interassi"],
+                  ["Cassetti", "Cassettiera e frontali"],
+                  ["Ante", "Battenti, scorrevoli o vetrine"],
+                  ["Vani aperti", "Moduli a giorno"],
+                  ["Moduli", "Aggiungi, duplica, unisci"],
+                ].map(([title, description]) => (
+                  <button
+                    key={title}
+                    type="button"
+                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left hover:border-violet-300/45 hover:bg-violet-400/10"
+                  >
+                    <span className="block text-sm font-black text-white">{title}</span>
+                    <span className="mt-1 block text-xs leading-5 text-neutral-400">{description}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-emerald-400/15 bg-black/24 p-5">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300">03</p>
+                  <h3 className="mt-1 text-xl font-black text-white">Materiali</h3>
+                  <p className="mt-1 text-sm text-neutral-400">Scelta rapida per pezzo selezionato e macro-gruppi futuri.</p>
+                </div>
+                <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100">Texture</span>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-neutral-400">Pezzo selezionato</p>
+                <p className="mb-4 text-sm font-bold text-white">{selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}</p>
+
+                <select
+                  disabled={!selectedStoreKey}
+                  value={hasMultiSelection ? "" : selectedStoreKey ? materials?.[selectedStoreKey] || "" : ""}
+                  onChange={(event) => {
+                    const targetPartIds = effectiveSelectedPartIds
+                      .map((value: any) => String(value || ""))
+                      .filter(Boolean);
+                    if (!targetPartIds.length) return;
+
+                    const nextMaterialId = event.target.value;
+                    targetPartIds.forEach((key) => setMaterial(key, nextMaterialId));
+                  }}
+                  className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none focus:border-emerald-300/60"
+                >
+                  <option value="">{t.selectMaterial}</option>
+                  {filteredMaterials.map((material: any) => (
+                    <option key={material.id} value={material.id}>
+                      {translateMaterialName(material, t)}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedStoreKey && (
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "x"))}
+                      className={`rounded-2xl border px-3 py-2 text-sm font-bold ${
+                        (woodDirection?.[selectedPart?.id || selectedStoreKey] || "x") === "x"
+                          ? "border-emerald-300 bg-emerald-500 text-white"
+                          : "border-neutral-700 bg-neutral-900 text-white"
+                      }`}
+                    >
+                      {t.horizontal}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => effectiveSelectedPartIds.forEach((partId) => setWoodDirection(partId, "z"))}
+                      className={`rounded-2xl border px-3 py-2 text-sm font-bold ${
+                        woodDirection?.[selectedPart?.id || selectedStoreKey] === "z"
+                          ? "border-emerald-300 bg-emerald-500 text-white"
+                          : "border-neutral-700 bg-neutral-900 text-white"
+                      }`}
+                    >
+                      {t.vertical}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {["Scocca", "Frontali", "Divisori", "Ripiani", "Schiene", "Top"].map((group) => (
+                  <button key={group} type="button" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-black text-neutral-200 hover:border-emerald-300/45 hover:bg-emerald-400/10">
+                    {group}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-amber-400/15 bg-black/24 p-5">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">04</p>
+                  <h3 className="mt-1 text-xl font-black text-white">Accessori rapidi</h3>
+                  <p className="mt-1 text-sm text-neutral-400">Maniglie, LED, prese, portaphon e optional.</p>
+                </div>
+                <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-amber-100">Add-on</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ["Maniglie", "Scelta maniglie e profili"],
+                  ["LED", "Accensione, Kelvin e intensità"],
+                  ["Prese", "Presa 503 e punti tecnici"],
+                  ["Portaphon", "Accessori parrucchiere"],
+                  ["Lavabi", "Appoggio o incasso"],
+                  ["Ruote / Piedini", "Supporti e basamenti"],
+                ].map(([title, description]) => (
+                  <button
+                    key={title}
+                    type="button"
+                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left hover:border-amber-300/45 hover:bg-amber-400/10"
+                  >
+                    <span className="block text-sm font-black text-white">{title}</span>
+                    <span className="mt-1 block text-xs leading-5 text-neutral-400">{description}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-cyan-400/15 bg-black/30 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-wide text-white">Trasparenza / X-Ray</p>
+                    <p className="text-xs text-neutral-400">Controllo visivo interno del modello</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setXRayEnabled((value) => !value)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+                      xRayEnabled
+                        ? "border-cyan-300 bg-cyan-500 text-white"
+                        : "border-neutral-700 bg-neutral-900 text-neutral-200"
+                    }`}
+                  >
+                    {xRayEnabled ? "ON" : "OFF"}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={0.08}
+                    max={0.9}
+                    step={0.01}
+                    value={xRayOpacity}
+                    onChange={(event) => setXRayOpacity(Number(event.target.value))}
+                    className="w-full accent-cyan-400"
+                  />
+                  <span className="w-12 text-right text-xs font-bold text-cyan-200">
+                    {Math.round(xRayOpacity * 100)}%
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
-    </section>
-
-    {runtimeProduct && (
-      <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-        <h2 className="mb-4 text-xl font-semibold">{t.dimensions}</h2>
-
-        {(["width", "height", "depth"] as const).map((key) => {
-          const dim = runtimeProduct.dimensions?.[key];
-          if (!dim) return null;
-
-          return (
-            <div key={key} className="mb-4">
-              <label className="block text-sm capitalize">{translateDimensionName(key, t)}</label>
-              <input
-                type="range"
-                min={dim.min}
-                max={dim.max}
-                step={dim.step || 1}
-                value={Number(dimensions?.[key] ?? dim.default)}
-                onChange={(event) =>
-                  setDimension(key, Number(event.target.value))
-                }
-                className="w-full"
-              />
-              <p className="text-sm font-semibold">
-                {Number(dimensions?.[key] ?? dim.default)} cm
-              </p>
-              <p className="text-xs text-neutral-500">{t.max}: {dim.max} cm</p>
-            </div>
-          );
-        })}
-      </section>
-    )}
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
-      <p className="mb-3 text-sm text-neutral-400">
-        {hasMultiSelection ? `${effectiveSelectedPartIds.length} pezzi selezionati` : selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
-      </p>
-
-      {selectedStoreKey && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={visibility?.[selectedStoreKey] !== false}
-            onChange={(event) => {
-              setVisibility(selectedStoreKey, event.target.checked);
-              if (selectedPart?.meshName) {
-                setVisibility(selectedPart.meshName, event.target.checked);
-              }
-            }}
-          />
-          {t.showComponent}
-        </label>
-      )}
-    </section>
-
+    </div>
   </>
 )}
 
 {activePanel === "save" && (
   <>
-    <section className="rounded-[26px] border border-emerald-400/20 bg-emerald-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+    <section className="rounded-[22px] border border-emerald-400/20 bg-emerald-500/[0.055] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-emerald-300">SALVA</p>
-      <h2 className="mb-2 text-xl font-black text-white">Progetto BagaStudio</h2>
+      <h2 className="mb-2 text-lg font-black text-white">Progetto BagaStudio</h2>
       <p className="mb-4 text-sm leading-6 text-neutral-300">Area quotidiana per creare, salvare e riaprire file progetto .baga.</p>
 
       <div className="mb-4 rounded-2xl border border-emerald-400/15 bg-black/25 p-4">
@@ -2546,15 +2778,25 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "produce" && (
   <>
-    <section className="rounded-[26px] border border-amber-400/20 bg-amber-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+    <section className="rounded-[22px] border border-amber-400/20 bg-amber-500/[0.055] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">PRODUCI</p>
-      <h2 className="mb-2 text-xl font-black text-white">Output progetto</h2>
+      <h2 className="mb-2 text-lg font-black text-white">Output progetto</h2>
       <p className="mb-4 text-sm leading-6 text-neutral-300">Area per generare file e documenti da consegnare o usare in produzione. Gli strumenti tecnici restano in Strumenti.</p>
 
       <div className="mb-4 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm">
         <div className="flex items-center justify-between gap-4">
           <span className="font-bold text-neutral-300">Totale progetto</span>
           <span className="text-2xl font-black text-sky-300">€ {displayPricing.total.toFixed(2)}</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-400">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+            <span className="block font-black uppercase tracking-[0.14em] text-neutral-500">Pannelli</span>
+            <span className="font-bold text-neutral-200">{materialPricingSummary.areaSqm.toFixed(3)} m²</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+            <span className="block font-black uppercase tracking-[0.14em] text-neutral-500">Materiali €/mq</span>
+            <span className="font-bold text-amber-200">€ {materialPricingSummary.materialCost.toFixed(2)}</span>
+          </div>
         </div>
       </div>
 
@@ -2570,24 +2812,30 @@ const availableAccessories = useMemo(() => {
         </div>
 
         {bomRows.length > 0 ? (
-          <div className="max-h-[360px] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
             {bomSections.map((section: any) => (
               <div key={section.title} className="border-b border-white/10 last:border-b-0">
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-white/10 bg-black/80 px-3 py-2 backdrop-blur">
-                  <span className="min-w-0 break-words text-[10px] font-black uppercase tracking-[0.14em] text-amber-200">{section.title}</span>
-                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-neutral-400">
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/80 px-3 py-2 backdrop-blur">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200">{section.title}</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-500">
                     {section.rows.reduce((total: number, row: any) => total + Number(row.quantity || 0), 0)} pz
                   </span>
                 </div>
                 <div className="divide-y divide-white/10">
                   {section.rows.map((row: any) => (
-                    <div key={row.id} className="px-3 py-3 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="break-words font-bold leading-5 text-white">{row.name}</p>
-                          <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-neutral-400">{row.dimensionsLabel || "-"}</p>
-                        </div>
-                        <p className="shrink-0 rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-sm font-black text-amber-200">{row.quantity}</p>
+                    <div key={row.id} className="grid grid-cols-[1fr_64px] gap-3 px-3 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <p className="font-bold text-white">{row.name}</p>
+                        <p className="text-[11px] font-semibold text-neutral-400">{row.dimensionsLabel || "-"}</p>
+                        {row.category === "panel" && (
+                          <p className="mt-1 text-[10px] font-semibold text-neutral-500">
+                            {row.materialName || "Materiale non assegnato"} · {Number(row.areaSqm || 0).toFixed(3)} m² · € {Number(row.pricePerSqm || 0).toFixed(2)}/m²
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-base font-black text-amber-200">{row.quantity}</p>
+                        {row.category === "panel" && <p className="text-[10px] font-bold text-sky-300">€ {Number(row.materialCost || 0).toFixed(2)}</p>}
                       </div>
                     </div>
                   ))}
@@ -2630,9 +2878,9 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "help" && (
   <>
-    <section className="rounded-[26px] border border-violet-400/20 bg-violet-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+    <section className="rounded-[22px] border border-violet-400/20 bg-violet-500/[0.055] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-violet-300">AIUTO</p>
-      <h2 className="mb-2 text-xl font-black text-white">Guida rapida</h2>
+      <h2 className="mb-2 text-lg font-black text-white">Guida rapida</h2>
       <div className="space-y-3 text-sm leading-6 text-neutral-300">
         <p><strong className="text-sky-200">CARICA</strong>: importa un modello 3D o un Product Package.</p>
         <p><strong className="text-cyan-200">CONFIGURA</strong>: scegli materiali, accessori, LED, dimensioni e visibilità.</p>
@@ -2667,8 +2915,8 @@ const availableAccessories = useMemo(() => {
 
 {activePanel === "views" && (
   <>
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.views}</h2>
+    <section className="rounded-[20px] border border-sky-400/15 bg-white/[0.045] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <h2 className="mb-3 text-lg font-semibold">{t.views}</h2>
       <div className="grid grid-cols-2 gap-2">
         {(runtimeProduct?.views?.length ? runtimeProduct.views : DEFAULT_VIEWS).map(
           (view: any) => (
@@ -2715,7 +2963,7 @@ const availableAccessories = useMemo(() => {
   {isImporterDragging && (
     <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-300 bg-sky-500/10 text-center backdrop-blur-sm">
       <div className="rounded-3xl border border-sky-300/40 bg-[#07111c]/90 px-8 py-6 shadow-2xl">
-        <p className="text-xl font-black text-white">Rilascia il file BagaStudio</p>
+        <p className="text-lg font-black text-white">Rilascia il file BagaStudio</p>
         <p className="mt-2 text-sm font-semibold text-sky-200">GLB, GLTF, DAE, FBX, OBJ, STL, JSON, BAGA</p>
       </div>
     </div>
@@ -2854,7 +3102,7 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[24px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
           {/* bagastudio-sidebar-components-right-final-v1 */}
           <section className="max-h-[300px] shrink-0 overflow-hidden rounded-[24px] border border-cyan-400/20 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -2918,7 +3166,6 @@ const availableAccessories = useMemo(() => {
                             : [...current, componentId];
                         });
                         setSelectedPart(componentId);
-                        setActivePanel("materials");
                         window.dispatchEvent(
                           new CustomEvent("bagastudio:viewer-select-component", {
                             detail: {
@@ -2953,7 +3200,7 @@ const availableAccessories = useMemo(() => {
           </section>
 
           {effectiveSelectedPartIds.length > 0 && (
-            <section className="shrink-0 rounded-[24px] border border-sky-400/25 bg-sky-500/[0.08] p-4 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
+            <section className="shrink-0 rounded-[22px] border border-sky-400/25 bg-sky-500/[0.08] p-3 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
@@ -3008,7 +3255,7 @@ const availableAccessories = useMemo(() => {
             </section>
           )}
 
-          <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <section className="rounded-[22px] border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.objectProperties}</h2>
               <span className="text-neutral-400">⌃</span>
@@ -3026,7 +3273,7 @@ const availableAccessories = useMemo(() => {
           </section>
 
           <div className="mt-auto space-y-3">
-            <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <section className="rounded-[22px] border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-black uppercase tracking-wide text-white">{t.projectSummary}</h2>
                 <span className="text-neutral-400">⌃</span>
@@ -3043,7 +3290,7 @@ const availableAccessories = useMemo(() => {
                 </div>
                 <div className="flex items-center justify-between gap-3 text-neutral-300">
                   <span>◉ {t.materials}</span>
-                  <span>{t.configured}</span>
+                  <span>€ {materialPricingSummary.materialCost.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-neutral-300">
                   <span>▤ {t.backup}</span>
@@ -3057,7 +3304,10 @@ const availableAccessories = useMemo(() => {
                     <p className="text-sm font-bold uppercase tracking-wide text-white">{t.projectTotal}</p>
                     <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
                   </div>
-                  <p className="text-3xl font-black text-sky-400">€ {displayPricing.total.toFixed(2)}</p>
+                  <div className="text-right">
+                    <p className="text-3xl font-black text-sky-400">€ {displayPricing.total.toFixed(2)}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">Materiali €/mq € {materialPricingSummary.materialCost.toFixed(2)}</p>
+                  </div>
                 </div>
               </div>
             </section>
