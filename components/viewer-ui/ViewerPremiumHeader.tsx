@@ -1,7 +1,7 @@
 "use client";
 
 type LanguageCode = "it" | "en";
-type ViewerPanel = "config" | "materials" | "accessories" | "views" | "admin";
+type ViewerPanel = "config" | "materials" | "accessories" | "views" | "save" | "produce" | "help" | "admin";
 
 type ViewerPremiumHeaderProps = {
   t: any;
@@ -125,10 +125,13 @@ export default function ViewerPremiumHeader({
         <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
           <div className="flex items-center gap-2">
             {([
-              ["config", "⌂", t.project],
-              ["materials", "▧", t.materials],
-              ["accessories", "✦", t.accessories],
+              ["config", "↧", "CARICA"],
+              ["materials", "▧", "CONFIGURA"],
+              ["accessories", "✦", "ACCESSORI"],
               ["views", "◱", t.views],
+              ["save", "✓", "SALVA"],
+              ["produce", "▤", "PRODUCI"],
+              ["help", "?", "AIUTO"],
               ["admin", "⚙", t.studioTools],
             ] as Array<[ViewerPanel, string, string]>).map((tab) => (
               <button
