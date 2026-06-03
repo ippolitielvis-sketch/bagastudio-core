@@ -680,6 +680,13 @@ const [importerUiState, setImporterUiState] = useState<any>(null);
 const [lastImporterEvent, setLastImporterEvent] = useState("");
 const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
 const [selectedPartIds, setSelectedPartIds] = useState<string[]>([]);
+const [structureCounts, setStructureCounts] = useState({
+  verticalDividers: 1,
+  horizontalDividers: 0,
+  shelves: 2,
+  drawers: 0,
+  doors: 2,
+});
 const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const uiNoticeTimerRef = useRef<number | null>(null);
 
@@ -695,6 +702,13 @@ function showUiNotice(message: string, type: "success" | "error" | "info" = "suc
     uiNoticeTimerRef.current = null;
   }, 3200);
 }
+
+const updateStructureCount = (key: keyof typeof structureCounts, delta: number) => {
+  setStructureCounts((current) => ({
+    ...current,
+    [key]: Math.max(0, Number(current[key] || 0) + delta),
+  }));
+};
 
 useEffect(() => {
   if (!selectedPartId) return;
@@ -1672,12 +1686,99 @@ const bomRows = useMemo(() => {
     if (id) row.partIds.push(id);
   });
 
+  const addSyntheticPanelRow = (options: {
+    key: string;
+    name: string;
+    quantity: number;
+    widthMm: number;
+    depthMm: number;
+    thicknessMm?: number;
+    pricePerSqm?: number;
+  }) => {
+    const quantity = Math.max(0, Math.round(Number(options.quantity || 0)));
+    if (quantity <= 0) return;
+
+    const widthMm = Number(options.widthMm || 0);
+    const depthMm = Number(options.depthMm || 0);
+    const thicknessMm = Number(options.thicknessMm || 18);
+    if (!Number.isFinite(widthMm) || widthMm <= 0 || !Number.isFinite(depthMm) || depthMm <= 0) return;
+
+    const pricePerSqm = Number(options.pricePerSqm || 28);
+    const areaSqm = (widthMm * depthMm) / 1000000;
+    const materialCost = areaSqm * pricePerSqm * quantity;
+    const dimensionsLabel = `${formatMmValue(widthMm)} × ${formatMmValue(depthMm)} × ${formatMmValue(thicknessMm)} mm`;
+    const id = `synthetic-structure-${options.key}`;
+
+    grouped.set(id, {
+      id,
+      name: options.name,
+      category: "panel",
+      groupTitle: "Pannelli",
+      groupOrder: 1,
+      dimensionsLabel,
+      quantity,
+      partIds: [],
+      materialId: "structure-v1",
+      materialName: "Materiale struttura V1",
+      pricePerSqm,
+      areaSqm: areaSqm * quantity,
+      materialCost,
+    });
+  };
+
+  const currentWidthMm = Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 180) * 10;
+  const currentHeightMm = Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 100) * 10;
+  const currentDepthMm = Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 60) * 10;
+  const panelThicknessMm = 18;
+
+  addSyntheticPanelRow({
+    key: "vertical-dividers",
+    name: "Divisorio verticale configurato",
+    quantity: structureCounts.verticalDividers,
+    widthMm: currentHeightMm,
+    depthMm: currentDepthMm,
+    thicknessMm: panelThicknessMm,
+  });
+
+  addSyntheticPanelRow({
+    key: "horizontal-dividers",
+    name: "Divisorio orizzontale configurato",
+    quantity: structureCounts.horizontalDividers,
+    widthMm: currentWidthMm,
+    depthMm: currentDepthMm,
+    thicknessMm: panelThicknessMm,
+  });
+  addSyntheticPanelRow({
+    key: "shelves",
+    name: "Ripiano configurato",
+    quantity: structureCounts.shelves,
+    widthMm: currentWidthMm,
+    depthMm: currentDepthMm,
+    thicknessMm: panelThicknessMm,
+  });
+  addSyntheticPanelRow({
+    key: "doors",
+    name: "Anta configurata",
+    quantity: structureCounts.doors,
+    widthMm: currentWidthMm / Math.max(1, structureCounts.doors),
+    depthMm: currentHeightMm,
+    thicknessMm: panelThicknessMm,
+  });
+  addSyntheticPanelRow({
+    key: "drawers-front",
+    name: "Frontale cassetto configurato",
+    quantity: structureCounts.drawers,
+    widthMm: currentWidthMm / Math.max(1, structureCounts.doors || 1),
+    depthMm: 220,
+    thicknessMm: panelThicknessMm,
+  });
+
   return Array.from(grouped.values()).sort((a: any, b: any) =>
     Number(a.groupOrder || 99) - Number(b.groupOrder || 99) ||
     String(a.name).localeCompare(String(b.name)) ||
     String(a.dimensionsLabel).localeCompare(String(b.dimensionsLabel))
   );
-}, [runtimeProduct, viewerRuntimeComponents, materials, dimensions, t]);
+}, [runtimeProduct, viewerRuntimeComponents, materials, dimensions, structureCounts, t]);
 
 const bomSections = useMemo(() => {
   const sections = new Map<string, any>();
@@ -2698,29 +2799,52 @@ const availableAccessories = useMemo(() => {
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.24em] text-violet-300">02</p>
                   <h3 className="mt-1 text-xl font-black text-white">Struttura</h3>
-                  <p className="mt-1 text-sm text-neutral-400">Divisori, ripiani, cassetti, ante e vani aperti.</p>
+                  <p className="mt-1 text-sm text-neutral-400">Divisori verticali, divisori orizzontali, ripiani, cassetti, ante e vani aperti.</p>
                 </div>
-                <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-100">V1 shell</span>
+                <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-100">V2.1</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  ["Divisori", "Gestione numero e posizione divisori"],
-                  ["Ripiani", "Numero ripiani e interassi"],
-                  ["Cassetti", "Cassettiera e frontali"],
-                  ["Ante", "Battenti, scorrevoli o vetrine"],
-                  ["Vani aperti", "Moduli a giorno"],
-                  ["Moduli", "Aggiungi, duplica, unisci"],
-                ].map(([title, description]) => (
-                  <button
-                    key={title}
-                    type="button"
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left hover:border-violet-300/45 hover:bg-violet-400/10"
+                  { key: "verticalDividers", title: "Divisori verticali", description: "Dividono i vani in larghezza", value: structureCounts.verticalDividers },
+                  { key: "horizontalDividers", title: "Divisori orizzontali", description: "Dividono i vani in altezza", value: structureCounts.horizontalDividers },
+                  { key: "shelves", title: "Ripiani", description: "Piani interni regolabili/fissi", value: structureCounts.shelves },
+                  { key: "drawers", title: "Cassetti", description: "Frontali cassetto V1", value: structureCounts.drawers },
+                  { key: "doors", title: "Ante", description: "Frontali / battenti", value: structureCounts.doors },
+                ].map((item) => (
+                  <div
+                    key={item.key}
+                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
                   >
-                    <span className="block text-sm font-black text-white">{title}</span>
-                    <span className="mt-1 block text-xs leading-5 text-neutral-400">{description}</span>
-                  </button>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <span className="block text-sm font-black text-white">{item.title}</span>
+                        <span className="mt-1 block text-xs leading-5 text-neutral-400">{item.description}</span>
+                      </div>
+                      <span className="rounded-full border border-violet-300/25 bg-violet-500/10 px-3 py-1 text-sm font-black text-violet-100">{item.value}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateStructureCount(item.key as keyof typeof structureCounts, -1)}
+                        className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-black text-neutral-100 hover:border-violet-300/45 hover:bg-violet-400/10"
+                      >
+                        −
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateStructureCount(item.key as keyof typeof structureCounts, 1)}
+                        className="rounded-xl border border-violet-300/25 bg-violet-500/20 px-3 py-2 text-sm font-black text-white hover:border-violet-200/70 hover:bg-violet-500/30"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 ))}
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-violet-400/10 bg-black/20 p-3 text-xs leading-5 text-neutral-400">
+                V2 aggiorna BOM e prezzo. Il Viewer 3D verrà collegato nello step Parametric Geometry V1.
               </div>
             </section>
 
