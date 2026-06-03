@@ -1247,6 +1247,116 @@ const basePricing = useMemo(() => {
   insertMaterials,
 ]);
 
+
+const formatMmValue = (value: number) => {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
+
+const getDimensionRatio = (key: "width" | "height" | "depth") => {
+  const dim = runtimeProduct?.dimensions?.[key];
+  const baseValue = Number(dim?.default || 0);
+  const currentValue = Number(dimensions?.[key] ?? baseValue);
+
+  if (!Number.isFinite(baseValue) || baseValue <= 0) return 1;
+  if (!Number.isFinite(currentValue) || currentValue <= 0) return 1;
+
+  return currentValue / baseValue;
+};
+
+const getDimensionScalePolicy = (part: any) => {
+  const source = String(
+    `${part?.category || ""} ${part?.type || ""} ${part?.partId || ""} ${part?.name || ""} ${part?.displayName || ""} ${part?.meshName || ""} ${part?.originalName || ""} ${part?.runtimeMetadata?.detectedCategory || ""}`
+  )
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+
+  if (/maniglia|handle|pomello|led|presa|porta phon|portaphon|lavabo|rubinetto|cerniera|basetta|vite|foro|cabineo|ferramenta|minifix/.test(source)) {
+    return "fixed" as const;
+  }
+
+  if (/anta|frontale|frontali|door|facciata|cassetto front/.test(source)) {
+    return "width-height" as const;
+  }
+
+  if (/schiena|retro|back panel|backpanel/.test(source)) {
+    return "width-height" as const;
+  }
+
+  if (/fianco|fianchi|side/.test(source)) {
+    return "height-depth" as const;
+  }
+
+  if (/fondo|cielo|ripiano|ripiani|mensola|mensole|top|piano|base|shelf/.test(source)) {
+    return "width-depth" as const;
+  }
+
+  return "width-depth" as const;
+};
+
+const getSortedBoundsMm = (part: any) => {
+  const bounds = getBounds(part);
+  if (!bounds) return null;
+
+  const values = [
+    Number(bounds.width || 0) * 10,
+    Number(bounds.depth || 0) * 10,
+    Number(bounds.height || 0) * 10,
+  ].filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => b - a);
+
+  if (!values.length) return null;
+
+  return {
+    majorMm: Number(values[0] || 0),
+    secondaryMm: Number(values[1] || 0),
+    thicknessMm: Number(values[2] || 0),
+  };
+};
+
+const getScaledBoundsMm = (part: any) => {
+  const sorted = getSortedBoundsMm(part);
+  if (!sorted) return null;
+
+  const policy = getDimensionScalePolicy(part);
+  const widthRatio = getDimensionRatio("width");
+  const heightRatio = getDimensionRatio("height");
+  const depthRatio = getDimensionRatio("depth");
+
+  if (policy === "fixed") {
+    return {
+      widthMm: sorted.majorMm,
+      depthMm: sorted.secondaryMm,
+      heightMm: sorted.thicknessMm,
+    };
+  }
+
+  // Regola pannelli V1.2:
+  // mai applicare altezza/profondità allo spessore. Lo spessore resta sempre l'ultima misura.
+  if (policy === "width-height") {
+    return {
+      widthMm: sorted.secondaryMm * widthRatio,
+      depthMm: sorted.majorMm * heightRatio,
+      heightMm: sorted.thicknessMm,
+    };
+  }
+
+  if (policy === "height-depth") {
+    return {
+      widthMm: sorted.majorMm * heightRatio,
+      depthMm: sorted.secondaryMm * depthRatio,
+      heightMm: sorted.thicknessMm,
+    };
+  }
+
+  return {
+    widthMm: sorted.majorMm * widthRatio,
+    depthMm: sorted.secondaryMm * depthRatio,
+    heightMm: sorted.thicknessMm,
+  };
+};
+
 const bomRows = useMemo(() => {
   const sourceParts = Array.isArray(viewerRuntimeComponents) && viewerRuntimeComponents.length > 0
     ? viewerRuntimeComponents
@@ -1321,6 +1431,108 @@ const bomRows = useMemo(() => {
 
   const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
 
+  const getDimensionRatio = (key: "width" | "height" | "depth") => {
+    const dim = runtimeProduct?.dimensions?.[key];
+    const baseValue = Number(dim?.default || 0);
+    const currentValue = Number(dimensions?.[key] ?? baseValue);
+
+    if (!Number.isFinite(baseValue) || baseValue <= 0) return 1;
+    if (!Number.isFinite(currentValue) || currentValue <= 0) return 1;
+
+    return currentValue / baseValue;
+  };
+
+  const getDimensionScalePolicy = (part: any) => {
+    const source = String(
+      `${part?.category || ""} ${part?.type || ""} ${part?.partId || ""} ${part?.name || ""} ${part?.displayName || ""} ${part?.meshName || ""} ${part?.originalName || ""} ${part?.runtimeMetadata?.detectedCategory || ""}`
+    )
+      .replace(/[_-]+/g, " ")
+      .toLowerCase();
+
+    if (/maniglia|handle|pomello|led|presa|porta phon|portaphon|lavabo|rubinetto|cerniera|basetta|vite|foro|cabineo|ferramenta|minifix/.test(source)) {
+      return "fixed" as const;
+    }
+
+    if (/anta|frontale|frontali|door|facciata|cassetto front/.test(source)) {
+      return "width-height" as const;
+    }
+
+    if (/schiena|retro|back panel|backpanel/.test(source)) {
+      return "width-height" as const;
+    }
+
+    if (/fianco|fianchi|side/.test(source)) {
+      return "height-depth" as const;
+    }
+
+    if (/fondo|cielo|ripiano|ripiani|mensola|mensole|top|piano|base|shelf/.test(source)) {
+      return "width-depth" as const;
+    }
+
+    return "width-depth" as const;
+  };
+
+  const getSortedBoundsMm = (part: any) => {
+    const bounds = getBounds(part);
+    if (!bounds) return null;
+
+    const values = [
+      Number(bounds.width || 0) * 10,
+      Number(bounds.depth || 0) * 10,
+      Number(bounds.height || 0) * 10,
+    ].filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => b - a);
+
+    if (!values.length) return null;
+
+    return {
+      majorMm: Number(values[0] || 0),
+      secondaryMm: Number(values[1] || 0),
+      thicknessMm: Number(values[2] || 0),
+    };
+  };
+
+  const getScaledBoundsMm = (part: any) => {
+    const sorted = getSortedBoundsMm(part);
+    if (!sorted) return null;
+
+    const policy = getDimensionScalePolicy(part);
+    const widthRatio = getDimensionRatio("width");
+    const heightRatio = getDimensionRatio("height");
+    const depthRatio = getDimensionRatio("depth");
+
+    if (policy === "fixed") {
+      return {
+        widthMm: sorted.majorMm,
+        depthMm: sorted.secondaryMm,
+        heightMm: sorted.thicknessMm,
+      };
+    }
+
+    // Regola pannelli V1.2:
+    // mai applicare altezza/profondità allo spessore. Lo spessore resta sempre l'ultima misura.
+    if (policy === "width-height") {
+      return {
+        widthMm: sorted.secondaryMm * widthRatio,
+        depthMm: sorted.majorMm * heightRatio,
+        heightMm: sorted.thicknessMm,
+      };
+    }
+
+    if (policy === "height-depth") {
+      return {
+        widthMm: sorted.majorMm * heightRatio,
+        depthMm: sorted.secondaryMm * depthRatio,
+        heightMm: sorted.thicknessMm,
+      };
+    }
+
+    return {
+      widthMm: sorted.majorMm * widthRatio,
+      depthMm: sorted.secondaryMm * depthRatio,
+      heightMm: sorted.thicknessMm,
+    };
+  };
+
   const getPartStoreKey = (part: any) => String(
     part?.id ||
     part?.partId ||
@@ -1390,13 +1602,13 @@ const bomRows = useMemo(() => {
   const getPanelAreaSqm = (part: any, category?: string) => {
     if (category !== "panel") return 0;
 
-    const bounds = getBounds(part);
-    if (!bounds) return 0;
+    const scaledBounds = getScaledBoundsMm(part);
+    if (!scaledBounds) return 0;
 
     const dimensionsMm = [
-      Number(bounds.width || 0) * 10,
-      Number(bounds.depth || 0) * 10,
-      Number(bounds.height || 0) * 10,
+      scaledBounds.widthMm,
+      scaledBounds.depthMm,
+      scaledBounds.heightMm,
     ].filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => b - a);
 
     if (dimensionsMm.length < 2) return 0;
@@ -1404,12 +1616,10 @@ const bomRows = useMemo(() => {
   };
 
   const getDimensionLabel = (part: any) => {
-    const bounds = getBounds(part);
-    if (!bounds) return "-";
+    const scaledBounds = getScaledBoundsMm(part);
+    if (!scaledBounds) return "-";
 
-    const widthMm = Number(bounds.width || 0) * 10;
-    const depthMm = Number(bounds.depth || 0) * 10;
-    const heightMm = Number(bounds.height || 0) * 10;
+    const { widthMm, depthMm, heightMm } = scaledBounds;
 
     if (!widthMm && !depthMm && !heightMm) return "-";
 
@@ -1462,7 +1672,7 @@ const bomRows = useMemo(() => {
     String(a.name).localeCompare(String(b.name)) ||
     String(a.dimensionsLabel).localeCompare(String(b.dimensionsLabel))
   );
-}, [runtimeProduct, viewerRuntimeComponents, materials, t]);
+}, [runtimeProduct, viewerRuntimeComponents, materials, dimensions, t]);
 
 const bomSections = useMemo(() => {
   const sections = new Map<string, any>();
@@ -1534,8 +1744,10 @@ const displayPricing = useMemo(() => {
 
   const selectedStoreKey = selectedPart?.id || selectedPartId || "";
   const selectedPartBounds = selectedPart?.bounds || selectedPart?.runtimeMetadata?.bounds || null;
-  const selectedPartDimensionLabel = selectedPartBounds
-    ? `${Number(selectedPartBounds.width || 0).toFixed(2)} × ${Number(selectedPartBounds.depth || 0).toFixed(2)} × ${Number(selectedPartBounds.height || 0).toFixed(2)} unità modello`
+  const getSelectedPartScaledBoundsMm = (part: any) => getScaledBoundsMm(part);
+  const selectedPartScaledBounds = selectedPart ? getSelectedPartScaledBoundsMm(selectedPart) : null;
+  const selectedPartDimensionLabel = selectedPartScaledBounds
+    ? `${formatMmValue(selectedPartScaledBounds.widthMm)} × ${formatMmValue(selectedPartScaledBounds.depthMm)} × ${formatMmValue(selectedPartScaledBounds.heightMm)} mm`
     : `${Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × ${Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × ${Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm`;
   const effectiveSelectedPartIds = selectedPartIds.length > 0 ? selectedPartIds : selectedStoreKey ? [selectedStoreKey] : [];
   const hasMultiSelection = effectiveSelectedPartIds.length > 1;
