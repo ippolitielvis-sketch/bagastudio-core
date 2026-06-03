@@ -1316,13 +1316,17 @@ const bomRows = useMemo(() => {
   };
 
   const formatMmValue = (value: number) => {
-    const rounded = Math.round(value * 10) / 10;
-    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    if (!Number.isFinite(value)) return "0";
+    const normalized = Math.abs(value) < 0.000001 ? 0 : value;
+    return normalized
+      .toFixed(3)
+      .replace(/\.0+$/, "")
+      .replace(/(\.\d*?)0+$/, "$1");
   };
 
   const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
 
-  const getDimensionLabel = (part: any) => {
+  const getDimensionLabel = (part: any, category?: string) => {
     const bounds = getBounds(part);
     if (!bounds) return "-";
 
@@ -1331,6 +1335,13 @@ const bomRows = useMemo(() => {
     const heightMm = Number(bounds.height || 0) * 10;
 
     if (!widthMm && !depthMm && !heightMm) return "-";
+
+    const dimensionsMm = [widthMm, depthMm, heightMm].filter((value) => Number.isFinite(value) && value > 0);
+
+    if (category === "panel" && dimensionsMm.length === 3) {
+      const productionOrder = [...dimensionsMm].sort((a, b) => b - a);
+      return `${productionOrder.map(formatMmValue).join(" × ")} mm`;
+    }
 
     return `${formatMmValue(widthMm)} × ${formatMmValue(depthMm)} × ${formatMmValue(heightMm)} mm`;
   };
@@ -1341,7 +1352,7 @@ const bomRows = useMemo(() => {
     const label = getBomLabel(part);
     const category = normalizeBomCategory(part);
     const groupTitle = getBomGroupTitle(category);
-    const dimensionsLabel = getDimensionLabel(part);
+    const dimensionsLabel = getDimensionLabel(part, category);
     const key = `${category}|${label.toLowerCase()}|${dimensionsLabel}`;
     const id = String(part?.partId || part?.id || part?.meshName || part?.name || "").trim();
 
