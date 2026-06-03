@@ -654,69 +654,6 @@ function buildImportedProductPackage(root: THREE.Object3D, format?: string): Bag
   };
 }
 
-function bagastudioGetRuntimeExportState() {
-  const state = useConfigStore.getState();
-
-  return {
-    materials: { ...(state.materials || {}) },
-    accessories: { ...(state.accessories || {}) },
-    inserts: { ...(state.inserts || {}) },
-    ledKelvin: { ...(state.ledKelvin || {}) },
-    ledIntensity: { ...(state.ledIntensity || {}) },
-    woodDirection: { ...(state.woodDirection || {}) },
-    configuration: typeof state.exportConfiguration === "function" ? state.exportConfiguration() : null,
-  };
-}
-
-function bagastudioMergeRuntimeStateIntoProductPackage(productPackage: BagaStudioProductPackage): BagaStudioProductPackage {
-  const runtimeState = bagastudioGetRuntimeExportState();
-
-  const enrichedPackage: BagaStudioProductPackage = {
-    ...productPackage,
-    materials: {
-      ...(productPackage.materials || {}),
-      ...runtimeState.materials,
-    },
-    accessories: {
-      ...(productPackage.accessories || {}),
-      ...(runtimeState.accessories as unknown as Record<string, unknown[]>),
-    },
-    inserts: {
-      ...(productPackage.inserts || {}),
-      ...runtimeState.inserts,
-    },
-    led: {
-      ...(productPackage.led || {}),
-    },
-  };
-
-  Object.entries(runtimeState.ledKelvin).forEach(([partId, kelvin]) => {
-    enrichedPackage.led[partId] = {
-      ...(enrichedPackage.led[partId] || { enabled: true }),
-      kelvin,
-    };
-  });
-
-  Object.entries(runtimeState.ledIntensity).forEach(([partId, intensity]) => {
-    enrichedPackage.led[partId] = {
-      ...(enrichedPackage.led[partId] || { enabled: true }),
-      intensity,
-    };
-  });
-
-  (enrichedPackage as BagaStudioProductPackage & {
-    woodDirection?: Record<string, "x" | "z">;
-    configuration?: unknown;
-  }).woodDirection = runtimeState.woodDirection;
-
-  (enrichedPackage as BagaStudioProductPackage & {
-    woodDirection?: Record<string, "x" | "z">;
-    configuration?: unknown;
-  }).configuration = runtimeState.configuration;
-
-  return enrichedPackage;
-}
-
 function prepareImportedProductPackage(root: THREE.Object3D, format?: string) {
   const productPackage = buildImportedProductPackage(root, format);
   const validation = validateProductPackage(productPackage, root);
@@ -778,12 +715,7 @@ function prepareImportedProductPackage(root: THREE.Object3D, format?: string) {
     return validation;
   };
   bagastudioWindow.bagastudioDownloadLastProductPackage = () => {
-    const currentPackage = bagastudioMergeRuntimeStateIntoProductPackage(
-      bagastudioWindow.__bagastudioLastProductPackage || productPackage
-    );
-    bagastudioWindow.__bagastudioLastProductPackage = currentPackage;
-    root.userData.bagastudioProductPackage = currentPackage;
-
+    const currentPackage = bagastudioWindow.__bagastudioLastProductPackage || productPackage;
     const blob = new Blob([JSON.stringify(currentPackage, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     downloadJsonFile(url, filename);
@@ -1698,6 +1630,67 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
   const components: BagaStudioRuntimeComponent[] = [];
   const usedIds = new Map<string, number>();
 
+  type MeshEntry = {
+    mesh: THREE.Mesh;
+    originalName: string;
+    parentName: string;
+    grandParentName: string;
+    text: string;
+    normalizedText: string;
+    box: THREE.Box3;
+    size: THREE.Vector3;
+    isStrongAccessory: boolean;
+  };
+
+  const normalizeAccessoryText = (value: string) =>
+    String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+
+  const hasAccessoryKeyword = (text: string) =>
+    text.includes("maniglia") ||
+    text.includes("handle") ||
+    text.includes("pomello") ||
+    text.includes("knob") ||
+    text.includes("pull") ||
+    text.includes("grip") ||
+    text.includes("accessorio") ||
+    text.includes("accessory");
+
+  const hasHardwareKeyword = (text: string) =>
+    hasAccessoryKeyword(text) ||
+    text.includes("ferramenta") ||
+    text.includes("hardware") ||
+    text.includes("ironware");
+
+  const isPanelLike = (text: string) =>
+    text.includes("fianco") ||
+    text.includes("side") ||
+    text.includes("schiena") ||
+    text.includes("back") ||
+    text.includes("fondo") ||
+    text.includes("bottom") ||
+    text.includes("cielo") ||
+    text.includes("top") ||
+    text.includes("ripiano") ||
+    text.includes("shelf") ||
+    text.includes("anta") ||
+    text.includes("door") ||
+    text.includes("pannello") ||
+    text.includes("panel");
+
+  const rootBox = new THREE.Box3().setFromObject(root);
+  const rootSize = rootBox.getSize(new THREE.Vector3());
+  const rootMax = Math.max(rootSize.x, rootSize.y, rootSize.z, 1);
+  const joinTolerance = Math.max(rootMax * 0.035, 0.01);
+  const maxAccessoryDimension = rootMax * 0.45;
+
+  const entries: MeshEntry[] = [];
+
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (!mesh.isMesh) return;
@@ -1706,8 +1699,157 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
     if ((mesh.userData as any)?.bagastudioAccessory === true) return;
     if ((mesh.userData as any)?.bagastudioInsert === true) return;
 
-    const index = components.length + 1;
     const originalName = String(mesh.name || "").trim();
+    const parentName = String(mesh.parent?.name || "").trim();
+    const grandParentName = String(mesh.parent?.parent?.name || "").trim();
+    const text = [
+      originalName,
+      parentName,
+      grandParentName,
+      String(mesh.userData?.bagastudioOriginalName || ""),
+      String(mesh.userData?.bagastudioParentName || ""),
+      String(mesh.userData?.bagastudioRuntimeKind || ""),
+    ].filter(Boolean).join(" ");
+    const normalizedText = normalizeAccessoryText(text);
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z);
+    const runtimeKind = String(mesh.userData?.bagastudioRuntimeKind || "").toLowerCase();
+    const isStrongAccessory =
+      hasAccessoryKeyword(normalizedText) ||
+      ((runtimeKind === "hardware" || hasHardwareKeyword(normalizedText)) && !isPanelLike(normalizedText) && maxDimension <= maxAccessoryDimension);
+
+    entries.push({
+      mesh,
+      originalName,
+      parentName,
+      grandParentName,
+      text,
+      normalizedText,
+      box,
+      size,
+      isStrongAccessory,
+    });
+  });
+
+  const accessoryEntryIndexes = new Set<number>();
+  const strongIndexes = entries
+    .map((entry, index) => (entry.isStrongAccessory ? index : -1))
+    .filter((index) => index >= 0);
+
+  strongIndexes.forEach((index) => accessoryEntryIndexes.add(index));
+
+  // Accessory Grouping V2:
+  // A Spazio3D/DAE handle can arrive as 3 meshes: front cylinder + 2 supports.
+  // Some supports may have generic names and therefore V1 could still leave them separated.
+  // Here we absorb small nearby meshes into the same accessory cluster, without touching big panels/doors.
+  strongIndexes.forEach((seedIndex) => {
+    const seed = entries[seedIndex];
+    const expandedSeedBox = seed.box.clone().expandByScalar(joinTolerance);
+
+    entries.forEach((entry, index) => {
+      if (accessoryEntryIndexes.has(index)) return;
+      if (isPanelLike(entry.normalizedText)) return;
+
+      const maxDimension = Math.max(entry.size.x, entry.size.y, entry.size.z);
+      if (maxDimension > maxAccessoryDimension) return;
+
+      const expandedEntryBox = entry.box.clone().expandByScalar(joinTolerance);
+      if (expandedSeedBox.intersectsBox(expandedEntryBox)) {
+        accessoryEntryIndexes.add(index);
+      }
+    });
+  });
+
+  const accessoryIndexes = Array.from(accessoryEntryIndexes).sort((a, b) => a - b);
+  const parent = new Map<number, number>();
+  accessoryIndexes.forEach((index) => parent.set(index, index));
+
+  const find = (index: number): number => {
+    const current = parent.get(index) ?? index;
+    if (current === index) return index;
+    const rootIndex = find(current);
+    parent.set(index, rootIndex);
+    return rootIndex;
+  };
+
+  const union = (a: number, b: number) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  for (let i = 0; i < accessoryIndexes.length; i += 1) {
+    for (let j = i + 1; j < accessoryIndexes.length; j += 1) {
+      const indexA = accessoryIndexes[i];
+      const indexB = accessoryIndexes[j];
+      const boxA = entries[indexA].box.clone().expandByScalar(joinTolerance);
+      const boxB = entries[indexB].box.clone().expandByScalar(joinTolerance);
+      if (boxA.intersectsBox(boxB)) union(indexA, indexB);
+    }
+  }
+
+  const accessoryClusters = new Map<number, number[]>();
+  accessoryIndexes.forEach((index) => {
+    const rootIndex = find(index);
+    const cluster = accessoryClusters.get(rootIndex) || [];
+    cluster.push(index);
+    accessoryClusters.set(rootIndex, cluster);
+  });
+
+  const accessoryComponentByIndex = new Map<number, BagaStudioRuntimeComponent>();
+  let accessoryCounter = 0;
+
+  accessoryClusters.forEach((clusterIndexes) => {
+    accessoryCounter += 1;
+    const firstEntry = entries[clusterIndexes[0]];
+    const clusterBox = new THREE.Box3();
+    clusterIndexes.forEach((index) => clusterBox.union(entries[index].box));
+    const clusterSize = clusterBox.getSize(new THREE.Vector3());
+    const seedName = firstEntry.parentName || firstEntry.grandParentName || firstEntry.originalName || `Maniglia ${accessoryCounter}`;
+    const baseId = sanitizeComponentId(`accessorio_${seedName}`, components.length + 1);
+    const currentCount = usedIds.get(baseId) || 0;
+    usedIds.set(baseId, currentCount + 1);
+    const id = currentCount === 0 ? baseId : `${baseId}_${String(currentCount + 1).padStart(2, "0")}`;
+
+    const component: BagaStudioRuntimeComponent = {
+      id,
+      index: components.length + 1,
+      meshName: id,
+      originalName: seedName,
+      displayName: buildFriendlyComponentName(seedName, components.length + 1),
+      materialGroup: "accessory",
+      supportsMaterial: true,
+      supportsLED: false,
+      supportsInsert: false,
+      bounds: {
+        width: Number(clusterSize.x.toFixed(4)),
+        height: Number(clusterSize.y.toFixed(4)),
+        depth: Number(clusterSize.z.toFixed(4)),
+      },
+    };
+
+    components.push(component);
+
+    clusterIndexes.forEach((index) => {
+      const mesh = entries[index].mesh;
+      mesh.userData.bagastudioPartId = component.id;
+      mesh.userData.bagastudioMeshName = component.meshName;
+      mesh.userData.bagastudioOriginalName = entries[index].originalName || component.originalName;
+      mesh.userData.bagastudioDisplayName = component.displayName;
+      mesh.userData.bagastudioRuntimeComponent = component;
+      mesh.userData.bagastudioAccessoryGroupId = component.id;
+      mesh.userData.bagastudioRuntimeKind = "accessory";
+      accessoryComponentByIndex.set(index, component);
+    });
+  });
+
+  entries.forEach((entry, entryIndex) => {
+    if (accessoryComponentByIndex.has(entryIndex)) return;
+
+    const mesh = entry.mesh;
+    const index = components.length + 1;
+    const originalName = entry.originalName;
     const baseId = sanitizeComponentId(originalName, index);
     const currentCount = usedIds.get(baseId) || 0;
     usedIds.set(baseId, currentCount + 1);
@@ -1720,9 +1862,6 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
       mesh.name = id;
     }
 
-    const box = new THREE.Box3().setFromObject(mesh);
-    const size = box.getSize(new THREE.Vector3());
-
     const component: BagaStudioRuntimeComponent = {
       id,
       index,
@@ -1734,9 +1873,9 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
       supportsLED: true,
       supportsInsert: true,
       bounds: {
-        width: Number(size.x.toFixed(4)),
-        height: Number(size.y.toFixed(4)),
-        depth: Number(size.z.toFixed(4)),
+        width: Number(entry.size.x.toFixed(4)),
+        height: Number(entry.size.y.toFixed(4)),
+        depth: Number(entry.size.z.toFixed(4)),
       },
     };
 
@@ -1752,262 +1891,7 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
   root.userData.bagastudioImporterFormat = format || "unknown";
   root.userData.bagastudioRuntimeComponents = components;
 
-  
-
-/* =========================
-   BagaStudio Catalog Browser V1
-========================= */
-
-function bagastudioNormalizeCatalogText(value: any) {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
-function bagastudioSearchProductLibrary(query = "", filters: any = {}) {
-  const library = bagastudioReadProductLibrary();
-  const normalizedQuery = bagastudioNormalizeCatalogText(query);
-  const categoryFilter = bagastudioNormalizeCatalogText(filters?.category || "");
-  const sourceFormatFilter = bagastudioNormalizeCatalogText(filters?.sourceFormat || "");
-
-  const results = library.filter((item: any) => {
-    const searchableText = bagastudioNormalizeCatalogText([
-      item?.name,
-      item?.productId,
-      item?.productSlug,
-      item?.category,
-      item?.version,
-      item?.sourceFormat,
-      item?.package?.metadata?.engine,
-      item?.package?.metadata?.pipeline,
-    ].filter(Boolean).join(" "));
-
-    const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
-    const matchesCategory =
-      !categoryFilter || bagastudioNormalizeCatalogText(item?.category) === categoryFilter;
-    const matchesSourceFormat =
-      !sourceFormatFilter || bagastudioNormalizeCatalogText(item?.sourceFormat) === sourceFormatFilter;
-
-    return matchesQuery && matchesCategory && matchesSourceFormat;
-  });
-
-  window.dispatchEvent(
-    new CustomEvent("bagastudio:product-library-search", {
-      detail: {
-        query,
-        filters,
-        count: results.length,
-        results,
-      },
-    })
-  );
-
-  return results;
-}
-
-function bagastudioGetProductLibraryCategories() {
-  const categories = bagastudioReadProductLibrary()
-    .map((item: any) => item?.category || "uncategorized")
-    .filter(Boolean);
-
-  return Array.from(new Set(categories)).sort((a: any, b: any) =>
-    String(a).localeCompare(String(b))
-  );
-}
-
-function bagastudioGetProductLibraryCardData(query = "", filters: any = {}) {
-  return bagastudioSearchProductLibrary(query, filters).map((item: any) => ({
-    productId: item?.productId,
-    productSlug: item?.productSlug,
-    name: item?.name || "BagaStudio Product",
-    category: item?.category || "uncategorized",
-    version: item?.version || "1.0.0",
-    sourceFormat: item?.sourceFormat || null,
-    savedAt: item?.savedAt || null,
-    updatedAt: item?.updatedAt || null,
-    thumbnail: item?.thumbnail || null,
-    hasPackage: Boolean(item?.package),
-    hasAdminMapping: Boolean(item?.package?.adminMapping || item?.package?.productPackage?.adminMapping),
-    hasImporterReport: Boolean(item?.package?.importerReport),
-  }));
-}
-
-function bagastudioImportProductLibrary(libraryJson: any, options: any = {}) {
-  const incomingLibrary = Array.isArray(libraryJson)
-    ? libraryJson
-    : Array.isArray(libraryJson?.items)
-      ? libraryJson.items
-      : [];
-
-  if (!incomingLibrary.length) {
-    const error = new Error("Invalid BagaStudio product library import");
-
-    window.dispatchEvent(
-      new CustomEvent("bagastudio:product-library-import-error", {
-        detail: error,
-      })
-    );
-
-    throw error;
-  }
-
-  const currentLibrary = options?.replace ? [] : bagastudioReadProductLibrary();
-  const currentByKey = new Map(
-    currentLibrary.map((item: any) => [item?.productId || item?.productSlug, item])
-  );
-
-  incomingLibrary.forEach((item: any) => {
-    const key = item?.productId || item?.productSlug || bagastudioCreateProductLibraryId(item?.name);
-    currentByKey.set(key, {
-      ...item,
-      productId: item?.productId || key,
-      productSlug:
-        item?.productSlug ||
-        String(item?.name || key)
-          .toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, ""),
-      updatedAt: new Date().toISOString(),
-    });
-  });
-
-  const nextLibrary = Array.from(currentByKey.values()).sort((a: any, b: any) =>
-    String(b?.updatedAt || b?.savedAt || "").localeCompare(String(a?.updatedAt || a?.savedAt || ""))
-  );
-
-  bagastudioWriteProductLibrary(nextLibrary);
-
-  window.dispatchEvent(
-    new CustomEvent("bagastudio:product-library-imported", {
-      detail: {
-        replace: Boolean(options?.replace),
-        count: incomingLibrary.length,
-        library: nextLibrary,
-      },
-    })
-  );
-
-  return nextLibrary;
-}
-
-
-
-/* =========================
-   BagaStudio Product Loader V1
-========================= */
-
-let __bagastudioPreparedLibraryProduct: any = null;
-
-function bagastudioExtractProductRuntimePackage(libraryItem: any) {
-  const fullPackage = libraryItem?.package || libraryItem || null;
-  const productPackage = fullPackage?.productPackage || fullPackage || null;
-
-  return {
-    libraryItem,
-    fullPackage,
-    productPackage,
-    adminMapping:
-      fullPackage?.adminMapping ||
-      productPackage?.adminMapping ||
-      null,
-    importerReport:
-      fullPackage?.importerReport ||
-      productPackage?.importerReport ||
-      null,
-    thumbnail:
-      fullPackage?.thumbnail ||
-      productPackage?.thumbnail ||
-      libraryItem?.thumbnail ||
-      null,
-    metadata: {
-      ...(fullPackage?.metadata || {}),
-      ...(productPackage?.metadata || {}),
-      productId: libraryItem?.productId || productPackage?.productId || null,
-      productSlug: libraryItem?.productSlug || productPackage?.productSlug || null,
-      productName: libraryItem?.name || productPackage?.productName || productPackage?.name || null,
-      category: libraryItem?.category || productPackage?.productCategory || null,
-      sourceFormat: libraryItem?.sourceFormat || productPackage?.sourceFormat || null,
-    },
-  };
-}
-
-function bagastudioPrepareProductFromLibrary(productIdOrSlug: string, options: any = {}) {
-  const libraryItem = bagastudioLoadProductFromLibrary(productIdOrSlug);
-  const prepared = bagastudioExtractProductRuntimePackage(libraryItem);
-
-  __bagastudioPreparedLibraryProduct = {
-    ...prepared,
-    preparedAt: new Date().toISOString(),
-    options,
-  };
-
-  window.dispatchEvent(
-    new CustomEvent("bagastudio:product-loader-prepared", {
-      detail: __bagastudioPreparedLibraryProduct,
-    })
-  );
-
-  if (options?.autoApply) {
-    return bagastudioApplyPreparedProduct(options);
-  }
-
-  return __bagastudioPreparedLibraryProduct;
-}
-
-function bagastudioApplyPreparedProduct(options: any = {}) {
-  if (!__bagastudioPreparedLibraryProduct) {
-    const error = new Error("No prepared BagaStudio product available");
-
-    window.dispatchEvent(
-      new CustomEvent("bagastudio:product-loader-apply-error", {
-        detail: error,
-      })
-    );
-
-    throw error;
-  }
-
-  const prepared = __bagastudioPreparedLibraryProduct;
-
-  __bagastudioLastSavedPackage = prepared.fullPackage || null;
-  (window as any).bagastudioProductPackage = prepared.productPackage || null;
-  (window as any).bagastudioAdminMapping = prepared.adminMapping || null;
-  (window as any).bagastudioLastImporterReport = prepared.importerReport || null;
-  (window as any).__bagastudioLastProductThumbnail = prepared.thumbnail || null;
-  (window as any).__bagastudioLastLoadedLibraryProduct = prepared.libraryItem || null;
-
-  const safeApply = (window as any).bagastudioSafeApplyImporterState;
-  if (options?.safeApply && typeof safeApply === "function") {
-    try {
-      safeApply();
-    } catch (error) {
-      console.warn("BagaStudio Product Loader safe apply skipped", error);
-    }
-  }
-
-  window.dispatchEvent(
-    new CustomEvent("bagastudio:product-loader-applied", {
-      detail: prepared,
-    })
-  );
-
-  window.dispatchEvent(
-    new CustomEvent("bagastudio:importer-ui-state-refresh", {
-      detail: prepared,
-    })
-  );
-
-  return prepared;
-}
-
-function bagastudioGetPreparedProduct() {
-  return __bagastudioPreparedLibraryProduct;
-}
-
-if (typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("bagastudio:importer-components-analyzed", {
         detail: {
@@ -2021,7 +1905,6 @@ if (typeof window !== "undefined") {
 
   return components;
 }
-
 
 function prepareImportedModelGlbExporter(root: THREE.Object3D, format?: string) {
   root.userData.bagastudioCanExportGlb = true;
@@ -2163,20 +2046,11 @@ function prepareImporterUiBridge(root: THREE.Object3D) {
     const importerReport = bagastudioWindow.__bagastudioLastImporterReport || root.userData?.bagastudioImporterReport;
     const sourceFormat = String(root.userData?.bagastudioImporterFormat || productPackage?.sourceFormat || "model").toLowerCase();
 
-    const enrichedProductPackage = productPackage
-      ? bagastudioMergeRuntimeStateIntoProductPackage(productPackage)
-      : null;
-
-    if (enrichedProductPackage) {
-      bagastudioWindow.__bagastudioLastProductPackage = enrichedProductPackage;
-      root.userData.bagastudioProductPackage = enrichedProductPackage;
-    }
-
     const bundle = {
       schema: "bagastudio.importer.bundle.v1",
       createdAt: new Date().toISOString(),
       sourceFormat,
-      productPackage: enrichedProductPackage,
+      productPackage: productPackage || null,
       adminMapping: adminMapping || null,
       importerReport: importerReport || null,
     };
@@ -3350,17 +3224,18 @@ const applyBagastudioXRayMaterialState = (
         const meshMaterialGroup = String(mesh.userData?.bagastudioMaterialGroup || "");
         const isImportedRuntimeMesh = isImportedModelFormat(runtimeModelFormat);
         const effectivePartId = meshPartId || meshRuntimeMeshName || partKey;
-        const meshAliases = isImportedRuntimeMesh
-          ? [effectivePartId].filter(Boolean)
-          : [
-              partKey,
-              mesh.name,
-              meshPartId,
-              meshRuntimeMeshName,
-              meshDisplayName,
-              meshOriginalName,
-              meshMaterialGroup,
-            ].filter(Boolean);
+        const meshAliases = [
+          effectivePartId,
+          partKey,
+          mesh.name,
+          meshPartId,
+          meshRuntimeMeshName,
+          meshDisplayName,
+          meshOriginalName,
+          meshMaterialGroup,
+          String(mesh.parent?.name || ""),
+          String(mesh.userData?.bagastudioParentName || ""),
+        ].filter(Boolean);
 
         const productPart =
   productParts.find((p) => meshAliases.includes(String(p.id))) ||
@@ -3409,10 +3284,7 @@ const isMirrorPart =
   productPart?.name?.toLowerCase().includes("specchiera");
 
 const explicitImportedMaterialId = isImportedRuntimeMesh
-  ? materials[effectivePartId] ||
-    materials[meshPartId] ||
-    materials[meshRuntimeMeshName] ||
-    ""
+  ? meshAliases.map((alias) => materials[String(alias)]).find(Boolean) || ""
   : "";
 
 const materialId =
@@ -4183,6 +4055,52 @@ const realPartKey =
 }
 
 
+function getBagastudioBoxVolume(box: THREE.Box3) {
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  return Math.max(size.x, 0.001) * Math.max(size.y, 0.001) * Math.max(size.z, 0.001);
+}
+
+function getBagastudioPrimaryClusterBox(boxes: THREE.Box3[]) {
+  if (!boxes.length) return null;
+  if (boxes.length === 1) return boxes[0].clone();
+
+  const fullBox = new THREE.Box3();
+  boxes.forEach((item) => fullBox.union(item));
+
+  const fullSize = new THREE.Vector3();
+  fullBox.getSize(fullSize);
+  const fullMaxSize = Math.max(fullSize.x, fullSize.y, fullSize.z);
+  const clusterMargin = Math.max(fullMaxSize * 0.18, 12);
+
+  const remaining = boxes
+    .map((box, index) => ({ box, index, volume: getBagastudioBoxVolume(box) }))
+    .sort((a, b) => b.volume - a.volume);
+
+  const seed = remaining[0]?.box;
+  if (!seed) return fullBox.isEmpty() ? null : fullBox;
+
+  const clusterBox = seed.clone();
+  const used = new Set<number>([remaining[0].index]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const expandedCluster = clusterBox.clone().expandByScalar(clusterMargin);
+
+    remaining.forEach((item) => {
+      if (used.has(item.index)) return;
+      if (!expandedCluster.intersectsBox(item.box)) return;
+
+      clusterBox.union(item.box);
+      used.add(item.index);
+      changed = true;
+    });
+  }
+
+  return clusterBox.isEmpty() ? (fullBox.isEmpty() ? null : fullBox) : clusterBox;
+}
+
 function getBagastudioCleanSceneBox(scene: THREE.Scene) {
   const boxes: THREE.Box3[] = [];
 
@@ -4214,11 +4132,7 @@ function getBagastudioCleanSceneBox(scene: THREE.Scene) {
     boxes.push(worldBox);
   });
 
-  if (!boxes.length) return null;
-
-  const box = new THREE.Box3();
-  boxes.forEach((item) => box.union(item));
-  return box.isEmpty() ? null : box;
+  return getBagastudioPrimaryClusterBox(boxes);
 }
 
 function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Camera, viewId = "iso") {
@@ -4424,7 +4338,9 @@ function ViewerRuntimeControls({
       box.getSize(size);
 
       const maxSize = Math.max(size.x, size.y, size.z);
-      const distance = Math.max(maxSize * 2.2, 8);
+
+// Focus molto più vicino e utilizzabile
+const distance = Math.max(maxSize * 1.0, 4);
 
       camera.position.set(
         center.x + distance,
@@ -5153,19 +5069,12 @@ let __bagastudioLastSavedPackage: any = null;
 
 async function bagastudioSaveCompleteProductPackageRuntime() {
   try {
-    const sourceProductPackage =
-      (window as any).__bagastudioLastProductPackage ||
-      (window as any).bagastudioProductPackage ||
-      null;
-
     const runtimePackage = {
       savedAt: new Date().toISOString(),
       version: "ImporterSaveSystemV1",
-      productPackage: sourceProductPackage
-        ? bagastudioMergeRuntimeStateIntoProductPackage(sourceProductPackage)
-        : null,
-      adminMapping: (window as any).__bagastudioLastAdminMapping || (window as any).bagastudioAdminMapping || null,
-      importerReport: (window as any).__bagastudioLastImporterReport || (window as any).bagastudioLastImporterReport || null,
+      productPackage: (window as any).bagastudioProductPackage || null,
+      adminMapping: (window as any).bagastudioAdminMapping || null,
+      importerReport: (window as any).bagastudioLastImporterReport || null,
       thumbnail: (window as any).__bagastudioLastProductThumbnail || null,
       metadata: {
         engine: "BagaStudio Core",

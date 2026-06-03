@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
+import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
+import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
+import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
 import { useConfigStore } from "@/core/state/config.state";
 import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
@@ -68,6 +71,7 @@ const EMPTY_IMPORTED_PRODUCT_BASE: AnyProduct = {
 
 
 const SUPPORTED_IMPORT_MODEL_ACCEPT = ".glb,.gltf,.dae,.fbx,.obj,.stl";
+const SUPPORTED_GENERIC_IMPORT_ACCEPT = `${SUPPORTED_IMPORT_MODEL_ACCEPT},.json,.baga,application/json`;
 const SUPPORTED_IMPORT_MODEL_FORMATS = ["glb", "gltf", "dae", "fbx", "obj", "stl"] as const;
 
 function getImportFileFormat(fileName: string) {
@@ -125,22 +129,22 @@ const DICTIONARY = {
     english: "Inglese",
     totalPrice: "Prezzo totale",
     vatIncluded: "IVA inclusa",
-    configurator: "CONFIGURATORE 3D",
+    configurator: "BAGASTUDIO CORE VIEWER",
     realisticRender: "RENDER REALISTICI",
     ar: "REALTÀ AUMENTATA",
     quotes: "PREVENTIVI ISTANTANEI",
-    project: "PROGETTO",
+    project: "IMPORTA",
     materials: "MATERIALI",
     accessories: "ACCESSORI",
     views: "VISTE",
-    studioTools: "STUDIO TOOLS",
+    studioTools: "STRUMENTI",
     save: "Salva",
     export: "Esporta",
     quote: "Preventivo",
     addToQuote: "Aggiungi al preventivo",
     adminPanel: "Admin Panel",
     adminPanelDescription: "Importer modelli, mapping componenti, catalogo prodotti, materiali, accessori e strumenti avanzati.",
-    importProductJson: "Importa prodotto JSON",
+    importProductJson: "Importa Product Package JSON",
     restoreAutosave: "Ripristina autosave",
     importBackup: "Importa backup",
     selectedPart: "Pezzo selezionato",
@@ -174,13 +178,13 @@ const DICTIONARY = {
     horizontal: "Orizzontale",
     vertical: "Verticale",
     runtimeJson: "Runtime JSON",
-    importProductFromSidebar: "Importa un JSON prodotto dalla sidebar.",
-    projectSummary: "Riepilogo progetto",
+    importProductFromSidebar: "Importa un Product Package JSON dall’area Importa.",
+    projectSummary: "Riepilogo prodotto",
     product: "Prodotto",
     included: "Inclusi",
     configured: "Configurati",
     ready: "Pronto",
-    projectTotal: "Totale progetto",
+    projectTotal: "Totale prodotto",
     objectProperties: "Proprietà oggetto",
     name: "Nome",
     view: "Vista",
@@ -246,22 +250,22 @@ const DICTIONARY = {
     english: "English",
     totalPrice: "Total price",
     vatIncluded: "VAT included",
-    configurator: "3D CONFIGURATOR",
+    configurator: "BAGASTUDIO CORE VIEWER",
     realisticRender: "REALISTIC RENDERS",
     ar: "AUGMENTED REALITY",
     quotes: "INSTANT QUOTES",
-    project: "PROJECT",
+    project: "IMPORT",
     materials: "MATERIALS",
     accessories: "ACCESSORIES",
     views: "VIEWS",
-    studioTools: "STUDIO TOOLS",
+    studioTools: "STRUMENTI",
     save: "Save",
     export: "Export",
     quote: "Quote",
     addToQuote: "Add to quote",
     adminPanel: "Admin Panel",
     adminPanelDescription: "Model importer, component mapping, product catalog, materials, accessories and advanced tools.",
-    importProductJson: "Import product JSON",
+    importProductJson: "Import Product Package JSON",
     restoreAutosave: "Restore autosave",
     importBackup: "Import backup",
     selectedPart: "Selected part",
@@ -296,12 +300,12 @@ const DICTIONARY = {
     vertical: "Vertical",
     runtimeJson: "Runtime JSON",
     importProductFromSidebar: "Import a product JSON from the sidebar.",
-    projectSummary: "Project summary",
+    projectSummary: "Product summary",
     product: "Product",
     included: "Included",
     configured: "Configured",
     ready: "Ready",
-    projectTotal: "Project total",
+    projectTotal: "Product total",
     objectProperties: "Object properties",
     name: "Name",
     view: "View",
@@ -553,6 +557,29 @@ function getInitialLanguage(): "it" | "en" {
   return savedLanguage === "en" ? "en" : "it";
 }
 
+function createBagaStudioProject(configuration: any, projectName = "Progetto BagaStudio") {
+  const now = new Date().toISOString();
+
+  return {
+    type: "bagastudio-project",
+    version: "1.0",
+    name: projectName || "Progetto BagaStudio",
+    createdAt: now,
+    updatedAt: now,
+    configuration,
+  };
+}
+
+function getSafeProjectFilename(projectName: string) {
+  const safeName = String(projectName || "Progetto BagaStudio")
+    .trim()
+    .replace(/[^a-zA-Z0-9-_àèéìòùÀÈÉÌÒÙ ]/g, "")
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+
+  return `${safeName || "Progetto_BagaStudio"}.baga`;
+}
+
 export default function HomePage() {
   const product = useConfigStore((state) => state.runtimeProduct || state.product);
   const setRuntimeProduct = useConfigStore((state) => state.setRuntimeProduct);
@@ -591,6 +618,9 @@ const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
 
 
  const [importName, setImportName] = useState("");
+const [currentProjectName, setCurrentProjectName] = useState("Progetto BagaStudio");
+const [lastProjectAction, setLastProjectAction] = useState("");
+const [uiNotice, setUiNotice] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
 const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "save" | "produce" | "help" | "admin"
@@ -613,6 +643,20 @@ const [lastImporterEvent, setLastImporterEvent] = useState("");
 const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
 const [selectedPartIds, setSelectedPartIds] = useState<string[]>([]);
 const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+const uiNoticeTimerRef = useRef<number | null>(null);
+
+function showUiNotice(message: string, type: "success" | "error" | "info" = "success") {
+  setUiNotice({ type, message });
+
+  if (uiNoticeTimerRef.current) {
+    window.clearTimeout(uiNoticeTimerRef.current);
+  }
+
+  uiNoticeTimerRef.current = window.setTimeout(() => {
+    setUiNotice(null);
+    uiNoticeTimerRef.current = null;
+  }, 3200);
+}
 
 useEffect(() => {
   if (!selectedPartId) return;
@@ -648,6 +692,14 @@ const [viewerRuntimeProduct, setViewerRuntimeProduct] = useState<any>(null);
 useEffect(() => {
   window.localStorage.setItem("bagastudio-language", language);
 }, [language]);
+
+useEffect(() => {
+  return () => {
+    if (uiNoticeTimerRef.current) {
+      window.clearTimeout(uiNoticeTimerRef.current);
+    }
+  };
+}, []);
 
 
 useEffect(() => {
@@ -798,6 +850,114 @@ function goNextView() {
 function requestViewerFullscreen() {
   viewerShellRef.current?.requestFullscreen?.();
 }
+
+function getCurrentProjectName() {
+  return (currentProjectName || importName || importedModelName || runtimeProduct?.displayName || runtimeProduct?.name || "Progetto BagaStudio").trim();
+}
+
+function newProject() {
+  const suggestedName = "Nuovo progetto";
+  const nextName = window.prompt("Nome nuovo progetto BagaStudio", suggestedName) || suggestedName;
+  importConfiguration({});
+  setCurrentProjectName(nextName);
+  setImportName(nextName);
+  setLastProjectAction(`Nuovo progetto avviato: ${nextName}`);
+  showUiNotice(`Nuovo progetto avviato: ${nextName}`, "info");
+  setSelectedPart(null);
+  setSelectedPartIds([]);
+}
+
+function saveProject() {
+  const projectName = getCurrentProjectName();
+  const project = createBagaStudioProject(exportConfiguration(), projectName);
+  downloadJson(getSafeProjectFilename(projectName), project);
+  setLastProjectAction(`Progetto salvato: ${projectName}`);
+  showUiNotice(`Progetto salvato: ${projectName}`);
+}
+
+async function openProject(file: File) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    if (data?.type === "bagastudio-project" && data?.configuration) {
+      importConfiguration(data.configuration);
+      const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
+      setCurrentProjectName(nextName);
+      setImportName(nextName);
+      setLastProjectAction(`Progetto aperto: ${nextName}`);
+      showUiNotice(`Progetto aperto: ${nextName}`);
+      return;
+    }
+
+    if (data?.configuration) {
+      importConfiguration(data.configuration);
+      const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
+      setCurrentProjectName(nextName);
+      setImportName(nextName);
+      setLastProjectAction(`Configurazione importata: ${nextName}`);
+      showUiNotice(`Configurazione importata: ${nextName}`);
+      return;
+    }
+
+    importConfiguration(data);
+    const nextName = file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
+    setCurrentProjectName(nextName);
+    setImportName(nextName);
+    setLastProjectAction(`Configurazione importata: ${nextName}`);
+    showUiNotice(`Configurazione importata: ${nextName}`);
+  } catch (error) {
+    console.error("BagaStudio project import error", error);
+    setLastProjectAction("Errore: file progetto BagaStudio non valido.");
+    showUiNotice("Errore: file progetto BagaStudio non valido.", "error");
+  }
+}
+
+async function handleGenericImportFile(file: File) {
+  const format = getImportFileFormat(file.name);
+
+  if (format === "baga") {
+    await openProject(file);
+    return;
+  }
+
+  if (format === "json") {
+    const text = await file.text();
+    let data: any = null;
+
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      console.error("BagaStudio generic JSON import error", error);
+      setLastProjectAction("Errore: file JSON non valido.");
+      showUiNotice("Errore: file JSON non valido.", "error");
+      return;
+    }
+
+    const isProductPackage =
+      data?.schema === "bagastudio-product-package" ||
+      data?.productPackageVersion === 2;
+
+    if (isProductPackage) {
+      await handleProductJsonImport(file);
+      return;
+    }
+
+    await openProject(file);
+    return;
+  }
+
+  if (isSupportedImportModel(file)) {
+    await handleModelFileImport(file);
+    return;
+  }
+
+  const message = `Formato non supportato: .${format || "sconosciuto"}. Usa GLB, GLTF, DAE, FBX, OBJ, STL, JSON, BAGA, JSON o BAGA.`;
+  setImporterStatus(message);
+  setLastProjectAction(message);
+  showUiNotice(message, "error");
+}
+
  const runtimeProduct = useMemo(() => {
   return product ? normalizeProduct(product) : null;
 }, [product]);
@@ -944,7 +1104,8 @@ const availableAccessories = useMemo(() => {
     if (!isSupportedImportModel(file)) {
       const message = `Formato non supportato: .${format || "sconosciuto"}. Formati supportati: ${SUPPORTED_IMPORT_MODEL_ACCEPT}`;
       setImporterStatus(message);
-      alert(message);
+      setLastProjectAction(message);
+      showUiNotice(message, "error");
       return;
     }
 
@@ -979,6 +1140,8 @@ const availableAccessories = useMemo(() => {
     setImportedModelFormat(format.toUpperCase());
     setImportedModelVersion(Date.now());
     setImporterStatus(`Modello importato: ${file.name} (.${format})`);
+    setLastProjectAction(`Modello importato: ${file.name}`);
+    showUiNotice(`Modello importato: ${file.name}`);
 
     window.dispatchEvent(
       new CustomEvent("bagastudio:import-model-file", {
@@ -1064,6 +1227,9 @@ const availableAccessories = useMemo(() => {
         }, 120);
 
         setImportName(file.name);
+        setLastProjectAction(`Product Package importato: ${file.name}`);
+        setImporterStatus(`Product Package importato: ${file.name}`);
+        showUiNotice(`Product Package importato: ${file.name}`);
         console.info("BagaStudio Product Package imported without blocking on Viewer runtime loader");
         return;
       }
@@ -1085,10 +1251,14 @@ const availableAccessories = useMemo(() => {
       setSelectedPart(null);
                   setSelectedPartIds([]);
       setImportName(file.name);
+      setLastProjectAction(`Prodotto JSON importato: ${file.name}`);
+      setImporterStatus(`Prodotto JSON importato: ${file.name}`);
+      showUiNotice(`Prodotto JSON importato: ${file.name}`);
       console.info("BagaStudio product imported successfully");
     } catch (error) {
       console.error("BagaStudio product import error", error);
-      alert(t.invalidProductJson);
+      setLastProjectAction(t.invalidProductJson);
+      showUiNotice(t.invalidProductJson, "error");
     }
   }
 
@@ -1106,163 +1276,59 @@ const availableAccessories = useMemo(() => {
         importConfiguration(data.configuration);
       }
 
-      alert(t.backupImported);
+      setLastProjectAction(t.backupImported);
+      showUiNotice(t.backupImported);
     } catch (error) {
       console.error("BagaStudio backup import error", error);
-      alert(t.invalidBackupJson);
+      setLastProjectAction(t.invalidBackupJson);
+      showUiNotice(t.invalidBackupJson, "error");
     }
   }
 
   return (
    <main className="min-h-screen bg-[radial-gradient(circle_at_12%_0%,rgba(14,165,233,0.20),transparent_28%),radial-gradient(circle_at_86%_10%,rgba(59,130,246,0.12),transparent_26%),#03070d] text-white">
   <div className="flex h-screen flex-col overflow-hidden">
-   <header className="sticky top-0 z-50 border-b border-sky-400/20 bg-[#030b13]/90 px-3 py-2 backdrop-blur-2xl shadow-[0_18px_70px_rgba(0,0,0,0.42)]">
-      <div className="rounded-[26px] border border-sky-400/20 bg-gradient-to-r from-[#05131f]/95 via-[#07111c]/95 to-[#03101b]/95 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_0_45px_rgba(14,165,233,0.08)]">
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex min-w-[220px] items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setIsLogoModalOpen(true)}
-              title={t.openLogo}
-              className="group rounded-2xl border border-transparent p-1 transition hover:border-sky-400/30 hover:bg-sky-400/5"
-            >
-              <img
-                src="/bagastudio-core-brand.png"
-                alt="BagaStudio Core"
-                className="h-14 w-auto shrink-0 object-contain drop-shadow-[0_0_28px_rgba(14,165,233,0.46)] transition group-hover:scale-[1.045]"
-              />
-            </button>
-          </div>
+    <ViewerPremiumHeader
+      t={t}
+      language={language}
+      activePanel={activePanel}
+      totalPrice={displayPricing.total}
+      onOpenLogo={() => setIsLogoModalOpen(true)}
+      onAdminPanel={() => window.location.href = "/admin-panel"}
+      onLanguageChange={(nextLanguage) => setLanguage(nextLanguage)}
+      onPanelChange={setActivePanel}
+      onSave={() => saveAutosave()}
+      onExport={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
+      onQuote={() => downloadJson("bagastudio-config.json", exportConfiguration())}
+    />
 
-          <div className="hidden flex-1 items-center justify-center gap-1 xl:flex">
-            {[
-              ["⬡", t.configurator],
-              ["◉", t.realisticRender],
-              ["AR", t.ar],
-              ["▤", t.quotes],
-            ].map((item, index) => (
-              <div
-                key={item[1]}
-                className={`flex min-w-[124px] flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ${
-                  index === 0
-                    ? "border-sky-400/20 bg-sky-500/10"
-                    : index === 1
-                    ? "border-cyan-400/20 bg-cyan-500/10"
-                    : index === 2
-                    ? "border-violet-400/20 bg-violet-500/10"
-                    : "border-emerald-400/20 bg-emerald-500/10"
-                }`}
-              >
-                <div className="text-lg font-black text-sky-400 drop-shadow-[0_0_12px_rgba(14,165,233,0.35)]">
-                  {item[0]}
-                </div>
-                <div className="text-center text-[11px] font-bold tracking-wide text-neutral-200">
-                  {item[1]}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="rounded-2xl border border-sky-300/25 bg-sky-500/10 px-4 py-2 shadow-[0_0_25px_rgba(14,165,233,0.16)]">
-              <p className="text-xs font-bold uppercase tracking-widest text-neutral-300">{t.totalPrice}</p>
-              <p className="mt-0 text-[26px] font-black leading-none text-sky-300 drop-shadow-[0_0_15px_rgba(14,165,233,0.32)]">
-                € {displayPricing.total.toFixed(2)}
-              </p>
-              <p className="text-xs text-neutral-400">{t.vatIncluded}</p>
-            </div>
-
-           <div
-  onClick={() => window.location.href = "/admin-panel"}
-  className="cursor-pointer rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-500/10 to-black/40 px-4 py-2 shadow-[0_0_18px_rgba(14,165,233,0.08)] transition hover:border-sky-400/40 hover:shadow-[0_0_24px_rgba(14,165,233,0.18)]"
->
-  <div className="text-[10px] font-bold tracking-[0.35em] text-sky-400">
-    BAGASTUDIO CORE
-  </div>
-
-  <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
-    ⚙ {t.adminPanel}
-  </h3>
-
-  <p className="hidden">
-    {t.adminPanelDescription}
-  </p>
-</div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-neutral-400">{t.language}</span>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as "it" | "en")}
-              className="rounded-xl border border-sky-500/30 bg-slate-950 px-3 py-2 text-sm font-semibold text-white outline-none"
-            >
-              <option className="bg-slate-950 text-white" value="it">
-                {t.italian}
-              </option>
-              <option className="bg-slate-950 text-white" value="en">
-                {t.english}
-              </option>
-            </select>
-          </div>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-          <div className="flex items-center gap-2">
-            {[
-              ["config", "↧", "CARICA"],
-              ["materials", "▧", "CONFIGURA"],
-              ["accessories", "✦", "ACCESSORI"],
-              ["views", "◱", "VISTE"],
-              ["save", "✓", "SALVA"],
-              ["produce", "▤", "PRODUCI"],
-              ["help", "?", "AIUTO"],
-              ["admin", "⚙", "STRUMENTI"],
-            ].map((tab: any) => (
-              <button
-                key={tab[0]}
-                onClick={() => setActivePanel(tab[0])}
-                className={`rounded-2xl px-4 py-2.5 text-sm font-black tracking-wide transition ${
-                  activePanel === tab[0]
-                    ? "bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 text-white shadow-[0_0_28px_rgba(14,165,233,0.42)]"
-                    : "bg-white/[0.045] text-neutral-300 hover:bg-sky-500/10 hover:text-white"
-                }`}
-              >
-                <span className="mr-2">{tab[1]}</span>{tab[2]}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActivePanel("config")} className="rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-2 text-sm font-black text-sky-100 hover:bg-sky-500/20">
-              CARICA
-            </button>
-            <button onClick={() => setActivePanel("save")} className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-500/20">
-              SALVA
-            </button>
-            <button onClick={() => setActivePanel("produce")} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
-              PRODUCI
-            </button>
-          </div>
-        </div>
+    {uiNotice && (
+      <div
+        className={`fixed left-[118px] top-6 z-[120] flex min-w-[300px] max-w-[460px] items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-black shadow-[0_18px_60px_rgba(0,0,0,0.45)] ${
+          uiNotice.type === "error"
+            ? "border-red-400/40 bg-red-500/20 text-red-50"
+            : uiNotice.type === "info"
+              ? "border-sky-400/40 bg-sky-500/20 text-sky-50"
+              : "border-emerald-400/40 bg-emerald-500/20 text-emerald-50"
+        }`}
+      >
+        <span className="text-lg">{uiNotice.type === "error" ? "⚠" : uiNotice.type === "info" ? "ℹ" : "✓"}</span>
+        <span className="flex-1">{uiNotice.message}</span>
+        <button
+          type="button"
+          onClick={() => setUiNotice(null)}
+          className="rounded-full px-2 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white"
+          aria-label="Chiudi avviso"
+        >
+          ×
+        </button>
       </div>
-    </header>
+    )}
 
-    <div className="border-b border-sky-400/10 bg-[#030911]/95 px-3 py-2">
-      <div className="mx-auto flex max-w-[1900px] items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300">
-        <div className="flex items-center gap-3">
-          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/15 px-3 py-1 text-emerald-200 shadow-[0_0_18px_rgba(52,211,153,0.12)]">Runtime stabile</span>
-          <span className="rounded-full border border-sky-400/25 bg-sky-400/15 px-3 py-1 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.12)]">{viewerRuntimeComponents.length || 0} componenti</span>
-          <span className="rounded-full border border-violet-400/25 bg-violet-400/15 px-3 py-1 text-violet-100 shadow-[0_0_18px_rgba(167,139,250,0.12)]">{effectiveSelectedPartIds.length} selezionati</span>
-          <span className="rounded-full border border-amber-400/25 bg-amber-400/15 px-3 py-1 text-amber-100 shadow-[0_0_18px_rgba(251,191,36,0.1)]">X-Ray</span>
-        </div>
-        <div className="hidden items-center gap-3 lg:flex">
-          <span>DAE / JSON</span>
-          <span>PartId</span>
-          <span>X-Ray</span>
-          <span>Multi-select</span>
-        </div>
-      </div>
-    </div>
+    <ViewerRuntimeStatusBar
+      componentCount={viewerRuntimeComponents.length || 0}
+      selectedCount={effectiveSelectedPartIds.length}
+    />
 
     <div className="grid min-h-0 flex-1 grid-cols-[340px_minmax(0,1fr)_350px] gap-3 bg-[#030911] p-3">
   <aside className="overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
@@ -1278,7 +1344,7 @@ const availableAccessories = useMemo(() => {
       <div>
         <p className="text-[10px] font-black uppercase tracking-[0.38em] text-sky-300">BagaStudio</p>
         <h2 className="text-xl font-black leading-tight text-white">Core Viewer</h2>
-        <p className="mt-1 text-xs font-semibold text-cyan-100/80">Configurazione prodotto professionale</p>
+        <p className="mt-1 text-xs font-semibold text-cyan-100/80">BagaStudio Core Viewer</p>
       </div>
     </div>
     <div className="mt-4 grid grid-cols-3 gap-2 text-center">
@@ -1300,7 +1366,18 @@ const availableAccessories = useMemo(() => {
   <section className="mb-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
     <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Workflow principale</p>
     <div className="grid grid-cols-2 gap-2">
-      <button type="button" onClick={() => setActivePanel("config")} className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20">CARICA</button>
+      <button
+        type="button"
+        onClick={() => {
+          setActivePanel("config");
+          window.setTimeout(() => {
+            document.getElementById("bagastudio-import-workflow")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 80);
+        }}
+        className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20"
+      >
+        CARICA
+      </button>
       <button type="button" onClick={() => setActivePanel("materials")} className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-500/20">CONFIGURA</button>
       <button type="button" onClick={() => setActivePanel("save")} className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/20">SALVA</button>
       <button type="button" onClick={() => setActivePanel("produce")} className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-black text-amber-100 hover:bg-amber-500/20">PRODUCI</button>
@@ -1310,151 +1387,37 @@ const availableAccessories = useMemo(() => {
   </section>
 {activePanel === "config" && (
   <>
-    <section className="rounded-3xl border border-sky-400/25 bg-sky-500/5 p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
-      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
-        CARICA MODELLO 3D
-      </p>
-      <h2 className="mb-2 text-lg font-black text-white">Carica modello 3D</h2>
-      <p className="mb-4 text-xs leading-5 text-neutral-300">
-        Formati supportati: GLB, GLTF, DAE, FBX, OBJ, STL. Puoi selezionare il file oppure trascinarlo direttamente nel viewer.
-      </p>
-
-      <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-black/20 px-4 py-5 text-center transition hover:border-sky-300 hover:bg-sky-400/10">
-        <span className="text-sm font-black text-white">Seleziona modello 3D</span>
-        <span className="mt-1 block text-xs text-sky-200">{SUPPORTED_IMPORT_MODEL_ACCEPT}</span>
-        <input
-          type="file"
-          accept={SUPPORTED_IMPORT_MODEL_ACCEPT}
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) handleModelFileImport(file);
-            event.target.value = "";
-          }}
-        />
-      </label>
-
-      {(importedModelName || importerStatus) && (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">
-          {importedModelName && (
-            <p><span className="font-bold text-white">File:</span> {importedModelName}</p>
-          )}
-          {importedModelFormat && (
-            <p><span className="font-bold text-white">Formato:</span> {importedModelFormat}</p>
-          )}
-          {importerStatus && (
-            <p className="mt-1 text-sky-200">{importerStatus}</p>
-          )}
-        </div>
-      )}
-
-    </section>
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-4 text-lg font-semibold text-white">{t.importProductJson}</h2>
-      <input
-        type="file"
-        accept=".json"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) handleProductJsonImport(file);
-        }}
-        className="block w-full text-sm text-neutral-300 file:mr-3 file:rounded-2xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-black"
-      />
-      {importName && (
-        <p className="mt-2 text-xs text-neutral-400">{importName}</p>
-      )}
-
-      <div className="mt-4 rounded-2xl border border-sky-400/20 bg-black/25 p-4 text-xs text-neutral-300">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="font-black uppercase tracking-[0.22em] text-sky-300">Stato runtime importer</p>
-          <button
-            type="button"
-            onClick={() => {
-              const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
-              setImporterUiState(state || null);
-              setLastImporterEvent("Refresh manuale");
-            }}
-            className="rounded-xl border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[11px] font-black text-sky-100 hover:bg-sky-400/15"
-          >
-            Aggiorna
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Modello</span>
-            <span className="font-bold text-white">{importerUiState?.hasImportedModel ? "Pronto" : importedModelName ? "Caricato" : "Non caricato"}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Package</span>
-            <span className="font-bold text-white">{importerUiState?.hasProductPackage ? "Disponibile" : "Non pronto"}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Mapping</span>
-            <span className="font-bold text-white">{importerUiState?.hasAdminMapping ? "Disponibile" : "Non pronto"}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Report</span>
-            <span className="font-bold text-white">{importerUiState?.hasImporterReport ? "Disponibile" : "Non pronto"}</span>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Componenti runtime</span>
-            <span className="font-bold text-white">{viewerRuntimeComponents.length || importerUiState?.componentCount || 0}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Schema V2</span>
-            <span className="font-bold text-white">{importerUiState?.productPackage?.schema || viewerRuntimeMetadata?.schema || "In attesa"}</span>
-          </div>
-        </div>
-
-        {viewerRuntimeMetadata?.categories && (
-          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
-            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">Categorie componenti</p>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(viewerRuntimeMetadata.categories).map(([category, count]) => (
-                <span key={category} className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-100">
-                  {category}: {String(count)}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {lastImporterEvent && (
-          <p className="mt-3 text-[11px] text-sky-200">Ultimo evento: {lastImporterEvent}</p>
-        )}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          onClick={() => {
-            const ok = restoreAutosave();
-            if (!ok) alert(t.noAutosaveAvailable);
-            if (ok) alert(t.autosaveRestored);
-          }}
-          className="rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-        >
-          {t.restoreAutosave}
-        </button>
-
-        <label className="cursor-pointer rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm">
-          {t.importBackup}
-          <input
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) handleBackupImport(file);
-            }}
-          />
-        </label>
-      </div>
-    </section>
+    <ViewerImportWorkflowPanel
+      t={t}
+      importName={importName}
+      importedModelName={importedModelName}
+      importedModelFormat={importedModelFormat}
+      importerStatus={importerStatus}
+      importerUiState={importerUiState}
+      viewerRuntimeComponents={viewerRuntimeComponents}
+      viewerRuntimeMetadata={viewerRuntimeMetadata}
+      lastImporterEvent={lastImporterEvent}
+      supportedModelAccept={SUPPORTED_IMPORT_MODEL_ACCEPT}
+      onModelFileImport={handleModelFileImport}
+      onProductJsonImport={handleProductJsonImport}
+      onRefreshImporterState={() => {
+        const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
+        setImporterUiState(state || null);
+        setLastImporterEvent("Refresh manuale");
+      }}
+      onRestoreAutosave={() => {
+        const ok = restoreAutosave();
+        if (!ok) {
+          setLastProjectAction(t.noAutosaveAvailable);
+          showUiNotice(t.noAutosaveAvailable, "error");
+        }
+        if (ok) {
+          setLastProjectAction(t.autosaveRestored);
+          showUiNotice(t.autosaveRestored);
+        }
+      }}
+      onBackupImport={handleBackupImport}
+    />
 
     <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
@@ -1568,80 +1531,59 @@ const availableAccessories = useMemo(() => {
 )}
 
 
-{activePanel === "save" && (
-  <>
-    <section className="rounded-[26px] border border-emerald-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-emerald-300">SALVA</p>
-      <h2 className="mb-2 text-xl font-black text-white">Conserva il lavoro</h2>
-      <p className="mb-4 text-xs leading-5 text-neutral-400">Qui trovi solo i comandi per salvare o ripristinare il lavoro. La configurazione salva materiali, misure e scelte; il backup salva uno snapshot completo dello stato.</p>
-      <div className="grid gap-3">
-        <button type="button" onClick={() => { saveAutosave(); setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US")); alert(t.autosaveSavedManual); }} className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/20">Salva progetto</button>
-        <button type="button" onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-2xl border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/20">Esporta configurazione cliente</button>
-        <button type="button" onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Scarica backup completo</button>
-        <button type="button" onClick={() => { const ok = restoreAutosave(); if (!ok) alert(t.noAutosaveAvailable); if (ok) alert(t.autosaveRestored); }} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Ripristina autosave</button>
-        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Importa backup<input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackupImport(file); event.target.value = ""; }} /></label>
-      </div>
-      <p className="mt-4 text-xs text-neutral-400">{autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}</p>
-    </section>
-  </>
-)}
-
-{activePanel === "produce" && (
-  <>
-    <section className="rounded-[26px] border border-amber-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">PRODUCI</p>
-      <h2 className="mb-2 text-xl font-black text-white">Genera output</h2>
-      <p className="mb-4 text-xs leading-5 text-neutral-400">Qui stanno gli output da consegnare o usare in produzione. Gli strumenti tecnici restano separati in Strumenti Avanzati.</p>
-      <div className="grid gap-3">
-        <button type="button" onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())} className="rounded-2xl bg-sky-500 px-4 py-4 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">Scarica preventivo / riepilogo</button>
-        <button type="button" onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()} className="rounded-2xl border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/20">Esporta Product Package</button>
-        <button type="button" onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Esporta GLB</button>
-        <button type="button" onClick={() => setActivePanel("admin")} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Apri strumenti avanzati</button>
-      </div>
-    </section>
-  </>
-)}
-
-{activePanel === "help" && (
-  <>
-    <section className="rounded-[26px] border border-violet-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-violet-300">AIUTO</p>
-      <h2 className="mb-2 text-xl font-black text-white">Guida rapida</h2>
-      <div className="grid gap-3 text-sm text-neutral-300">
-        <div className="rounded-2xl border border-sky-400/15 bg-sky-500/10 p-3"><strong className="text-white">CARICA</strong><p className="mt-1 text-xs leading-5">Importa un modello 3D oppure un Product Package completo.</p></div>
-        <div className="rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-3"><strong className="text-white">CONFIGURA</strong><p className="mt-1 text-xs leading-5">Scegli componenti, materiali, accessori, LED, visibilità e dimensioni.</p></div>
-        <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/10 p-3"><strong className="text-white">SALVA</strong><p className="mt-1 text-xs leading-5">Salva il progetto o scarica un backup. La configurazione non contiene il modello 3D; il Product Package sì.</p></div>
-        <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-3"><strong className="text-white">PRODUCI</strong><p className="mt-1 text-xs leading-5">Genera preventivo, Product Package, GLB e futuri output tecnici.</p></div>
-      </div>
-    </section>
-  </>
-)}
-
-
 {activePanel === "admin" && (
   <>
     <section className="rounded-3xl border border-sky-400/25 bg-[#081827] p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
       <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
-        STRUMENTI AVANZATI
+        BagaStudio Core
       </p>
-      <h2 className="mb-2 text-lg font-black text-white">Area tecnica</h2>
-      <p className="mt-2 text-xs leading-5 text-neutral-400">Qui restano solo comandi tecnici: mapping, report, bundle, compatibilità e diagnostica. Il caricamento quotidiano del modello è nella scheda CARICA.</p>
     </section>
 
     <section className="rounded-3xl border border-sky-400/25 bg-sky-500/5 p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
       <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
-        TOOL TECNICI IMPORTER
+        STRUMENTI AVANZATI
       </p>
-      <h2 className="mb-2 text-lg font-black text-white">Output avanzati</h2>
-      <p className="mb-4 text-xs leading-5 text-neutral-300">Funzioni tecniche per sviluppo, mapping, compatibilità e diagnostica. Non sono il flusso principale dell'utente.</p>
+      <h2 className="mb-2 text-lg font-black text-white">Export e diagnostica prodotto</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-300">
+        L'import principale ora si trova nella scheda Importa. Qui restano gli strumenti avanzati di export, diagnostica e compatibilità.
+      </p>
 
-      <div className="grid grid-cols-2 gap-2">
+
+      {(importedModelName || importerStatus) && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">
+          {importedModelName && (
+            <p><span className="font-bold text-white">File:</span> {importedModelName}</p>
+          )}
+          {importedModelFormat && (
+            <p><span className="font-bold text-white">Formato:</span> {importedModelFormat}</p>
+          )}
+          {importerStatus && (
+            <p className="mt-1 text-sky-200">{importerStatus}</p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Scarica GLB
+        </button>
         <button
           type="button"
           onClick={() => (window as any).bagastudioDownloadImporterJsonBundle?.()}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
         >
-          JSON bundle
+          Scarica JSON bundle
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          Product Package
         </button>
         <button
           type="button"
@@ -1691,8 +1633,115 @@ const availableAccessories = useMemo(() => {
           }}
           className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100 hover:border-amber-300/60 hover:bg-amber-400/15"
         >
-          Salva prodotto tecnico
+          Salva prodotto
         </button>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-4 text-lg font-black text-white">{t.backupAutosave}</h2>
+      <div className="grid gap-3">
+        <div className="mt-2 border-t border-white/10 pt-3 text-[10px] font-black uppercase tracking-[0.22em] text-neutral-400">Ripristino rapido</div>
+
+        <button
+          type="button"
+          onClick={() => {
+            saveAutosave();
+            setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US"));
+            setLastProjectAction(t.autosaveSavedManual);
+            showUiNotice(t.autosaveSavedManual);
+          }}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          {t.saveAutosave}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            const ok = restoreAutosave();
+            if (!ok) {
+              setLastProjectAction(t.noAutosaveAvailable);
+              showUiNotice(t.noAutosaveAvailable, "error");
+            }
+            if (ok) {
+              setLastProjectAction(t.autosaveRestored);
+              showUiNotice(t.autosaveRestored);
+            }
+          }}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          {t.restoreAutosave}
+        </button>
+
+        <div className="mt-2 border-t border-white/10 pt-3 text-[10px] font-black uppercase tracking-[0.22em] text-neutral-400">Backup tecnico</div>
+
+        <button
+          type="button"
+          onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
+          className="rounded-2xl border border-sky-400/30 bg-sky-500 px-4 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.25)]"
+        >
+          {t.downloadFullBackup}
+        </button>
+
+        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
+          {t.importBackup}
+          <input
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) handleBackupImport(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+
+      <p className="mt-4 text-xs text-neutral-400">
+        {autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}
+      </p>
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
+      <h2 className="mb-4 text-lg font-black text-white">{t.customerConfiguration}</h2>
+      <div className="grid gap-3">
+        <button
+          type="button"
+          onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          {t.exportConfiguration}
+        </button>
+
+        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
+          {t.importConfiguration}
+          <input
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+
+              try {
+                const fileText = await file.text();
+                const data = JSON.parse(fileText);
+
+                importConfiguration(data);
+                setLastProjectAction(t.configurationImported);
+                showUiNotice(t.configurationImported);
+              } catch (error) {
+                console.error("BagaStudio configuration import error", error);
+                setLastProjectAction(t.invalidConfigurationJson);
+                showUiNotice(t.invalidConfigurationJson, "error");
+              }
+
+              event.target.value = "";
+            }}
+          />
+        </label>
       </div>
     </section>
   </>
@@ -1936,6 +1985,186 @@ const availableAccessories = useMemo(() => {
   </>
 )}
 
+{activePanel === "save" && (
+  <>
+    <section className="rounded-[26px] border border-emerald-400/20 bg-emerald-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-emerald-300">SALVA</p>
+      <h2 className="mb-2 text-xl font-black text-white">Progetto BagaStudio</h2>
+      <p className="mb-4 text-sm leading-6 text-neutral-300">Area quotidiana per creare, salvare e riaprire file progetto .baga.</p>
+
+      <div className="mb-4 rounded-2xl border border-emerald-400/15 bg-black/25 p-4">
+        <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.22em] text-emerald-200">Nome progetto</label>
+        <input
+          type="text"
+          value={currentProjectName}
+          onChange={(event) => setCurrentProjectName(event.target.value)}
+          placeholder="Progetto BagaStudio"
+          className="w-full rounded-2xl border border-white/10 bg-neutral-950 px-4 py-3 text-sm font-bold text-white outline-none focus:border-emerald-300/60"
+        />
+        <p className="mt-2 text-[11px] leading-5 text-neutral-400">
+          File previsto: <strong className="text-emerald-100">{getSafeProjectFilename(getCurrentProjectName())}</strong>
+        </p>
+        {lastProjectAction && (
+          <p className="mt-2 rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-3 py-2 text-[11px] font-bold text-emerald-100">
+            {lastProjectAction}
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-3">
+        <button
+          type="button"
+          onClick={newProject}
+          className="rounded-2xl border border-sky-400/25 bg-sky-500/10 px-4 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/20"
+        >
+          Nuovo progetto
+        </button>
+
+        <button
+          type="button"
+          onClick={saveProject}
+          className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/20"
+        >
+          Salva progetto .baga
+        </button>
+
+        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-emerald-400/40 hover:bg-emerald-400/10">
+          Apri progetto .baga / .json
+          <input
+            type="file"
+            accept=".baga,.json,application/json"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              await openProject(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
+
+        <div className="mt-2 border-t border-white/10 pt-3 text-[10px] font-black uppercase tracking-[0.22em] text-neutral-400">Ripristino rapido</div>
+
+        <button
+          type="button"
+          onClick={() => {
+            saveAutosave();
+            setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US"));
+            setLastProjectAction(t.autosaveSavedManual);
+            showUiNotice(t.autosaveSavedManual);
+          }}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-emerald-400/40 hover:bg-emerald-400/10"
+        >
+          Salva autosave
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            const ok = restoreAutosave();
+            if (!ok) {
+              setLastProjectAction(t.noAutosaveAvailable);
+              showUiNotice(t.noAutosaveAvailable, "error");
+            }
+            if (ok) {
+              setLastProjectAction(t.autosaveRestored);
+              showUiNotice(t.autosaveRestored);
+            }
+          }}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-emerald-400/40 hover:bg-emerald-400/10"
+        >
+          Ripristina autosave
+        </button>
+
+        <div className="mt-2 border-t border-white/10 pt-3 text-[10px] font-black uppercase tracking-[0.22em] text-neutral-400">Backup tecnico</div>
+
+        <button
+          type="button"
+          onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
+          className="rounded-2xl border border-sky-400/30 bg-sky-500 px-4 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.25)]"
+        >
+          Scarica backup completo
+        </button>
+
+        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
+          Importa backup
+          <input
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) handleBackupImport(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+
+      <p className="mt-4 text-xs text-neutral-400">
+        {autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}
+      </p>
+    </section>
+  </>
+)}
+
+{activePanel === "produce" && (
+  <>
+    <section className="rounded-[26px] border border-amber-400/20 bg-amber-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">PRODUCI</p>
+      <h2 className="mb-2 text-xl font-black text-white">Output progetto</h2>
+      <p className="mb-4 text-sm leading-6 text-neutral-300">Area per generare file e documenti da consegnare o usare in produzione. Gli strumenti tecnici restano in Strumenti.</p>
+
+      <div className="mb-4 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm">
+        <div className="flex items-center justify-between gap-4">
+          <span className="font-bold text-neutral-300">Totale progetto</span>
+          <span className="text-2xl font-black text-sky-300">€ {displayPricing.total.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <button
+          type="button"
+          onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())}
+          className="rounded-2xl border border-sky-400/30 bg-sky-500 px-4 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.25)]"
+        >
+          Scarica preventivo
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()}
+          className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/20"
+        >
+          Esporta Product Package
+        </button>
+        <button
+          type="button"
+          onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-amber-400/40 hover:bg-amber-400/10"
+        >
+          Esporta GLB
+        </button>
+      </div>
+    </section>
+  </>
+)}
+
+{activePanel === "help" && (
+  <>
+    <section className="rounded-[26px] border border-violet-400/20 bg-violet-500/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-violet-300">AIUTO</p>
+      <h2 className="mb-2 text-xl font-black text-white">Guida rapida</h2>
+      <div className="space-y-3 text-sm leading-6 text-neutral-300">
+        <p><strong className="text-sky-200">CARICA</strong>: importa un modello 3D o un Product Package.</p>
+        <p><strong className="text-cyan-200">CONFIGURA</strong>: scegli materiali, accessori, LED, dimensioni e visibilità.</p>
+        <p><strong className="text-emerald-200">SALVA</strong>: conserva il lavoro e ripristina configurazioni o backup.</p>
+        <p><strong className="text-amber-200">PRODUCI</strong>: genera preventivo, Product Package e GLB.</p>
+        <p><strong className="text-neutral-100">STRUMENTI</strong>: area tecnica avanzata, non necessaria per il flusso quotidiano.</p>
+      </div>
+    </section>
+  </>
+)}
+
 {activePanel === "views" && (
   <>
     <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
@@ -1958,47 +2187,6 @@ const availableAccessories = useMemo(() => {
         )}
       </div>
     </section>
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.runtimeJson}</h2>
-      <button
-        onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
-        className="mb-2 w-full rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-      >
-        {t.exportConfiguration}
-      </button>
-      <label className="mb-2 block w-full cursor-pointer rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm text-white">
-        {t.importConfiguration}
-        <input
-          type="file"
-          accept=".json,application/json"
-          className="hidden"
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-
-            try {
-              const text = await file.text();
-              const data = JSON.parse(text);
-
-              importConfiguration(data);
-              alert(t.configurationImported);
-            } catch (error) {
-              console.error("BagaStudio configuration import error", error);
-              alert(t.invalidConfigurationJson);
-            }
-
-            event.target.value = "";
-          }}
-        />
-      </label>
-      <button
-        onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
-        className="w-full rounded-2xl bg-sky-500 px-3 py-2 text-sm text-black"
-      >
-        {t.downloadFullBackup}
-      </button>
-    </section>
   </>
 )}
         </aside>
@@ -2018,7 +2206,7 @@ const availableAccessories = useMemo(() => {
     event.preventDefault();
     setIsImporterDragging(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) handleModelFileImport(file);
+    if (file) handleGenericImportFile(file);
   }}
   className={`relative overflow-hidden rounded-[30px] border bg-[#050d16] p-3 shadow-[0_25px_100px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)] ${
     isImporterDragging ? "border-sky-300 ring-2 ring-sky-400/60" : "border-sky-400/15"
@@ -2027,8 +2215,8 @@ const availableAccessories = useMemo(() => {
   {isImporterDragging && (
     <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-300 bg-sky-500/10 text-center backdrop-blur-sm">
       <div className="rounded-3xl border border-sky-300/40 bg-[#07111c]/90 px-8 py-6 shadow-2xl">
-        <p className="text-xl font-black text-white">Rilascia il modello 3D</p>
-        <p className="mt-2 text-sm font-semibold text-sky-200">GLB, GLTF, DAE, FBX, OBJ, STL</p>
+        <p className="text-xl font-black text-white">Rilascia il file BagaStudio</p>
+        <p className="mt-2 text-sm font-semibold text-sky-200">GLB, GLTF, DAE, FBX, OBJ, STL, JSON, BAGA</p>
       </div>
     </div>
   )}
@@ -2137,8 +2325,31 @@ const availableAccessories = useMemo(() => {
       xRayOpacity={xRayOpacity}
     />
   ) : (
-    <div className="flex h-full items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-950 text-neutral-400">
-      {t.importProductFromSidebar}
+    <div className="flex h-full items-center justify-center rounded-2xl border border-sky-400/10 bg-[radial-gradient(circle_at_center,rgba(14,165,233,0.10),transparent_38%),#050d16] p-6">
+      <label className="group flex w-full max-w-[560px] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-sky-300/25 bg-[#06111d]/62 px-8 py-11 text-center shadow-[0_20px_80px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-sky-300/55 hover:bg-sky-400/[0.07]">
+        <span className="mb-4 flex h-20 w-20 items-center justify-center rounded-[24px] border border-sky-300/15 bg-sky-400/5 text-5xl text-sky-300 shadow-[0_0_34px_rgba(14,165,233,0.16)] transition group-hover:scale-[1.03] group-hover:text-sky-200">
+          ☁
+        </span>
+        <span className="text-base font-semibold text-neutral-200">
+          Importa file BagaStudio
+        </span>
+        <span className="mt-2 text-sm font-medium text-neutral-400">
+          Modelli 3D, Product Package JSON o progetto .baga.
+        </span>
+        <span className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-black text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition group-hover:border-sky-300/45 group-hover:bg-sky-500/15 group-hover:text-white">
+          Seleziona file
+        </span>
+        <input
+          type="file"
+          accept={SUPPORTED_GENERIC_IMPORT_ACCEPT}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) handleGenericImportFile(file);
+            event.target.value = "";
+          }}
+        />
+      </label>
     </div>
   )}
 </section>
