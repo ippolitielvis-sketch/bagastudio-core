@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
 import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
 import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
-import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
 import { useConfigStore } from "@/core/state/config.state";
 import { MATERIAL_LIBRARY } from "@/core/data/materials";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
@@ -1749,77 +1748,111 @@ const availableAccessories = useMemo(() => {
       selectedCount={effectiveSelectedPartIds.length}
     />
 
-    <div className="grid min-h-0 flex-1 grid-cols-[340px_minmax(0,1fr)_350px] gap-3 bg-[#030911] p-3">
-  <aside className="overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
-  <section className="mb-4 overflow-hidden rounded-[28px] border border-sky-400/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.28),transparent_36%),linear-gradient(135deg,rgba(8,47,73,0.88),rgba(2,6,23,0.96))] p-5 shadow-[0_0_35px_rgba(14,165,233,0.16)]">
-    <div className="flex items-center gap-4">
-      <button
-        type="button"
-        onClick={() => setIsLogoModalOpen(true)}
-        className="rounded-2xl border border-sky-300/25 bg-black/35 p-2 shadow-[0_0_24px_rgba(14,165,233,0.22)] transition hover:scale-[1.03] hover:border-sky-300/50"
-      >
-        <img src="/bagastudio-core-brand.png" alt="BagaStudio Core" className="h-16 w-auto object-contain" />
-      </button>
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.38em] text-sky-300">BagaStudio</p>
-        <h2 className="text-xl font-black leading-tight text-white">Core Viewer</h2>
-        <p className="mt-1 text-xs font-semibold text-cyan-100/80">BagaStudio Core Viewer</p>
-      </div>
-    </div>
-    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-2 py-2">
-        <span className="block text-[10px] uppercase tracking-[0.16em] text-emerald-200">Runtime</span>
-        <strong className="text-sm text-white">Ready</strong>
-      </div>
-      <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-2 py-2">
-        <span className="block text-[10px] uppercase tracking-[0.16em] text-sky-200">Pezzi</span>
-        <strong className="text-sm text-white">{viewerRuntimeComponents.length || 0}</strong>
-      </div>
-      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 px-2 py-2">
-        <span className="block text-[10px] uppercase tracking-[0.16em] text-violet-200">Select</span>
-        <strong className="text-sm text-white">{effectiveSelectedPartIds.length}</strong>
-      </div>
-    </div>
-  </section>
+    <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_350px] gap-3 bg-[#030911] p-3">
+  <aside className="overflow-y-auto rounded-[28px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+  {/* Sidebar brand card removed: header/status already visible in top runtime bar. */}
+
+
+<section className="rounded-3xl border border-sky-400/20 bg-[#081827]/70 p-3 shadow-[0_0_22px_rgba(14,165,233,0.08)]">
+  <p className="mb-3 text-[10px] font-black uppercase tracking-[0.32em] text-cyan-300">
+    Workflow
+  </p>
+  <div className="grid grid-cols-2 gap-2">
+    <button
+      type="button"
+      onClick={() => setActivePanel("config")}
+      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+        activePanel === "config"
+          ? "border-sky-300 bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
+          : "border-sky-400/20 bg-[#0b1722] text-cyan-50 hover:border-sky-300/60"
+      }`}
+    >
+      Carica
+    </button>
+    <button
+      type="button"
+      onClick={() => setActivePanel("materials")}
+      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+        activePanel === "materials"
+          ? "border-sky-300 bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
+          : "border-sky-400/20 bg-[#0b1722] text-cyan-50 hover:border-sky-300/60"
+      }`}
+    >
+      Configura
+    </button>
+    <button
+      type="button"
+      onClick={() => setActivePanel("save")}
+      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+        activePanel === "save"
+          ? "border-emerald-300 bg-emerald-500 text-white shadow-[0_0_18px_rgba(16,185,129,0.28)]"
+          : "border-emerald-400/20 bg-[#0b1722] text-cyan-50 hover:border-emerald-300/60"
+      }`}
+    >
+      Salva
+    </button>
+    <button
+      type="button"
+      onClick={() => setActivePanel("produce")}
+      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+        activePanel === "produce"
+          ? "border-amber-300 bg-amber-500 text-white shadow-[0_0_18px_rgba(245,158,11,0.28)]"
+          : "border-amber-400/20 bg-[#0b1722] text-cyan-50 hover:border-amber-300/60"
+      }`}
+    >
+      Produci
+    </button>
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))}
+      className="rounded-2xl border border-slate-400/20 bg-[#0b1722] px-3 py-2 text-[11px] font-black uppercase tracking-wide text-cyan-50 transition hover:border-slate-300/60"
+    >
+      Focus
+    </button>
+    <button
+      type="button"
+      onClick={() => setActivePanel("help")}
+      className={`rounded-2xl border px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+        activePanel === "help"
+          ? "border-violet-300 bg-violet-500 text-white shadow-[0_0_18px_rgba(139,92,246,0.28)]"
+          : "border-violet-400/20 bg-[#0b1722] text-cyan-50 hover:border-violet-300/60"
+      }`}
+    >
+      Aiuto
+    </button>
+  </div>
+</section>
 
 {activePanel === "config" && (
-  <>
-    <ViewerImportWorkflowPanel
-      t={t}
-      importName={importName}
-      importedModelName={importedModelName}
-      importedModelFormat={importedModelFormat}
-      importerStatus={importerStatus}
-      importerUiState={importerUiState}
-      viewerRuntimeComponents={viewerRuntimeComponents}
-      viewerRuntimeMetadata={viewerRuntimeMetadata}
-      lastImporterEvent={lastImporterEvent}
-      supportedModelAccept={SUPPORTED_IMPORT_MODEL_ACCEPT}
-      recentProjects={recentProjects}
-      onRecentProjectOpen={openRecentProject}
-      onModelFileImport={handleModelFileImport}
-      onProductJsonImport={handleProductJsonImport}
-      onRefreshImporterState={() => {
-        const state = (window as any).bagastudioRefreshImporterUiState?.() || (window as any).bagastudioGetImporterUiState?.();
-        setImporterUiState(state || null);
-        setLastImporterEvent("Refresh manuale");
-      }}
-      onRestoreAutosave={() => {
-        const ok = restoreAutosave();
-        if (!ok) {
-          setLastProjectAction(t.noAutosaveAvailable);
-          showUiNotice(t.noAutosaveAvailable, "error");
-        }
-        if (ok) {
-          setLastProjectAction(t.autosaveRestored);
-          showUiNotice(t.autosaveRestored);
-        }
-      }}
-      onBackupImport={handleBackupImport}
-    />
-  </>
-)}
+  <section className="mt-3 rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+    <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">CARICA</p>
+    <h2 className="text-lg font-black text-white">Carica prodotto</h2>
+    <p className="mt-2 text-xs leading-5 text-neutral-400">
+      Importa DAE, GLB/GLTF, OBJ, FBX, STL, JSON o progetto .baga.
+    </p>
 
+    <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-300/30 bg-sky-500/10 px-4 py-6 text-center transition hover:border-sky-300/70 hover:bg-sky-500/15">
+      <span className="text-sm font-black text-white">Seleziona file</span>
+      <span className="mt-2 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-100">
+        DAE / GLB / GLTF / OBJ / FBX / STL / JSON / BAGA
+      </span>
+      <input
+        type="file"
+        accept={SUPPORTED_GENERIC_IMPORT_ACCEPT}
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) handleGenericImportFile(file);
+          event.target.value = "";
+        }}
+      />
+    </label>
+
+    <p className="mt-3 rounded-2xl border border-sky-400/10 bg-black/20 px-3 py-2 text-[11px] font-semibold leading-5 text-sky-100/85">
+      Puoi anche trascinare il file direttamente nel riquadro centrale.
+    </p>
+  </section>
+)}
 
 {activePanel === "admin" && (
   <>
@@ -2537,23 +2570,25 @@ const availableAccessories = useMemo(() => {
         </div>
 
         {bomRows.length > 0 ? (
-          <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
+          <div className="max-h-[360px] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-black/20">
             {bomSections.map((section: any) => (
               <div key={section.title} className="border-b border-white/10 last:border-b-0">
-                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/80 px-3 py-2 backdrop-blur">
-                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200">{section.title}</span>
-                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-500">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-white/10 bg-black/80 px-3 py-2 backdrop-blur">
+                  <span className="min-w-0 break-words text-[10px] font-black uppercase tracking-[0.14em] text-amber-200">{section.title}</span>
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-neutral-400">
                     {section.rows.reduce((total: number, row: any) => total + Number(row.quantity || 0), 0)} pz
                   </span>
                 </div>
                 <div className="divide-y divide-white/10">
                   {section.rows.map((row: any) => (
-                    <div key={row.id} className="grid grid-cols-[1fr_48px] gap-3 px-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold text-white">{row.name}</p>
-                        <p className="truncate text-[11px] font-semibold text-neutral-400">{row.dimensionsLabel || "-"}</p>
+                    <div key={row.id} className="px-3 py-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words font-bold leading-5 text-white">{row.name}</p>
+                          <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-neutral-400">{row.dimensionsLabel || "-"}</p>
+                        </div>
+                        <p className="shrink-0 rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-sm font-black text-amber-200">{row.quantity}</p>
                       </div>
-                      <p className="text-right text-base font-black text-amber-200">{row.quantity}</p>
                     </div>
                   ))}
                 </div>
