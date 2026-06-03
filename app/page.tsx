@@ -1256,12 +1256,14 @@ const bomRows = useMemo(() => {
       : [];
 
   const normalizeBomLabel = (value: any) => {
-    return String(value || "Componente senza nome")
+    const cleaned = String(value || "Componente senza nome")
       .replace(/[_-]+/g, " ")
-      .replace(/\b(mesh|object|node)\b/gi, "")
+      .replace(/\b(mesh|object|node|edge definition)\b/gi, "")
       .replace(/\s+\d+$/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+    return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : "Componente senza nome";
   };
 
   const getBomLabel = (part: any) => {
@@ -1278,24 +1280,69 @@ const bomRows = useMemo(() => {
     return normalizeBomLabel(rawLabel);
   };
 
-  const getBomCategory = (part: any) => {
-    return String(
+  const normalizeBomCategory = (part: any) => {
+    const rawCategory = String(
       part?.category ||
       part?.type ||
       part?.runtimeMetadata?.detectedCategory ||
       part?.runtimeMetadata?.category ||
-      "componente"
+      "component"
     )
       .replace(/[_-]+/g, " ")
-      .trim();
+      .trim()
+      .toLowerCase();
+
+    const source = `${rawCategory} ${part?.partId || ""} ${part?.name || ""} ${part?.displayName || ""}`.toLowerCase();
+
+    if (rawCategory === "panel" || /fianco|fondo|cielo|ripiano|anta|schiena|zoccolo|pannello|top|mensola/.test(source)) return "panel";
+    if (rawCategory === "hardware" || /cerniera|basetta|cabineo|ferramenta|vite|foro|giunzione|minifix/.test(source)) return "hardware";
+    if (rawCategory === "accessory" || /maniglia|accessorio|led|porta phon|portaphon|presa|lavabo|rubinetto|pomello|handle/.test(source)) return "accessory";
+
+    return "component";
+  };
+
+  const getBomGroupTitle = (category: string) => {
+    if (category === "panel") return "Pannelli";
+    if (category === "hardware") return "Ferramenta";
+    if (category === "accessory") return "Accessori";
+    return "Componenti";
+  };
+
+  const getBomGroupOrder = (category: string) => {
+    if (category === "panel") return 1;
+    if (category === "hardware") return 2;
+    if (category === "accessory") return 3;
+    return 4;
+  };
+
+  const formatMmValue = (value: number) => {
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+
+  const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
+
+  const getDimensionLabel = (part: any) => {
+    const bounds = getBounds(part);
+    if (!bounds) return "-";
+
+    const widthMm = Number(bounds.width || 0) * 10;
+    const depthMm = Number(bounds.depth || 0) * 10;
+    const heightMm = Number(bounds.height || 0) * 10;
+
+    if (!widthMm && !depthMm && !heightMm) return "-";
+
+    return `${formatMmValue(widthMm)} × ${formatMmValue(depthMm)} × ${formatMmValue(heightMm)} mm`;
   };
 
   const grouped = new Map<string, any>();
 
   sourceParts.forEach((part: any) => {
     const label = getBomLabel(part);
-    const category = getBomCategory(part);
-    const key = `${label.toLowerCase()}|${category.toLowerCase()}`;
+    const category = normalizeBomCategory(part);
+    const groupTitle = getBomGroupTitle(category);
+    const dimensionsLabel = getDimensionLabel(part);
+    const key = `${category}|${label.toLowerCase()}|${dimensionsLabel}`;
     const id = String(part?.partId || part?.id || part?.meshName || part?.name || "").trim();
 
     if (!grouped.has(key)) {
@@ -1303,6 +1350,9 @@ const bomRows = useMemo(() => {
         id: key,
         name: label,
         category,
+        groupTitle,
+        groupOrder: getBomGroupOrder(category),
+        dimensionsLabel,
         quantity: 0,
         partIds: [],
       });
@@ -1314,10 +1364,29 @@ const bomRows = useMemo(() => {
   });
 
   return Array.from(grouped.values()).sort((a: any, b: any) =>
-    String(a.category).localeCompare(String(b.category)) ||
-    String(a.name).localeCompare(String(b.name))
+    Number(a.groupOrder || 99) - Number(b.groupOrder || 99) ||
+    String(a.name).localeCompare(String(b.name)) ||
+    String(a.dimensionsLabel).localeCompare(String(b.dimensionsLabel))
   );
 }, [runtimeProduct, viewerRuntimeComponents]);
+
+const bomSections = useMemo(() => {
+  const sections = new Map<string, any>();
+
+  bomRows.forEach((row: any) => {
+    const key = row.groupTitle || "Componenti";
+    if (!sections.has(key)) {
+      sections.set(key, {
+        title: key,
+        order: row.groupOrder || 99,
+        rows: [],
+      });
+    }
+    sections.get(key).rows.push(row);
+  });
+
+  return Array.from(sections.values()).sort((a: any, b: any) => Number(a.order || 99) - Number(b.order || 99));
+}, [bomRows]);
 
   const selectedPart = useMemo(() => {
     if (!selectedPartId) return null;
@@ -2477,8 +2546,8 @@ const availableAccessories = useMemo(() => {
       <div className="mb-4 rounded-2xl border border-amber-400/15 bg-black/25 p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-[0.18em] text-amber-200">Distinta materiali / BOM V1</h3>
-            <p className="mt-1 text-xs leading-5 text-neutral-400">Prima distinta automatica generata dai componenti runtime rilevati nel modello.</p>
+            <h3 className="text-sm font-black uppercase tracking-[0.18em] text-amber-200">Distinta materiali / BOM V2</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-400">Distinta categorizzata con pannelli, ferramenta, accessori e dimensioni convertite in millimetri.</p>
           </div>
           <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-100">
             {bomRows.reduce((total: number, row: any) => total + Number(row.quantity || 0), 0)} pezzi
@@ -2486,22 +2555,28 @@ const availableAccessories = useMemo(() => {
         </div>
 
         {bomRows.length > 0 ? (
-          <div className="max-h-[260px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
-            <div className="grid grid-cols-[1fr_72px] border-b border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">
-              <span>Componente</span>
-              <span className="text-right">Q.tà</span>
-            </div>
-            <div className="divide-y divide-white/10">
-              {bomRows.map((row: any) => (
-                <div key={row.id} className="grid grid-cols-[1fr_72px] gap-3 px-3 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-bold text-white">{row.name}</p>
-                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">{row.category}</p>
-                  </div>
-                  <p className="text-right text-base font-black text-amber-200">{row.quantity}</p>
+          <div className="max-h-[340px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            {bomSections.map((section: any) => (
+              <div key={section.title} className="border-b border-white/10 last:border-b-0">
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/80 px-3 py-2 backdrop-blur">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200">{section.title}</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-neutral-500">
+                    {section.rows.reduce((total: number, row: any) => total + Number(row.quantity || 0), 0)} pz
+                  </span>
                 </div>
-              ))}
-            </div>
+                <div className="divide-y divide-white/10">
+                  {section.rows.map((row: any) => (
+                    <div key={row.id} className="grid grid-cols-[1fr_48px] gap-3 px-3 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-white">{row.name}</p>
+                        <p className="truncate text-[11px] font-semibold text-neutral-400">{row.dimensionsLabel || "-"}</p>
+                      </div>
+                      <p className="text-right text-base font-black text-amber-200">{row.quantity}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-neutral-400">
@@ -2509,7 +2584,6 @@ const availableAccessories = useMemo(() => {
           </div>
         )}
       </div>
-
       <div className="grid gap-3">
         <button
           type="button"
