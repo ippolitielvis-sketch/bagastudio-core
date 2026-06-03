@@ -6,7 +6,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Acciaio_Ossidato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 45
   },
   {
     "id": "acciaio_ossidato_truciolato",
@@ -15,7 +16,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Acciaio_Ossidato_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "angel_white",
@@ -24,7 +26,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Angel_White.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "barok",
@@ -33,7 +36,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Barok.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_liscio_china",
@@ -42,7 +46,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Liscio_China.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_liscio_truciolato",
@@ -51,7 +56,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Liscio_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "bianco_sporco_bilaminato",
@@ -60,7 +66,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Sporco_Bilaminato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_sporco_china",
@@ -69,7 +76,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Sporco_China.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_sporco_truciolato",
@@ -78,7 +86,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Sporco_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "bianco_venato",
@@ -87,7 +96,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Venato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_venato_c",
@@ -96,7 +106,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Venato_C.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "bianco_venato_truciolato",
@@ -105,7 +116,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Bianco_Venato_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "calacatta",
@@ -114,7 +126,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Calacatta.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "cemento_chiaro",
@@ -123,7 +136,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Cemento_Chiaro.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "confortable_coffe",
@@ -132,7 +146,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Confortable_Coffe.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "d143",
@@ -141,7 +156,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/D143.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "d165",
@@ -150,7 +166,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/D165.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "d202",
@@ -159,7 +176,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/D202.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "emperador",
@@ -168,7 +186,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Emperador.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "florida_truciolato",
@@ -177,7 +196,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Florida_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "gentle_2",
@@ -186,7 +206,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Gentle_2.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "ibiza",
@@ -195,7 +216,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Ibiza.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "legno_china",
@@ -204,7 +226,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Legno_China.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "marmo",
@@ -213,7 +236,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Marmo.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "marquinia",
@@ -222,7 +246,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Marquinia.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "marrone_c2074",
@@ -231,7 +256,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Marrone_C2074.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "marrone_stelvio_truciolato",
@@ -240,7 +266,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Marrone_Stelvio_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "mdf_bianco",
@@ -249,7 +276,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/MDF_Bianco.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 18
   },
   {
     "id": "mdf_nero",
@@ -258,7 +286,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/MDF_Nero.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 18
   },
   {
     "id": "multistrato_fenolico",
@@ -267,7 +296,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Multistrato_Fenolico.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "nero_cera",
@@ -276,7 +306,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Cera.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "nero_espo",
@@ -285,7 +316,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Espo.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "nero_venato_china",
@@ -294,7 +326,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Venato_China.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "nero_venato_china_no",
@@ -303,7 +336,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Venato_China_no.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "nero_venato_ita",
@@ -312,7 +346,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Venato_ita.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 30
   },
   {
     "id": "nero_venato_truciolato",
@@ -321,7 +356,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Nero_Venato_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "noce canaletto",
@@ -330,7 +366,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Noce canaletto.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "onice",
@@ -339,7 +376,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Onice.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "oro",
@@ -348,7 +386,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Oro.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 45
   },
   {
     "id": "oro_satinato",
@@ -357,7 +396,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Oro_Satinato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 45
   },
   {
     "id": "palissandro_m",
@@ -366,7 +406,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Palissandro_M.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "quercia_nordica",
@@ -375,7 +416,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Quercia_Nordica.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "rovere_cadiz",
@@ -384,7 +426,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Rovere_Cadiz.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "rovere_china",
@@ -393,7 +436,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Rovere_China.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "statuario",
@@ -402,7 +446,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Statuario.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "tessuto",
@@ -411,7 +456,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Tessuto.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "travertino",
@@ -420,7 +466,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Travertino.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 60
   },
   {
     "id": "truciolato_nero_liscio",
@@ -429,7 +476,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Truciolato_Nero_Liscio.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "wenghè",
@@ -438,7 +486,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Wenghè.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "wenghè_truciolato",
@@ -447,7 +496,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Wenghè_Truciolato.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 12
   },
   {
     "id": "wood_7040",
@@ -456,7 +506,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Wood_7040.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "youth_fleeting",
@@ -465,7 +516,8 @@ export const MATERIAL_LIBRARY = [
     "type": "texture",
     "textureUrl": "/textures/Youth_Fleeting.webp",
     "roughness": 0.45,
-    "metalness": 0
+    "metalness": 0,
+    "pricePerMq": 28
   },
   {
     "id": "specchio",
@@ -474,6 +526,7 @@ export const MATERIAL_LIBRARY = [
     "type": "mirror",
     "color": "#ffffff",
     "roughness": 0,
-    "metalness": 1
+    "metalness": 1,
+    "pricePerMq": 45
   }
 ]

@@ -1572,6 +1572,11 @@ const bomRows = useMemo(() => {
 
   const getMaterialPricePerSqm = (material: any, materialId?: string) => {
     const candidates = [
+      // Material Library V1 uses pricePerMq (€/mq).
+      material?.pricePerMq,
+      material?.pricing?.pricePerMq,
+      material?.metadata?.pricePerMq,
+      // Backward-compatible aliases already used by previous pricing tests.
       material?.pricePerSqm,
       material?.priceSqm,
       material?.costPerSqm,
