@@ -593,7 +593,7 @@ const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
  const [importName, setImportName] = useState("");
 const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
-  "config" | "materials" | "accessories" | "views" | "admin"
+  "config" | "materials" | "accessories" | "views" | "save" | "produce" | "help" | "admin"
 >("config");
 const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
 const [xRayEnabled, setXRayEnabled] = useState(false);
@@ -1209,11 +1209,14 @@ const availableAccessories = useMemo(() => {
         <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
           <div className="flex items-center gap-2">
             {[
-              ["config", "⌂", t.project],
-              ["materials", "▧", t.materials],
-              ["accessories", "✦", t.accessories],
-              ["views", "◱", t.views],
-              ["admin", "⚙", t.studioTools],
+              ["config", "↧", "CARICA"],
+              ["materials", "▧", "CONFIGURA"],
+              ["accessories", "✦", "ACCESSORI"],
+              ["views", "◱", "VISTE"],
+              ["save", "✓", "SALVA"],
+              ["produce", "▤", "PRODUCI"],
+              ["help", "?", "AIUTO"],
+              ["admin", "⚙", "STRUMENTI"],
             ].map((tab: any) => (
               <button
                 key={tab[0]}
@@ -1230,14 +1233,14 @@ const availableAccessories = useMemo(() => {
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => saveAutosave()} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
-              {t.save}
+            <button onClick={() => setActivePanel("config")} className="rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-2 text-sm font-black text-sky-100 hover:bg-sky-500/20">
+              CARICA
             </button>
-            <button onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-neutral-200 hover:bg-white/[0.08]">
-              {t.export}
+            <button onClick={() => setActivePanel("save")} className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-500/20">
+              SALVA
             </button>
-            <button onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
-              {t.quote}
+            <button onClick={() => setActivePanel("produce")} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">
+              PRODUCI
             </button>
           </div>
         </div>
@@ -1295,16 +1298,58 @@ const availableAccessories = useMemo(() => {
   </section>
 
   <section className="mb-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-    <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Azioni rapide</p>
+    <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Workflow principale</p>
     <div className="grid grid-cols-2 gap-2">
-      <button type="button" onClick={() => setActivePanel("config")} className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20">Import</button>
-      <button type="button" onClick={() => setActivePanel("materials")} className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-500/20">Materiali</button>
-      <button type="button" onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))} className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/20">Focus</button>
-      <button type="button" onClick={() => setXRayEnabled((value) => !value)} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-100 hover:bg-violet-500/20">X-Ray</button>
+      <button type="button" onClick={() => setActivePanel("config")} className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20">CARICA</button>
+      <button type="button" onClick={() => setActivePanel("materials")} className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-500/20">CONFIGURA</button>
+      <button type="button" onClick={() => setActivePanel("save")} className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/20">SALVA</button>
+      <button type="button" onClick={() => setActivePanel("produce")} className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-black text-amber-100 hover:bg-amber-500/20">PRODUCI</button>
+      <button type="button" onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))} className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-neutral-100 hover:bg-white/[0.08]">Focus</button>
+      <button type="button" onClick={() => setActivePanel("help")} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-100 hover:bg-violet-500/20">AIUTO</button>
     </div>
   </section>
 {activePanel === "config" && (
   <>
+    <section className="rounded-3xl border border-sky-400/25 bg-sky-500/5 p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
+      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
+        CARICA MODELLO 3D
+      </p>
+      <h2 className="mb-2 text-lg font-black text-white">Carica modello 3D</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-300">
+        Formati supportati: GLB, GLTF, DAE, FBX, OBJ, STL. Puoi selezionare il file oppure trascinarlo direttamente nel viewer.
+      </p>
+
+      <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-black/20 px-4 py-5 text-center transition hover:border-sky-300 hover:bg-sky-400/10">
+        <span className="text-sm font-black text-white">Seleziona modello 3D</span>
+        <span className="mt-1 block text-xs text-sky-200">{SUPPORTED_IMPORT_MODEL_ACCEPT}</span>
+        <input
+          type="file"
+          accept={SUPPORTED_IMPORT_MODEL_ACCEPT}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) handleModelFileImport(file);
+            event.target.value = "";
+          }}
+        />
+      </label>
+
+      {(importedModelName || importerStatus) && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">
+          {importedModelName && (
+            <p><span className="font-bold text-white">File:</span> {importedModelName}</p>
+          )}
+          {importedModelFormat && (
+            <p><span className="font-bold text-white">Formato:</span> {importedModelFormat}</p>
+          )}
+          {importerStatus && (
+            <p className="mt-1 text-sky-200">{importerStatus}</p>
+          )}
+        </div>
+      )}
+
+    </section>
+
     <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <h2 className="mb-4 text-lg font-semibold text-white">{t.importProductJson}</h2>
       <input
@@ -1523,73 +1568,80 @@ const availableAccessories = useMemo(() => {
 )}
 
 
+{activePanel === "save" && (
+  <>
+    <section className="rounded-[26px] border border-emerald-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-emerald-300">SALVA</p>
+      <h2 className="mb-2 text-xl font-black text-white">Conserva il lavoro</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-400">Qui trovi solo i comandi per salvare o ripristinare il lavoro. La configurazione salva materiali, misure e scelte; il backup salva uno snapshot completo dello stato.</p>
+      <div className="grid gap-3">
+        <button type="button" onClick={() => { saveAutosave(); setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US")); alert(t.autosaveSavedManual); }} className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/20">Salva progetto</button>
+        <button type="button" onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())} className="rounded-2xl border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/20">Esporta configurazione cliente</button>
+        <button type="button" onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Scarica backup completo</button>
+        <button type="button" onClick={() => { const ok = restoreAutosave(); if (!ok) alert(t.noAutosaveAvailable); if (ok) alert(t.autosaveRestored); }} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Ripristina autosave</button>
+        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Importa backup<input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackupImport(file); event.target.value = ""; }} /></label>
+      </div>
+      <p className="mt-4 text-xs text-neutral-400">{autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}</p>
+    </section>
+  </>
+)}
+
+{activePanel === "produce" && (
+  <>
+    <section className="rounded-[26px] border border-amber-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">PRODUCI</p>
+      <h2 className="mb-2 text-xl font-black text-white">Genera output</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-400">Qui stanno gli output da consegnare o usare in produzione. Gli strumenti tecnici restano separati in Strumenti Avanzati.</p>
+      <div className="grid gap-3">
+        <button type="button" onClick={() => downloadJson("bagastudio-preventivo.json", createBackupSnapshot())} className="rounded-2xl bg-sky-500 px-4 py-4 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.35)] hover:bg-sky-400">Scarica preventivo / riepilogo</button>
+        <button type="button" onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()} className="rounded-2xl border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/20">Esporta Product Package</button>
+        <button type="button" onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Esporta GLB</button>
+        <button type="button" onClick={() => setActivePanel("admin")} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:bg-white/[0.08]">Apri strumenti avanzati</button>
+      </div>
+    </section>
+  </>
+)}
+
+{activePanel === "help" && (
+  <>
+    <section className="rounded-[26px] border border-violet-400/20 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.28em] text-violet-300">AIUTO</p>
+      <h2 className="mb-2 text-xl font-black text-white">Guida rapida</h2>
+      <div className="grid gap-3 text-sm text-neutral-300">
+        <div className="rounded-2xl border border-sky-400/15 bg-sky-500/10 p-3"><strong className="text-white">CARICA</strong><p className="mt-1 text-xs leading-5">Importa un modello 3D oppure un Product Package completo.</p></div>
+        <div className="rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-3"><strong className="text-white">CONFIGURA</strong><p className="mt-1 text-xs leading-5">Scegli componenti, materiali, accessori, LED, visibilità e dimensioni.</p></div>
+        <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/10 p-3"><strong className="text-white">SALVA</strong><p className="mt-1 text-xs leading-5">Salva il progetto o scarica un backup. La configurazione non contiene il modello 3D; il Product Package sì.</p></div>
+        <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-3"><strong className="text-white">PRODUCI</strong><p className="mt-1 text-xs leading-5">Genera preventivo, Product Package, GLB e futuri output tecnici.</p></div>
+      </div>
+    </section>
+  </>
+)}
+
+
 {activePanel === "admin" && (
   <>
     <section className="rounded-3xl border border-sky-400/25 bg-[#081827] p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
       <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
-        BagaStudio Core
+        STRUMENTI AVANZATI
       </p>
+      <h2 className="mb-2 text-lg font-black text-white">Area tecnica</h2>
+      <p className="mt-2 text-xs leading-5 text-neutral-400">Qui restano solo comandi tecnici: mapping, report, bundle, compatibilità e diagnostica. Il caricamento quotidiano del modello è nella scheda CARICA.</p>
     </section>
 
     <section className="rounded-3xl border border-sky-400/25 bg-sky-500/5 p-5 shadow-[0_0_26px_rgba(14,165,233,0.10)]">
       <p className="mb-1 text-[11px] font-black uppercase tracking-[0.35em] text-sky-400">
-        IMPORTER UI V2
+        TOOL TECNICI IMPORTER
       </p>
-      <h2 className="mb-2 text-lg font-black text-white">Importa modello 3D</h2>
-      <p className="mb-4 text-xs leading-5 text-neutral-300">
-        Formati supportati: GLB, GLTF, DAE, FBX, OBJ, STL. Puoi selezionare il file oppure trascinarlo direttamente nel viewer.
-      </p>
+      <h2 className="mb-2 text-lg font-black text-white">Output avanzati</h2>
+      <p className="mb-4 text-xs leading-5 text-neutral-300">Funzioni tecniche per sviluppo, mapping, compatibilità e diagnostica. Non sono il flusso principale dell'utente.</p>
 
-      <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-black/20 px-4 py-5 text-center transition hover:border-sky-300 hover:bg-sky-400/10">
-        <span className="text-sm font-black text-white">Seleziona modello 3D</span>
-        <span className="mt-1 block text-xs text-sky-200">{SUPPORTED_IMPORT_MODEL_ACCEPT}</span>
-        <input
-          type="file"
-          accept={SUPPORTED_IMPORT_MODEL_ACCEPT}
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) handleModelFileImport(file);
-            event.target.value = "";
-          }}
-        />
-      </label>
-
-      {(importedModelName || importerStatus) && (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">
-          {importedModelName && (
-            <p><span className="font-bold text-white">File:</span> {importedModelName}</p>
-          )}
-          {importedModelFormat && (
-            <p><span className="font-bold text-white">Formato:</span> {importedModelFormat}</p>
-          )}
-          {importerStatus && (
-            <p className="mt-1 text-sky-200">{importerStatus}</p>
-          )}
-        </div>
-      )}
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => (window as any).bagastudioDownloadLastImportAsGLB?.()}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
-        >
-          Scarica GLB
-        </button>
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => (window as any).bagastudioDownloadImporterJsonBundle?.()}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
         >
-          Scarica JSON bundle
-        </button>
-        <button
-          type="button"
-          onClick={() => (window as any).bagastudioDownloadLastProductPackage?.()}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
-        >
-          Product Package
+          JSON bundle
         </button>
         <button
           type="button"
@@ -1639,120 +1691,8 @@ const availableAccessories = useMemo(() => {
           }}
           className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-100 hover:border-amber-300/60 hover:bg-amber-400/15"
         >
-          Salva prodotto
+          Salva prodotto tecnico
         </button>
-      </div>
-    </section>
-
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">{t.importProductJson}</h2>
-      <input
-        type="file"
-        accept=".json"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) handleProductJsonImport(file);
-        }}
-        className="block w-full text-sm text-neutral-300 file:mr-3 file:rounded-2xl file:border-0 file:bg-sky-500 file:px-4 file:py-2 file:font-bold file:text-white"
-      />
-      {importName && (
-        <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-neutral-300">
-          {t.loadedFile}: {importName}
-        </p>
-      )}
-    </section>
-
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">{t.backupAutosave}</h2>
-      <div className="grid gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            saveAutosave();
-            setAutosaveLabel(new Date().toLocaleTimeString(language === "it" ? "it-IT" : "en-US"));
-            alert(t.autosaveSavedManual);
-          }}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
-        >
-          {t.saveAutosave}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            const ok = restoreAutosave();
-            if (!ok) alert(t.noAutosaveAvailable);
-            if (ok) alert(t.autosaveRestored);
-          }}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
-        >
-          {t.restoreAutosave}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => downloadJson("bagastudio-backup.json", createBackupSnapshot())}
-          className="rounded-2xl border border-sky-400/30 bg-sky-500 px-4 py-3 text-sm font-black text-white shadow-[0_0_22px_rgba(14,165,233,0.25)]"
-        >
-          {t.downloadFullBackup}
-        </button>
-
-        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
-          {t.importBackup}
-          <input
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) handleBackupImport(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
-      </div>
-
-      <p className="mt-4 text-xs text-neutral-400">
-        {autosaveLabel ? `${t.lastAutosave}: ${autosaveLabel}` : t.autosaveReady}
-      </p>
-    </section>
-
-    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_0_20px_rgba(0,0,0,0.25)]">
-      <h2 className="mb-4 text-lg font-black text-white">{t.customerConfiguration}</h2>
-      <div className="grid gap-3">
-        <button
-          type="button"
-          onClick={() => downloadJson("bagastudio-config.json", exportConfiguration())}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10"
-        >
-          {t.exportConfiguration}
-        </button>
-
-        <label className="cursor-pointer rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-sm font-bold text-neutral-100 hover:border-sky-400/40 hover:bg-sky-400/10">
-          {t.importConfiguration}
-          <input
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-
-              try {
-                const fileText = await file.text();
-                const data = JSON.parse(fileText);
-
-                importConfiguration(data);
-                alert(t.configurationImported);
-              } catch (error) {
-                console.error("BagaStudio configuration import error", error);
-                alert(t.invalidConfigurationJson);
-              }
-
-              event.target.value = "";
-            }}
-          />
-        </label>
       </div>
     </section>
   </>

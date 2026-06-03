@@ -12,18 +12,22 @@ const INSERT_MATERIAL_MULTIPLIERS: Record<string, number> = {
 
 
 export function calculatePricing(productOverride?: any) {
-  const store = useConfigStore.getState();
-const product = productOverride || store.runtimeProduct || store.product;
+const store = useConfigStore.getState();
 
-  const pricingConfig = product.pricing || {};
+const product =
+  productOverride ||
+  store.runtimeProduct ||
+  store.product;
 
-  if (!product) {
-    return {
-      subtotal: 0,
-      vat: 0,
-      total: 0,
-    };
-  }
+if (!product) {
+  return {
+    subtotal: 0,
+    vat: 0,
+    total: 0,
+  };
+}
+
+const pricingConfig = product.pricing || {};
 
   let subtotal = Number(pricingConfig.basePrice || 0);
 

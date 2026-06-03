@@ -654,6 +654,69 @@ function buildImportedProductPackage(root: THREE.Object3D, format?: string): Bag
   };
 }
 
+function bagastudioGetRuntimeExportState() {
+  const state = useConfigStore.getState();
+
+  return {
+    materials: { ...(state.materials || {}) },
+    accessories: { ...(state.accessories || {}) },
+    inserts: { ...(state.inserts || {}) },
+    ledKelvin: { ...(state.ledKelvin || {}) },
+    ledIntensity: { ...(state.ledIntensity || {}) },
+    woodDirection: { ...(state.woodDirection || {}) },
+    configuration: typeof state.exportConfiguration === "function" ? state.exportConfiguration() : null,
+  };
+}
+
+function bagastudioMergeRuntimeStateIntoProductPackage(productPackage: BagaStudioProductPackage): BagaStudioProductPackage {
+  const runtimeState = bagastudioGetRuntimeExportState();
+
+  const enrichedPackage: BagaStudioProductPackage = {
+    ...productPackage,
+    materials: {
+      ...(productPackage.materials || {}),
+      ...runtimeState.materials,
+    },
+    accessories: {
+      ...(productPackage.accessories || {}),
+      ...(runtimeState.accessories as unknown as Record<string, unknown[]>),
+    },
+    inserts: {
+      ...(productPackage.inserts || {}),
+      ...runtimeState.inserts,
+    },
+    led: {
+      ...(productPackage.led || {}),
+    },
+  };
+
+  Object.entries(runtimeState.ledKelvin).forEach(([partId, kelvin]) => {
+    enrichedPackage.led[partId] = {
+      ...(enrichedPackage.led[partId] || { enabled: true }),
+      kelvin,
+    };
+  });
+
+  Object.entries(runtimeState.ledIntensity).forEach(([partId, intensity]) => {
+    enrichedPackage.led[partId] = {
+      ...(enrichedPackage.led[partId] || { enabled: true }),
+      intensity,
+    };
+  });
+
+  (enrichedPackage as BagaStudioProductPackage & {
+    woodDirection?: Record<string, "x" | "z">;
+    configuration?: unknown;
+  }).woodDirection = runtimeState.woodDirection;
+
+  (enrichedPackage as BagaStudioProductPackage & {
+    woodDirection?: Record<string, "x" | "z">;
+    configuration?: unknown;
+  }).configuration = runtimeState.configuration;
+
+  return enrichedPackage;
+}
+
 function prepareImportedProductPackage(root: THREE.Object3D, format?: string) {
   const productPackage = buildImportedProductPackage(root, format);
   const validation = validateProductPackage(productPackage, root);
@@ -715,7 +778,12 @@ function prepareImportedProductPackage(root: THREE.Object3D, format?: string) {
     return validation;
   };
   bagastudioWindow.bagastudioDownloadLastProductPackage = () => {
-    const currentPackage = bagastudioWindow.__bagastudioLastProductPackage || productPackage;
+    const currentPackage = bagastudioMergeRuntimeStateIntoProductPackage(
+      bagastudioWindow.__bagastudioLastProductPackage || productPackage
+    );
+    bagastudioWindow.__bagastudioLastProductPackage = currentPackage;
+    root.userData.bagastudioProductPackage = currentPackage;
+
     const blob = new Blob([JSON.stringify(currentPackage, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     downloadJsonFile(url, filename);
@@ -2095,11 +2163,20 @@ function prepareImporterUiBridge(root: THREE.Object3D) {
     const importerReport = bagastudioWindow.__bagastudioLastImporterReport || root.userData?.bagastudioImporterReport;
     const sourceFormat = String(root.userData?.bagastudioImporterFormat || productPackage?.sourceFormat || "model").toLowerCase();
 
+    const enrichedProductPackage = productPackage
+      ? bagastudioMergeRuntimeStateIntoProductPackage(productPackage)
+      : null;
+
+    if (enrichedProductPackage) {
+      bagastudioWindow.__bagastudioLastProductPackage = enrichedProductPackage;
+      root.userData.bagastudioProductPackage = enrichedProductPackage;
+    }
+
     const bundle = {
       schema: "bagastudio.importer.bundle.v1",
       createdAt: new Date().toISOString(),
       sourceFormat,
-      productPackage: productPackage || null,
+      productPackage: enrichedProductPackage,
       adminMapping: adminMapping || null,
       importerReport: importerReport || null,
     };
@@ -5076,12 +5153,19 @@ let __bagastudioLastSavedPackage: any = null;
 
 async function bagastudioSaveCompleteProductPackageRuntime() {
   try {
+    const sourceProductPackage =
+      (window as any).__bagastudioLastProductPackage ||
+      (window as any).bagastudioProductPackage ||
+      null;
+
     const runtimePackage = {
       savedAt: new Date().toISOString(),
       version: "ImporterSaveSystemV1",
-      productPackage: (window as any).bagastudioProductPackage || null,
-      adminMapping: (window as any).bagastudioAdminMapping || null,
-      importerReport: (window as any).bagastudioLastImporterReport || null,
+      productPackage: sourceProductPackage
+        ? bagastudioMergeRuntimeStateIntoProductPackage(sourceProductPackage)
+        : null,
+      adminMapping: (window as any).__bagastudioLastAdminMapping || (window as any).bagastudioAdminMapping || null,
+      importerReport: (window as any).__bagastudioLastImporterReport || (window as any).bagastudioLastImporterReport || null,
       thumbnail: (window as any).__bagastudioLastProductThumbnail || null,
       metadata: {
         engine: "BagaStudio Core",
