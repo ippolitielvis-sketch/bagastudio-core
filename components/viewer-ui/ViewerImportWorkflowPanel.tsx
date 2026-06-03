@@ -11,6 +11,8 @@ type ViewerImportWorkflowPanelProps = {
   viewerRuntimeMetadata: any;
   lastImporterEvent: string;
   supportedModelAccept: string;
+  recentProjects?: Array<{ id: string; name: string; fileName: string; updatedAt: string }>;
+  onRecentProjectOpen?: (projectId: string) => void;
   onModelFileImport: (file: File) => void;
   onProductJsonImport: (file: File) => void;
   onRefreshImporterState: () => void;
@@ -29,6 +31,8 @@ export default function ViewerImportWorkflowPanel({
   viewerRuntimeMetadata,
   lastImporterEvent,
   supportedModelAccept,
+  recentProjects = [],
+  onRecentProjectOpen,
   onModelFileImport,
   onProductJsonImport,
   onRefreshImporterState,
@@ -39,43 +43,59 @@ export default function ViewerImportWorkflowPanel({
     <section id="bagastudio-import-workflow" className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
       <div className="mb-4">
         <p className="text-[10px] font-black uppercase tracking-[0.28em] text-sky-300">BagaStudio Core Viewer</p>
-        <h2 className="mt-1 text-xl font-black text-white">Importa / Carica prodotto</h2>
+        <h2 className="mt-1 text-xl font-black text-white">Carica prodotto</h2>
         <p className="mt-1 text-xs leading-5 text-neutral-400">
-          Tutti i comandi di caricamento sono raggruppati qui: modello 3D, Product Package JSON e backup progetto.
+          Seleziona un modello 3D, un Product Package o un progetto BagaStudio.
         </p>
       </div>
 
       <div className="grid gap-3">
-        <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-sky-500/10 px-4 py-5 text-center transition hover:border-sky-300 hover:bg-sky-400/15">
-          <span className="block text-sm font-black text-white">Importa modello 3D</span>
-          <span className="mt-1 block text-xs text-sky-200">DAE / GLB / GLTF / OBJ / FBX / STL</span>
+        <label className="block cursor-pointer rounded-2xl border border-dashed border-sky-400/40 bg-sky-500/10 px-4 py-6 text-center transition hover:border-sky-300 hover:bg-sky-400/15">
+          <span className="block text-base font-black text-white">Seleziona file</span>
+          <span className="mt-2 block text-xs font-bold leading-5 text-sky-200">DAE / GLB / GLTF / OBJ / FBX / STL</span>
+          <span className="block text-xs font-bold leading-5 text-cyan-200">JSON / BAGA</span>
           <input
             type="file"
-            accept={supportedModelAccept}
+            accept={`${supportedModelAccept},.json,.baga,application/json`}
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) onModelFileImport(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
-
-        <label className="block cursor-pointer rounded-2xl border border-dashed border-cyan-400/35 bg-cyan-500/10 px-4 py-5 text-center transition hover:border-cyan-300 hover:bg-cyan-400/15">
-          <span className="block text-sm font-black text-white">Importa Product Package JSON</span>
-          <span className="mt-1 block text-xs text-cyan-200">Pacchetto prodotto già generato da BagaStudio Core</span>
-          <input
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onProductJsonImport(file);
+              if (file) {
+                const extension = file.name.toLowerCase().split(".").pop();
+                if (extension === "json" || extension === "baga") {
+                  onProductJsonImport(file);
+                } else {
+                  onModelFileImport(file);
+                }
+              }
               event.target.value = "";
             }}
           />
         </label>
       </div>
+
+      {recentProjects.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-cyan-400/15 bg-black/20 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300">Progetti recenti</p>
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-[10px] font-black text-cyan-100">{recentProjects.length}</span>
+          </div>
+
+          <div className="grid gap-2">
+            {recentProjects.slice(0, 5).map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => onRecentProjectOpen?.(project.id)}
+                className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-left transition hover:border-cyan-400/35 hover:bg-cyan-500/10"
+              >
+                <span className="block truncate text-xs font-black text-white">{project.name}</span>
+                <span className="mt-1 block truncate text-[10px] font-bold text-neutral-500">{project.fileName}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {(importedModelName || importName || importerStatus) && (
         <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-neutral-300">

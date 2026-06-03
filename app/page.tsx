@@ -580,6 +580,43 @@ function getSafeProjectFilename(projectName: string) {
   return `${safeName || "Progetto_BagaStudio"}.baga`;
 }
 
+type RecentBagaStudioProject = {
+  id: string;
+  name: string;
+  fileName: string;
+  updatedAt: string;
+  project: any;
+};
+
+const RECENT_PROJECTS_STORAGE_KEY = "bagastudio-recent-projects-v1";
+const RECENT_PROJECTS_LIMIT = 8;
+
+function readRecentBagaStudioProjects(): RecentBagaStudioProject[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(RECENT_PROJECTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((item) => item?.project?.configuration).slice(0, RECENT_PROJECTS_LIMIT) : [];
+  } catch (error) {
+    console.warn("BagaStudio recent projects read failed", error);
+    return [];
+  }
+}
+
+function writeRecentBagaStudioProjects(items: RecentBagaStudioProject[]) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      RECENT_PROJECTS_STORAGE_KEY,
+      JSON.stringify(items.slice(0, RECENT_PROJECTS_LIMIT))
+    );
+  } catch (error) {
+    console.warn("BagaStudio recent projects write failed", error);
+  }
+}
+
 export default function HomePage() {
   const product = useConfigStore((state) => state.runtimeProduct || state.product);
   const setRuntimeProduct = useConfigStore((state) => state.setRuntimeProduct);
@@ -621,6 +658,7 @@ const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
 const [currentProjectName, setCurrentProjectName] = useState("Progetto BagaStudio");
 const [lastProjectAction, setLastProjectAction] = useState("");
 const [uiNotice, setUiNotice] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+const [recentProjects, setRecentProjects] = useState<RecentBagaStudioProject[]>([]);
 const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "save" | "produce" | "help" | "admin"
@@ -692,6 +730,10 @@ const [viewerRuntimeProduct, setViewerRuntimeProduct] = useState<any>(null);
 useEffect(() => {
   window.localStorage.setItem("bagastudio-language", language);
 }, [language]);
+
+useEffect(() => {
+  setRecentProjects(readRecentBagaStudioProjects());
+}, []);
 
 useEffect(() => {
   return () => {
@@ -888,18 +930,56 @@ useEffect(() => {
 
     setViewerRuntimeComponents((current) => {
       if (!Array.isArray(current)) return current;
+
+      const incomingComponent = detail?.runtimeComponent || null;
+      const incomingBounds = detail?.bounds || incomingComponent?.bounds || incomingComponent?.runtimeMetadata?.bounds || null;
+      const incomingCategory = detail?.category || incomingComponent?.category || incomingComponent?.runtimeMetadata?.detectedCategory || null;
+
       const exists = current.some((component: any) =>
         component?.id === nextId || component?.partId === nextId || component?.meshName === nextId
       );
-      if (exists) return current;
+
+      if (exists) {
+        return current.map((component: any) => {
+          const isMatch = component?.id === nextId || component?.partId === nextId || component?.meshName === nextId;
+          if (!isMatch) return component;
+
+          return {
+            ...component,
+            ...(incomingComponent || {}),
+            id: component?.id || incomingComponent?.id || nextId,
+            partId: component?.partId || incomingComponent?.partId || nextId,
+            meshName: component?.meshName || detail?.meshName || incomingComponent?.meshName || nextId,
+            displayName: component?.displayName || detail?.displayName || incomingComponent?.displayName || nextId,
+            originalName: component?.originalName || detail?.originalName || incomingComponent?.originalName || nextId,
+            category: component?.category || incomingCategory || undefined,
+            runtimeMetadata: {
+              ...(component?.runtimeMetadata || {}),
+              ...(incomingComponent?.runtimeMetadata || {}),
+              detectedCategory: component?.runtimeMetadata?.detectedCategory || incomingCategory || incomingComponent?.runtimeMetadata?.detectedCategory,
+              bounds: incomingBounds || component?.runtimeMetadata?.bounds || incomingComponent?.runtimeMetadata?.bounds,
+            },
+            bounds: incomingBounds || component?.bounds || incomingComponent?.bounds,
+          };
+        });
+      }
+
       return [
         ...current,
         {
-          id: nextId,
-          partId: nextId,
-          meshName: detail?.meshName || nextId,
-          displayName: detail?.displayName || detail?.name || nextId,
-          originalName: detail?.originalName || detail?.meshName || nextId,
+          ...(incomingComponent || {}),
+          id: incomingComponent?.id || nextId,
+          partId: incomingComponent?.partId || nextId,
+          meshName: detail?.meshName || incomingComponent?.meshName || nextId,
+          displayName: detail?.displayName || detail?.name || incomingComponent?.displayName || nextId,
+          originalName: detail?.originalName || incomingComponent?.originalName || detail?.meshName || nextId,
+          category: incomingCategory || undefined,
+          runtimeMetadata: {
+            ...(incomingComponent?.runtimeMetadata || {}),
+            detectedCategory: incomingCategory || incomingComponent?.runtimeMetadata?.detectedCategory,
+            bounds: incomingBounds || incomingComponent?.runtimeMetadata?.bounds,
+          },
+          bounds: incomingBounds || incomingComponent?.bounds,
           index: current.length + 1,
         },
       ];
@@ -971,6 +1051,45 @@ function requestViewerFullscreen() {
   viewerShellRef.current?.requestFullscreen?.();
 }
 
+function registerRecentProject(projectName: string, projectData?: any) {
+  const normalizedName = (projectName || "Progetto BagaStudio").trim() || "Progetto BagaStudio";
+  const project = projectData || createBagaStudioProject(exportConfiguration(), normalizedName);
+  const fileName = getSafeProjectFilename(normalizedName);
+  const id = `${fileName.toLowerCase()}::${normalizedName.toLowerCase()}`;
+  const nextItem: RecentBagaStudioProject = {
+    id,
+    name: normalizedName,
+    fileName,
+    updatedAt: new Date().toISOString(),
+    project,
+  };
+
+  setRecentProjects((current) => {
+    const next = [nextItem, ...current.filter((item) => item.id !== id)].slice(0, RECENT_PROJECTS_LIMIT);
+    writeRecentBagaStudioProjects(next);
+    return next;
+  });
+}
+
+function openRecentProject(projectId: string) {
+  const target = recentProjects.find((item) => item.id === projectId);
+
+  if (!target?.project?.configuration) {
+    showUiNotice("Progetto recente non disponibile", "error");
+    return;
+  }
+
+  importConfiguration(target.project.configuration);
+  const nextName = target.project.name || target.name || "Progetto BagaStudio";
+  setCurrentProjectName(nextName);
+  setImportName(nextName);
+  setLastProjectAction(`Progetto recente aperto: ${nextName}`);
+  showUiNotice(`Progetto recente aperto: ${nextName}`);
+  registerRecentProject(nextName, target.project);
+  setSelectedPart(null);
+  setSelectedPartIds([]);
+}
+
 function getCurrentProjectName() {
   return (currentProjectName || importName || importedModelName || runtimeProduct?.displayName || runtimeProduct?.name || "Progetto BagaStudio").trim();
 }
@@ -1013,6 +1132,7 @@ async function saveProject() {
       downloadJson(fileName, project);
     }
 
+    registerRecentProject(projectName, project);
     setLastProjectAction(`Progetto salvato: ${projectName}`);
     showUiNotice(`Progetto salvato: ${projectName}`);
   } catch (error: any) {
@@ -1037,6 +1157,7 @@ async function openProject(file: File) {
       const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
       setCurrentProjectName(nextName);
       setImportName(nextName);
+      registerRecentProject(nextName, data);
       setLastProjectAction(`Progetto aperto: ${nextName}`);
       showUiNotice(`Progetto aperto: ${nextName}`);
       return;
@@ -1047,6 +1168,7 @@ async function openProject(file: File) {
       const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
       setCurrentProjectName(nextName);
       setImportName(nextName);
+      registerRecentProject(nextName, createBagaStudioProject(data.configuration, nextName));
       setLastProjectAction(`Configurazione importata: ${nextName}`);
       showUiNotice(`Configurazione importata: ${nextName}`);
       return;
@@ -1056,6 +1178,7 @@ async function openProject(file: File) {
     const nextName = file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
     setCurrentProjectName(nextName);
     setImportName(nextName);
+    registerRecentProject(nextName, createBagaStudioProject(data, nextName));
     setLastProjectAction(`Configurazione importata: ${nextName}`);
     showUiNotice(`Configurazione importata: ${nextName}`);
   } catch (error) {
@@ -1125,6 +1248,77 @@ const displayPricing = useMemo(() => {
   insertMaterials,
 ]);
 
+const bomRows = useMemo(() => {
+  const sourceParts = Array.isArray(viewerRuntimeComponents) && viewerRuntimeComponents.length > 0
+    ? viewerRuntimeComponents
+    : Array.isArray(runtimeProduct?.parts)
+      ? runtimeProduct.parts
+      : [];
+
+  const normalizeBomLabel = (value: any) => {
+    return String(value || "Componente senza nome")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b(mesh|object|node)\b/gi, "")
+      .replace(/\s+\d+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  const getBomLabel = (part: any) => {
+    const rawLabel =
+      part?.displayName ||
+      part?.name ||
+      part?.partName ||
+      part?.originalName ||
+      part?.meshName ||
+      part?.partId ||
+      part?.id ||
+      "Componente senza nome";
+
+    return normalizeBomLabel(rawLabel);
+  };
+
+  const getBomCategory = (part: any) => {
+    return String(
+      part?.category ||
+      part?.type ||
+      part?.runtimeMetadata?.detectedCategory ||
+      part?.runtimeMetadata?.category ||
+      "componente"
+    )
+      .replace(/[_-]+/g, " ")
+      .trim();
+  };
+
+  const grouped = new Map<string, any>();
+
+  sourceParts.forEach((part: any) => {
+    const label = getBomLabel(part);
+    const category = getBomCategory(part);
+    const key = `${label.toLowerCase()}|${category.toLowerCase()}`;
+    const id = String(part?.partId || part?.id || part?.meshName || part?.name || "").trim();
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: key,
+        name: label,
+        category,
+        quantity: 0,
+        partIds: [],
+      });
+    }
+
+    const row = grouped.get(key);
+    row.quantity += 1;
+    if (id) row.partIds.push(id);
+  });
+
+  return Array.from(grouped.values()).sort((a: any, b: any) =>
+    String(a.category).localeCompare(String(b.category)) ||
+    String(a.name).localeCompare(String(b.name))
+  );
+}, [runtimeProduct, viewerRuntimeComponents]);
+
   const selectedPart = useMemo(() => {
     if (!selectedPartId) return null;
 
@@ -1151,6 +1345,10 @@ const displayPricing = useMemo(() => {
   }, [runtimeProduct, selectedPartId, viewerRuntimeComponents]);
 
   const selectedStoreKey = selectedPart?.id || selectedPartId || "";
+  const selectedPartBounds = selectedPart?.bounds || selectedPart?.runtimeMetadata?.bounds || null;
+  const selectedPartDimensionLabel = selectedPartBounds
+    ? `${Number(selectedPartBounds.width || 0).toFixed(2)} × ${Number(selectedPartBounds.depth || 0).toFixed(2)} × ${Number(selectedPartBounds.height || 0).toFixed(2)} unità modello`
+    : `${Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × ${Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × ${Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm`;
   const effectiveSelectedPartIds = selectedPartIds.length > 0 ? selectedPartIds : selectedStoreKey ? [selectedStoreKey] : [];
   const hasMultiSelection = effectiveSelectedPartIds.length > 1;
 
@@ -1550,6 +1748,8 @@ const availableAccessories = useMemo(() => {
       viewerRuntimeMetadata={viewerRuntimeMetadata}
       lastImporterEvent={lastImporterEvent}
       supportedModelAccept={SUPPORTED_IMPORT_MODEL_ACCEPT}
+      recentProjects={recentProjects}
+      onRecentProjectOpen={openRecentProject}
       onModelFileImport={handleModelFileImport}
       onProductJsonImport={handleProductJsonImport}
       onRefreshImporterState={() => {
@@ -2274,6 +2474,42 @@ const availableAccessories = useMemo(() => {
         </div>
       </div>
 
+      <div className="mb-4 rounded-2xl border border-amber-400/15 bg-black/25 p-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-[0.18em] text-amber-200">Distinta materiali / BOM V1</h3>
+            <p className="mt-1 text-xs leading-5 text-neutral-400">Prima distinta automatica generata dai componenti runtime rilevati nel modello.</p>
+          </div>
+          <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-100">
+            {bomRows.reduce((total: number, row: any) => total + Number(row.quantity || 0), 0)} pezzi
+          </span>
+        </div>
+
+        {bomRows.length > 0 ? (
+          <div className="max-h-[260px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
+            <div className="grid grid-cols-[1fr_72px] border-b border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">
+              <span>Componente</span>
+              <span className="text-right">Q.tà</span>
+            </div>
+            <div className="divide-y divide-white/10">
+              {bomRows.map((row: any) => (
+                <div key={row.id} className="grid grid-cols-[1fr_72px] gap-3 px-3 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-white">{row.name}</p>
+                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">{row.category}</p>
+                  </div>
+                  <p className="text-right text-base font-black text-amber-200">{row.quantity}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-neutral-400">
+            Nessun componente runtime rilevato. Importa un modello o un Product Package per generare la distinta.
+          </div>
+        )}
+      </div>
+
       <div className="grid gap-3">
         <button
           type="button"
@@ -2692,7 +2928,7 @@ const availableAccessories = useMemo(() => {
               <div className="flex justify-between gap-4"><span className="text-neutral-400">partId</span><span className="break-all text-right text-white">{selectedPart?.partId || selectedPart?.id || selectedPartId || "-"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">Categoria</span><span className="text-right text-white">{selectedPart?.category || selectedPart?.runtimeMetadata?.detectedCategory || "-"}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.product}</span><span className="text-right text-white">{viewerRuntimeProduct?.schema ? "Runtime importato" : runtimeProduct?.name || "-"}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.dimensions}</span><span className="text-right text-white">{Number(dimensions?.width ?? runtimeProduct?.dimensions?.width?.default ?? 0)} × {Number(dimensions?.depth ?? runtimeProduct?.dimensions?.depth?.default ?? 0)} × {Number(dimensions?.height ?? runtimeProduct?.dimensions?.height?.default ?? 0)} cm</span></div>
+              <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.dimensions}</span><span className="text-right text-white">{selectedPartDimensionLabel}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.view}</span><span className="text-right text-white">{translateViewName({ id: activeViewId }, t)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-neutral-400">{t.led}</span><span className="text-right text-white">{selectedStoreKey && isAccessoryActive(accessories, selectedStoreKey, "led") ? `${ledKelvin?.[selectedStoreKey] ?? 4500}K` : t.off}</span></div>
             </div>

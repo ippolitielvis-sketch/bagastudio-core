@@ -1680,8 +1680,76 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
     text.includes("shelf") ||
     text.includes("anta") ||
     text.includes("door") ||
+    text.includes("zoccolo") ||
+    text.includes("plinth") ||
+    text.includes("kickboard") ||
     text.includes("pannello") ||
     text.includes("panel");
+
+  const isTechnicalRuntimeMesh = (text: string) =>
+    /(^|_)edge_definition($|_)/.test(text) ||
+    /(^|_)helper($|_)/.test(text) ||
+    /(^|_)guide($|_)/.test(text) ||
+    /(^|_)debug($|_)/.test(text) ||
+    /(^|_)wire($|_)/.test(text) ||
+    /(^|_)bounds?($|_)/.test(text) ||
+    /(^|_)bounding_box($|_)/.test(text) ||
+    /(^|_)collision_proxy($|_)/.test(text) ||
+    /(^|_)outline($|_)/.test(text) ||
+    /(^|_)contour($|_)/.test(text) ||
+    /(^|_)contorno($|_)/.test(text);
+
+  const inferRuntimeCategory = (text: string) => {
+    if (hasAccessoryKeyword(text)) return "accessory";
+    if (
+      text.includes("cerniera") ||
+      text.includes("hinge") ||
+      text.includes("basetta") ||
+      text.includes("cabineo") ||
+      text.includes("vite") ||
+      text.includes("screw") ||
+      text.includes("ferramenta") ||
+      text.includes("hardware") ||
+      text.includes("ironware")
+    ) {
+      return "hardware";
+    }
+    if (isPanelLike(text)) return "panel";
+    return "component";
+  };
+
+
+
+  const buildAccessoryDisplayName = (clusterEntries: MeshEntry[], accessoryIndex: number) => {
+    const combined = normalizeAccessoryText(
+      clusterEntries
+        .flatMap((entry) => [entry.originalName, entry.parentName, entry.grandParentName, entry.text])
+        .filter(Boolean)
+        .join(" ")
+    );
+
+    if (combined.includes("portaphon") || combined.includes("porta_phon") || combined.includes("phon")) return "Portaphon";
+    if (combined.includes("presa") || combined.includes("socket") || combined.includes("outlet")) return "Presa";
+    if (combined.includes("led") || combined.includes("strip") || combined.includes("light")) return "LED";
+    if (combined.includes("rubinetto") || combined.includes("tap") || combined.includes("faucet")) return "Rubinetto";
+    if (combined.includes("lavabo") || combined.includes("lavandino") || combined.includes("sink")) return "Lavabo";
+    if (combined.includes("pomello") || combined.includes("knob")) return "Pomello";
+    if (
+      combined.includes("maniglia") ||
+      combined.includes("handle") ||
+      combined.includes("pull") ||
+      combined.includes("grip") ||
+      combined.includes("cerchio") ||
+      combined.includes("cilindro") ||
+      combined.includes("cylinder") ||
+      combined.includes("accessorio") ||
+      combined.includes("accessory")
+    ) {
+      return "Maniglia";
+    }
+
+    return `Accessorio ${accessoryIndex}`;
+  };
 
   const rootBox = new THREE.Box3().setFromObject(root);
   const rootSize = rootBox.getSize(new THREE.Vector3());
@@ -1711,6 +1779,21 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
       String(mesh.userData?.bagastudioRuntimeKind || ""),
     ].filter(Boolean).join(" ");
     const normalizedText = normalizeAccessoryText(text);
+
+    // Runtime Cleanup V1:
+    // Some imported DAE/Product Package files contain helper meshes such as
+    // *_edge_definition. They are useful as visual/technical overlays, but they
+    // must not become selectable components, BOM rows, or property-panel items.
+    if (isTechnicalRuntimeMesh(normalizedText)) {
+      mesh.visible = false;
+      mesh.userData.bagastudioRuntimeComponent = false;
+      mesh.userData.bagastudioSelectable = false;
+      mesh.userData.bagastudioIgnoreRaycast = true;
+      mesh.userData.bagastudioTechnicalHelper = true;
+      mesh.raycast = () => null;
+      return;
+    }
+
     const box = new THREE.Box3().setFromObject(mesh);
     const size = box.getSize(new THREE.Vector3());
     const maxDimension = Math.max(size.x, size.y, size.z);
@@ -1806,7 +1889,8 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
     const clusterBox = new THREE.Box3();
     clusterIndexes.forEach((index) => clusterBox.union(entries[index].box));
     const clusterSize = clusterBox.getSize(new THREE.Vector3());
-    const seedName = firstEntry.parentName || firstEntry.grandParentName || firstEntry.originalName || `Maniglia ${accessoryCounter}`;
+    const clusterEntries = clusterIndexes.map((index) => entries[index]);
+    const seedName = buildAccessoryDisplayName(clusterEntries, accessoryCounter);
     const baseId = sanitizeComponentId(`accessorio_${seedName}`, components.length + 1);
     const currentCount = usedIds.get(baseId) || 0;
     usedIds.set(baseId, currentCount + 1);
@@ -1817,8 +1901,11 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
       index: components.length + 1,
       meshName: id,
       originalName: seedName,
-      displayName: buildFriendlyComponentName(seedName, components.length + 1),
+      displayName: seedName,
       materialGroup: "accessory",
+      category: "accessory",
+      componentType: "accessory",
+      tags: ["accessory"],
       supportsMaterial: true,
       supportsLED: false,
       supportsInsert: false,
@@ -1862,13 +1949,18 @@ function analyzeImportedModelComponents(root: THREE.Object3D, format?: string) {
       mesh.name = id;
     }
 
+    const inferredCategory = inferRuntimeCategory(entry.normalizedText);
+
     const component: BagaStudioRuntimeComponent = {
       id,
       index,
       meshName: mesh.name,
       originalName,
       displayName: buildFriendlyComponentName(originalName || id, index),
-      materialGroup: "default",
+      materialGroup: inferredCategory === "hardware" ? "hardware" : inferredCategory === "panel" ? "panel" : "default",
+      category: inferredCategory,
+      componentType: inferredCategory,
+      tags: [inferredCategory],
       supportsMaterial: true,
       supportsLED: true,
       supportsInsert: true,
@@ -3985,6 +4077,25 @@ mesh.renderOrder = 30;
     onClick={(e: any) => {
       e.stopPropagation();
 
+      const clickedObject = e.object as THREE.Object3D;
+      const clickedObjectText = String(
+        clickedObject.name || clickedObject.parent?.name || ""
+      )
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+
+      if (
+        clickedObject.userData?.bagastudioIgnoreRaycast ||
+        clickedObject.userData?.bagastudioTechnicalHelper ||
+        /(^|_)edge_definition($|_)/.test(clickedObjectText)
+      ) {
+        return;
+      }
+
       const clickedName =
         e.object.name ||
         e.object.parent?.name ||
@@ -4146,7 +4257,7 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
 
   const viewKey = viewId === "3d" ? "iso" : viewId;
   const directionByView: Record<string, THREE.Vector3> = {
-    iso: new THREE.Vector3(1, 0.48, 1),
+    iso: new THREE.Vector3(1, 0.55, 1),
     front: new THREE.Vector3(0, 0, 1),
     back: new THREE.Vector3(0, 0, -1),
     left: new THREE.Vector3(-1, 0, 0),
@@ -4155,22 +4266,45 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
   };
 
   const direction = (directionByView[viewKey] || directionByView.iso).clone().normalize();
-  const fov = THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov || 45);
+  const perspectiveCamera = camera as THREE.PerspectiveCamera;
+  const verticalFov = THREE.MathUtils.degToRad(perspectiveCamera.fov || 45);
+  const aspect = Number.isFinite(perspectiveCamera.aspect) && perspectiveCamera.aspect > 0
+    ? perspectiveCamera.aspect
+    : 1;
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
 
-  const viewSize =
-    viewKey === "top"
-      ? Math.max(size.x, size.z)
-      : viewKey === "left" || viewKey === "right"
-        ? Math.max(size.z, size.y)
-        : viewKey === "front" || viewKey === "back"
-          ? Math.max(size.x, size.y)
-          : Math.max(size.x, size.y, size.z);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const safeSize = Math.max(maxDim, 0.001);
+  const padding = 1.45;
 
-  const distance = Math.max(
-    viewSize / (2 * Math.tan(fov / 2)) * 0.85,
-    Math.max(size.x, size.y, size.z) * 0.85,
-    3
-  );
+  let widthForView = size.x;
+  let heightForView = size.y;
+
+  if (viewKey === "top") {
+    widthForView = size.x;
+    heightForView = size.z;
+  } else if (viewKey === "left" || viewKey === "right") {
+    widthForView = size.z;
+    heightForView = size.y;
+  } else if (viewKey === "iso") {
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(sphere.radius, safeSize * 0.5);
+    const minFov = Math.min(verticalFov, horizontalFov);
+    const distance = Math.max(radius / Math.sin(minFov / 2) * 1.18, safeSize * 1.35, 3);
+    const position = center.clone().add(direction.multiplyScalar(distance));
+
+    return {
+      position: position.toArray() as [number, number, number],
+      target: center.toArray() as [number, number, number],
+      up: [0, 1, 0] as [number, number, number],
+      near: Math.max(distance - safeSize * 4, 0.01),
+      far: Math.max(distance + safeSize * 6, 1000),
+    };
+  }
+
+  const distanceForHeight = heightForView / (2 * Math.tan(verticalFov / 2));
+  const distanceForWidth = widthForView / (2 * Math.tan(horizontalFov / 2));
+  const distance = Math.max(distanceForHeight, distanceForWidth, safeSize * 0.75, 3) * padding;
 
   const position = center.clone().add(direction.multiplyScalar(distance));
   const up = viewKey === "top" ? [0, 0, -1] : [0, 1, 0];
@@ -4179,6 +4313,8 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
     position: position.toArray() as [number, number, number],
     target: center.toArray() as [number, number, number],
     up: up as [number, number, number],
+    near: Math.max(distance - safeSize * 4, 0.01),
+    far: Math.max(distance + safeSize * 6, 1000),
   };
 }
 
@@ -4201,7 +4337,14 @@ function applyBagastudioCameraData(camera: THREE.Camera, gl: THREE.WebGLRenderer
     cameraData.target[2]
   );
 
-  (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+  const perspectiveCamera = camera as THREE.PerspectiveCamera;
+  if (Number.isFinite(cameraData?.near)) {
+    perspectiveCamera.near = Math.max(Number(cameraData.near), 0.01);
+  }
+  if (Number.isFinite(cameraData?.far)) {
+    perspectiveCamera.far = Math.max(Number(cameraData.far), perspectiveCamera.near + 10);
+  }
+  perspectiveCamera.updateProjectionMatrix();
 
   const controls = (gl as any).__r3f?.root?.getState?.().controls;
   if (controls?.target) {
@@ -4290,6 +4433,14 @@ function ViewerRuntimeControls({
       applyBagastudioCameraData(camera, gl, cameraData);
     };
 
+    const scheduleAutoFitCamera = (viewId = activeViewId || "iso") => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          applyCameraView(viewId);
+        });
+      });
+    };
+
     const getTargetObjects = () => {
       const objects: THREE.Object3D[] = [];
 
@@ -4338,9 +4489,19 @@ function ViewerRuntimeControls({
       box.getSize(size);
 
       const maxSize = Math.max(size.x, size.y, size.z);
-
-// Focus molto più vicino e utilizzabile
-const distance = Math.max(maxSize * 1.0, 4);
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const perspectiveCamera = camera as THREE.PerspectiveCamera;
+      const fov = THREE.MathUtils.degToRad(perspectiveCamera.fov || 45);
+      const aspect = Number.isFinite(perspectiveCamera.aspect) && perspectiveCamera.aspect > 0
+        ? perspectiveCamera.aspect
+        : 1;
+      const horizontalFov = 2 * Math.atan(Math.tan(fov / 2) * aspect);
+      const minFov = Math.min(fov, horizontalFov);
+      const distance = Math.max(
+        Math.max(sphere.radius, maxSize * 0.5) / Math.sin(minFov / 2) * 1.15,
+        maxSize * 1.25,
+        4
+      );
 
       camera.position.set(
         center.x + distance,
@@ -4348,7 +4509,9 @@ const distance = Math.max(maxSize * 1.0, 4);
         center.z + distance
       );
       camera.lookAt(center);
-      camera.updateProjectionMatrix();
+      perspectiveCamera.near = Math.max(distance - Math.max(maxSize, 0.001) * 4, 0.01);
+      perspectiveCamera.far = Math.max(distance + Math.max(maxSize, 0.001) * 6, 1000);
+      perspectiveCamera.updateProjectionMatrix();
 
       const controls = (gl as any).__r3f?.root?.getState?.().controls;
       if (controls?.target) {
@@ -4408,6 +4571,7 @@ const distance = Math.max(maxSize * 1.0, 4);
     };
 
     const handleReset = () => applyCameraView("iso");
+    const handleAutoFit = () => scheduleAutoFitCamera(activeViewId || "iso");
     const handleFocus = () => focusObjects();
     const handleScreenshot = () => downloadScreenshot();
     const handleThumbnail = () => generateProductThumbnail(false);
@@ -4417,6 +4581,8 @@ const distance = Math.max(maxSize * 1.0, 4);
     (window as any).bagastudioDownloadProductThumbnail = handleThumbnailDownload;
 
     window.addEventListener("bagastudio:reset-camera", handleReset);
+    window.addEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
+    window.addEventListener("bagastudio:viewer-components-ready", handleAutoFit);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
     window.addEventListener("bagastudio:screenshot", handleScreenshot);
     window.addEventListener("bagastudio:generate-thumbnail", handleThumbnail);
@@ -4424,6 +4590,8 @@ const distance = Math.max(maxSize * 1.0, 4);
 
     return () => {
       window.removeEventListener("bagastudio:reset-camera", handleReset);
+      window.removeEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
+      window.removeEventListener("bagastudio:viewer-components-ready", handleAutoFit);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:screenshot", handleScreenshot);
       window.removeEventListener("bagastudio:generate-thumbnail", handleThumbnail);
