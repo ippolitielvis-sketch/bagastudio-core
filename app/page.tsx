@@ -1316,17 +1316,13 @@ const bomRows = useMemo(() => {
   };
 
   const formatMmValue = (value: number) => {
-    if (!Number.isFinite(value)) return "0";
-    const normalized = Math.abs(value) < 0.000001 ? 0 : value;
-    return normalized
-      .toFixed(3)
-      .replace(/\.0+$/, "")
-      .replace(/(\.\d*?)0+$/, "$1");
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
   };
 
   const getBounds = (part: any) => part?.bounds || part?.runtimeMetadata?.bounds || null;
 
-  const getDimensionLabel = (part: any, category?: string) => {
+  const getDimensionLabel = (part: any) => {
     const bounds = getBounds(part);
     if (!bounds) return "-";
 
@@ -1335,13 +1331,6 @@ const bomRows = useMemo(() => {
     const heightMm = Number(bounds.height || 0) * 10;
 
     if (!widthMm && !depthMm && !heightMm) return "-";
-
-    const dimensionsMm = [widthMm, depthMm, heightMm].filter((value) => Number.isFinite(value) && value > 0);
-
-    if (category === "panel" && dimensionsMm.length === 3) {
-      const productionOrder = [...dimensionsMm].sort((a, b) => b - a);
-      return `${productionOrder.map(formatMmValue).join(" × ")} mm`;
-    }
 
     return `${formatMmValue(widthMm)} × ${formatMmValue(depthMm)} × ${formatMmValue(heightMm)} mm`;
   };
@@ -1352,7 +1341,7 @@ const bomRows = useMemo(() => {
     const label = getBomLabel(part);
     const category = normalizeBomCategory(part);
     const groupTitle = getBomGroupTitle(category);
-    const dimensionsLabel = getDimensionLabel(part, category);
+    const dimensionsLabel = getDimensionLabel(part);
     const key = `${category}|${label.toLowerCase()}|${dimensionsLabel}`;
     const id = String(part?.partId || part?.id || part?.meshName || part?.name || "").trim();
 
@@ -1793,28 +1782,6 @@ const availableAccessories = useMemo(() => {
     </div>
   </section>
 
-  <section className="mb-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-    <p className="mb-3 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Workflow principale</p>
-    <div className="grid grid-cols-2 gap-2">
-      <button
-        type="button"
-        onClick={() => {
-          setActivePanel("config");
-          window.setTimeout(() => {
-            document.getElementById("bagastudio-import-workflow")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 80);
-        }}
-        className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-500/20"
-      >
-        CARICA
-      </button>
-      <button type="button" onClick={() => setActivePanel("materials")} className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-500/20">CONFIGURA</button>
-      <button type="button" onClick={() => setActivePanel("save")} className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/20">SALVA</button>
-      <button type="button" onClick={() => setActivePanel("produce")} className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-black text-amber-100 hover:bg-amber-500/20">PRODUCI</button>
-      <button type="button" onClick={() => window.dispatchEvent(new Event("bagastudio:focus-selection"))} className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-neutral-100 hover:bg-white/[0.08]">Focus</button>
-      <button type="button" onClick={() => setActivePanel("help")} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-100 hover:bg-violet-500/20">AIUTO</button>
-    </div>
-  </section>
 {activePanel === "config" && (
   <>
     <ViewerImportWorkflowPanel
@@ -1850,115 +1817,6 @@ const availableAccessories = useMemo(() => {
       }}
       onBackupImport={handleBackupImport}
     />
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
-      <p className="text-sm text-neutral-300">
-        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
-      </p>
-      {selectedPart && (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">partId</span>
-            <span className="break-all font-bold text-white">{selectedPart.partId || selectedPart.id || "-"}</span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Categoria</span>
-            <span className="font-bold text-white">{selectedPart.category || selectedPart.runtimeMetadata?.detectedCategory || "-"}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-black/20 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-white">Trasparenza / X-Ray</p>
-            <p className="text-xs text-neutral-400">Controllo visivo interno del modello</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setXRayEnabled((value) => !value)}
-            className={`rounded-xl border px-3 py-2 text-sm font-bold ${
-              xRayEnabled
-                ? "border-cyan-300 bg-cyan-500 text-white"
-                : "border-neutral-700 bg-neutral-900 text-neutral-200"
-            }`}
-          >
-            {xRayEnabled ? "ON" : "OFF"}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min={0.08}
-            max={0.9}
-            step={0.01}
-            value={xRayOpacity}
-            onChange={(event) => setXRayOpacity(Number(event.target.value))}
-            className="w-full accent-cyan-400"
-          />
-          <span className="w-12 text-right text-xs font-bold text-cyan-200">
-            {Math.round(xRayOpacity * 100)}%
-          </span>
-        </div>
-      </div>
-    </section>
-
-    {runtimeProduct && (
-      <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-        <h2 className="mb-4 text-xl font-semibold">{t.dimensions}</h2>
-
-        {(["width", "height", "depth"] as const).map((key) => {
-          const dim = runtimeProduct.dimensions?.[key];
-          if (!dim) return null;
-
-          return (
-            <div key={key} className="mb-4">
-              <label className="block text-sm capitalize">{translateDimensionName(key, t)}</label>
-              <input
-                type="range"
-                min={dim.min}
-                max={dim.max}
-                step={dim.step || 1}
-                value={Number(dimensions?.[key] ?? dim.default)}
-                onChange={(event) =>
-                  setDimension(key, Number(event.target.value))
-                }
-                className="w-full"
-              />
-              <p className="text-sm font-semibold">
-                {Number(dimensions?.[key] ?? dim.default)} cm
-              </p>
-              <p className="text-xs text-neutral-500">{t.max}: {dim.max} cm</p>
-            </div>
-          );
-        })}
-      </section>
-    )}
-
-    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
-      <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
-      <p className="mb-3 text-sm text-neutral-400">
-        {hasMultiSelection ? `${effectiveSelectedPartIds.length} pezzi selezionati` : selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
-      </p>
-
-      {selectedStoreKey && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={visibility?.[selectedStoreKey] !== false}
-            onChange={(event) => {
-              setVisibility(selectedStoreKey, event.target.checked);
-              if (selectedPart?.meshName) {
-                setVisibility(selectedPart.meshName, event.target.checked);
-              }
-            }}
-          />
-          {t.showComponent}
-        </label>
-      )}
-    </section>
   </>
 )}
 
@@ -2414,6 +2272,119 @@ const availableAccessories = useMemo(() => {
         </div>
       )}
     </section>
+
+    {/* CONFIGURA dettagli pezzo: sotto la scelta materiale per mantenere i materiali subito visibili */}
+
+
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <h2 className="mb-4 text-lg font-semibold text-white">{t.selectedPart}</h2>
+      <p className="text-sm text-neutral-300">
+        {selectedPart ? translatePartName(selectedPart, t) : selectedPartId || t.noSelectedPart}
+      </p>
+      {selectedPart && (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">partId</span>
+            <span className="break-all font-bold text-white">{selectedPart.partId || selectedPart.id || "-"}</span>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
+            <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Categoria</span>
+            <span className="font-bold text-white">{selectedPart.category || selectedPart.runtimeMetadata?.detectedCategory || "-"}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-black/20 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-white">Trasparenza / X-Ray</p>
+            <p className="text-xs text-neutral-400">Controllo visivo interno del modello</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setXRayEnabled((value) => !value)}
+            className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+              xRayEnabled
+                ? "border-cyan-300 bg-cyan-500 text-white"
+                : "border-neutral-700 bg-neutral-900 text-neutral-200"
+            }`}
+          >
+            {xRayEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0.08}
+            max={0.9}
+            step={0.01}
+            value={xRayOpacity}
+            onChange={(event) => setXRayOpacity(Number(event.target.value))}
+            className="w-full accent-cyan-400"
+          />
+          <span className="w-12 text-right text-xs font-bold text-cyan-200">
+            {Math.round(xRayOpacity * 100)}%
+          </span>
+        </div>
+      </div>
+    </section>
+
+    {runtimeProduct && (
+      <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+        <h2 className="mb-4 text-xl font-semibold">{t.dimensions}</h2>
+
+        {(["width", "height", "depth"] as const).map((key) => {
+          const dim = runtimeProduct.dimensions?.[key];
+          if (!dim) return null;
+
+          return (
+            <div key={key} className="mb-4">
+              <label className="block text-sm capitalize">{translateDimensionName(key, t)}</label>
+              <input
+                type="range"
+                min={dim.min}
+                max={dim.max}
+                step={dim.step || 1}
+                value={Number(dimensions?.[key] ?? dim.default)}
+                onChange={(event) =>
+                  setDimension(key, Number(event.target.value))
+                }
+                className="w-full"
+              />
+              <p className="text-sm font-semibold">
+                {Number(dimensions?.[key] ?? dim.default)} cm
+              </p>
+              <p className="text-xs text-neutral-500">{t.max}: {dim.max} cm</p>
+            </div>
+          );
+        })}
+      </section>
+    )}
+
+    <section className="rounded-[26px] border border-sky-400/15 bg-white/[0.045] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_50px_rgba(0,0,0,0.22)]">
+      <h2 className="mb-3 text-xl font-semibold">{t.visibility}</h2>
+      <p className="mb-3 text-sm text-neutral-400">
+        {hasMultiSelection ? `${effectiveSelectedPartIds.length} pezzi selezionati` : selectedPart ? translatePartName(selectedPart, t) : selectedPartId || "-"}
+      </p>
+
+      {selectedStoreKey && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={visibility?.[selectedStoreKey] !== false}
+            onChange={(event) => {
+              setVisibility(selectedStoreKey, event.target.checked);
+              if (selectedPart?.meshName) {
+                setVisibility(selectedPart.meshName, event.target.checked);
+              }
+            }}
+          />
+          {t.showComponent}
+        </label>
+      )}
+    </section>
+
   </>
 )}
 

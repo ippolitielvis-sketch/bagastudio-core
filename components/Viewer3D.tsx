@@ -4570,9 +4570,47 @@ function ViewerRuntimeControls({
       });
     };
 
+    const orbitCameraBy = (yawRadians = 0, pitchRadians = 0) => {
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
+      const cleanBox = getBagastudioCleanSceneBox(scene);
+      const target = controls?.target?.clone?.() || (() => {
+        if (!cleanBox) return new THREE.Vector3(0, 0, 0);
+        const center = new THREE.Vector3();
+        cleanBox.getCenter(center);
+        return center;
+      })();
+
+      const offset = camera.position.clone().sub(target);
+      if (offset.lengthSq() < 0.0001) return;
+
+      if (yawRadians) {
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawRadians);
+      }
+
+      if (pitchRadians) {
+        const direction = camera.position.clone().sub(target).normalize();
+        const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction).normalize();
+        if (right.lengthSq() > 0.0001) {
+          offset.applyAxisAngle(right, pitchRadians);
+        }
+      }
+
+      camera.position.copy(target.clone().add(offset));
+      camera.lookAt(target);
+
+      if (controls?.target) {
+        controls.target.copy(target);
+        controls.update?.();
+      }
+    };
+
     const handleReset = () => applyCameraView("iso");
     const handleAutoFit = () => scheduleAutoFitCamera(activeViewId || "iso");
     const handleFocus = () => focusObjects();
+    const handleOrbitLeft = () => orbitCameraBy(-Math.PI / 14, 0);
+    const handleOrbitRight = () => orbitCameraBy(Math.PI / 14, 0);
+    const handleOrbitUp = () => orbitCameraBy(0, -Math.PI / 18);
+    const handleOrbitDown = () => orbitCameraBy(0, Math.PI / 18);
     const handleScreenshot = () => downloadScreenshot();
     const handleThumbnail = () => generateProductThumbnail(false);
     const handleThumbnailDownload = () => generateProductThumbnail(true);
@@ -4581,18 +4619,28 @@ function ViewerRuntimeControls({
     (window as any).bagastudioDownloadProductThumbnail = handleThumbnailDownload;
 
     window.addEventListener("bagastudio:reset-camera", handleReset);
+    window.addEventListener("bagastudio:autofit-camera", handleAutoFit);
     window.addEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
     window.addEventListener("bagastudio:viewer-components-ready", handleAutoFit);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
+    window.addEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
+    window.addEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
+    window.addEventListener("bagastudio:camera-orbit-up", handleOrbitUp);
+    window.addEventListener("bagastudio:camera-orbit-down", handleOrbitDown);
     window.addEventListener("bagastudio:screenshot", handleScreenshot);
     window.addEventListener("bagastudio:generate-thumbnail", handleThumbnail);
     window.addEventListener("bagastudio:download-thumbnail", handleThumbnailDownload);
 
     return () => {
       window.removeEventListener("bagastudio:reset-camera", handleReset);
+      window.removeEventListener("bagastudio:autofit-camera", handleAutoFit);
       window.removeEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
       window.removeEventListener("bagastudio:viewer-components-ready", handleAutoFit);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
+      window.removeEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
+      window.removeEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
+      window.removeEventListener("bagastudio:camera-orbit-up", handleOrbitUp);
+      window.removeEventListener("bagastudio:camera-orbit-down", handleOrbitDown);
       window.removeEventListener("bagastudio:screenshot", handleScreenshot);
       window.removeEventListener("bagastudio:generate-thumbnail", handleThumbnail);
       window.removeEventListener("bagastudio:download-thumbnail", handleThumbnailDownload);
@@ -5083,6 +5131,11 @@ productMaterials?.length
   const effectiveProductModel = runtimeImportedModel?.url || productModel;
   const effectiveProductModelFormat = runtimeImportedModel?.format || productModelFormat;
 
+  const emitViewerCommand = (eventName: string) => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent(eventName));
+  };
+
   return (
     <div className="relative h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
       {runtimeImportedModel && (
@@ -5115,6 +5168,65 @@ productMaterials?.length
       </div>
 
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
+
+      <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:focus-selection")}
+          className="rounded-xl border border-cyan-300/25 bg-cyan-500/15 px-3 py-2 uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-400/25"
+          title="Focus selezione"
+        >
+          Focus
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:camera-orbit-left")}
+          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 text-base transition hover:bg-white/20"
+          title="Ruota camera a sinistra"
+        >
+          ↺
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:camera-orbit-right")}
+          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 text-base transition hover:bg-white/20"
+          title="Ruota camera a destra"
+        >
+          ↻
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:camera-orbit-up")}
+          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 text-base transition hover:bg-white/20"
+          title="Inclina camera verso l'alto"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:camera-orbit-down")}
+          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 text-base transition hover:bg-white/20"
+          title="Inclina camera verso il basso"
+        >
+          ↓
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:autofit-camera")}
+          className="rounded-xl border border-emerald-300/20 bg-emerald-500/10 px-3 py-2 uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-400/20"
+          title="Adatta modello alla vista"
+        >
+          Fit
+        </button>
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:reset-camera")}
+          className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 uppercase tracking-wide transition hover:bg-white/20"
+          title="Reset vista 3D"
+        >
+          Reset
+        </button>
+      </div>
 
       <Canvas
         shadows
