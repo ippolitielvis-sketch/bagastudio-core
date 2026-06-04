@@ -27,6 +27,7 @@ import {
   createMirrorLedAccessory,
 } from "@/core/accessories/accessoryRenderer";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
+import { RoomEnvironment, type RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -74,15 +75,34 @@ function getBagastudioTextureRepeat(mesh: THREE.Mesh, materialData: any, rotateW
   return { repeatX: 1, repeatY: 1, rotate: false };
 }
 
-type RoomEnvironmentSettings = {
-  roomWidthCm: number;
-  roomDepthCm: number;
-  roomHeightCm: number;
-  floorMaterial: string;
-  wallMaterial: string;
-  showBackWall: boolean;
-  showLeftWall: boolean;
-  showRightWall: boolean;
+type ImportCalibrationSettings = {
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  rotationXDeg: number;
+  rotationYDeg: number;
+  rotationZDeg: number;
+  scale: number;
+};
+
+const DEFAULT_IMPORT_CALIBRATION: ImportCalibrationSettings = {
+  offsetX: 0,
+  offsetY: 0,
+  offsetZ: 0,
+  rotationXDeg: 0,
+  rotationYDeg: 0,
+  rotationZDeg: 0,
+  scale: 1,
+};
+
+const IMPORT_CALIBRATION_LABELS: Record<keyof ImportCalibrationSettings, string> = {
+  offsetX: "Offset X",
+  offsetY: "Offset Y",
+  offsetZ: "Offset Z",
+  rotationXDeg: "Rot. X",
+  rotationYDeg: "Rot. Y",
+  rotationZDeg: "Rot. Z",
+  scale: "Scala",
 };
 
 type Viewer3DProps = {
@@ -103,6 +123,7 @@ type Viewer3DProps = {
   visibility?: Record<string, boolean>;
   productModel: string;
   productModelFormat?: string;
+  importedModelName?: string;
   activeViewId?: string | null;
  ledKelvin?: Record<string, number>;
  ledIntensity?: Record<string, number>;
@@ -111,6 +132,7 @@ type Viewer3DProps = {
  xRayOpacity?: number;
  modelEdgesEnabled?: boolean;
  environment?: RoomEnvironmentSettings;
+ importCalibration?: ImportCalibrationSettings;
   views?: {
   id: string;
   name: string;
@@ -144,76 +166,6 @@ led?: boolean;
 }[];
 };
 
-
-function getRoomEnvironmentColor(materialId: string, fallback = "#d8d3c7") {
-  const key = String(materialId || "").toLowerCase();
-
-  if (key.includes("cemento-scuro")) return "#565656";
-  if (key.includes("cemento")) return "#b8b8b2";
-  if (key.includes("legno") || key.includes("7040")) return "#9a7650";
-  if (key.includes("tortora")) return "#9b8f83";
-  if (key.includes("nero")) return "#171717";
-  if (key.includes("bianco")) return "#e8e1d4";
-
-  return fallback;
-}
-
-function RoomEnvironment({ environment }: { environment?: RoomEnvironmentSettings }) {
-  if (!environment) return null;
-
-  const roomWidth = Math.max(1, Number(environment.roomWidthCm || 400) / 10);
-  const roomDepth = Math.max(1, Number(environment.roomDepthCm || 350) / 10);
-  const roomHeight = Math.max(1, Number(environment.roomHeightCm || 270) / 10);
-  const floorColor = getRoomEnvironmentColor(environment.floorMaterial, "#b8b8b2");
-  const wallColor = getRoomEnvironmentColor(environment.wallMaterial, "#e8e1d4");
-  const wallThickness = 0.12;
-
-  return (
-    <group name="bagastudio-room-environment-v1">
-      <mesh
-        name="bagastudio-room-floor"
-        receiveShadow
-        position={[0, -0.06, 0]}
-      >
-        <boxGeometry args={[roomWidth, wallThickness, roomDepth]} />
-        <meshStandardMaterial color={floorColor} roughness={0.82} metalness={0.02} />
-      </mesh>
-
-      {environment.showBackWall && (
-        <mesh
-          name="bagastudio-room-back-wall"
-          receiveShadow
-          position={[0, roomHeight / 2, -roomDepth / 2]}
-        >
-          <boxGeometry args={[roomWidth, roomHeight, wallThickness]} />
-          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
-        </mesh>
-      )}
-
-      {environment.showLeftWall && (
-        <mesh
-          name="bagastudio-room-left-wall"
-          receiveShadow
-          position={[-roomWidth / 2, roomHeight / 2, 0]}
-        >
-          <boxGeometry args={[wallThickness, roomHeight, roomDepth]} />
-          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
-        </mesh>
-      )}
-
-      {environment.showRightWall && (
-        <mesh
-          name="bagastudio-room-right-wall"
-          receiveShadow
-          position={[roomWidth / 2, roomHeight / 2, 0]}
-        >
-          <boxGeometry args={[wallThickness, roomHeight, roomDepth]} />
-          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
-        </mesh>
-      )}
-    </group>
-  );
-}
 
 function sniffDataUrlModelFormat(url: string): string {
   if (!url.startsWith("data:")) return "";
@@ -445,24 +397,173 @@ function buildBagastudioColladaRuntimeRoot(colladaScene: THREE.Object3D) {
   return daeRoot;
 }
 
-function getBagastudioImportedDisplayScale(root: THREE.Object3D | null, format?: string | null) {
+function getBagastudioKnownImportWidthCm(name?: string | null) {
+  const key = String(name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (key.includes("postazione_vieira") || key.includes("vieira")) return 418;
+
+  const explicitCm = key.match(/(?:^|[_\-\s])(\d{2,5})(?:cm|_cm)(?:$|[_\-\s])/);
+  if (explicitCm) {
+    const parsed = Number(explicitCm[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const explicitMm = key.match(/(?:^|[_\-\s])(\d{3,6})(?:mm|_mm)(?:$|[_\-\s])/);
+  if (explicitMm) {
+    const parsed = Number(explicitMm[1]) / 10;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return null;
+}
+
+function getBagastudioImportedScaleBox(root: THREE.Object3D | null) {
+  if (!root) return null;
+
+  const boxes: THREE.Box3[] = [];
+  const fullBox = new THREE.Box3().setFromObject(root);
+
+  root.updateMatrixWorld(true);
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.visible) return;
+    if (mesh.userData?.bagastudioEdgeOverlay) return;
+    if (mesh.userData?.bagastudioTechnicalHelper) return;
+    if (mesh.userData?.bagastudioIgnoreRaycast) return;
+
+    const runtimeKind = String(mesh.userData?.bagastudioRuntimeKind || "").toLowerCase();
+    const category = String(mesh.userData?.bagastudioCategory || "").toLowerCase();
+    const meshName = String(mesh.name || "").toLowerCase();
+
+    // Import Scale V17:
+    // Maniglie/ferramenta/pezzi staccati possono allargare la bbox totale del DAE.
+    // Per scalare la misura reale del mobile usiamo il cluster principale di pannelli,
+    // non l'ingombro totale con accessori o moduli fuori gruppo.
+    if (
+      runtimeKind === "hardware" ||
+      category === "accessory" ||
+      meshName.includes("maniglia") ||
+      meshName.includes("accessorio") ||
+      meshName.includes("handle")
+    ) {
+      return;
+    }
+
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (!box.isEmpty()) boxes.push(box);
+  });
+
+  if (!boxes.length) return fullBox.isEmpty() ? null : fullBox;
+
+  const fullSize = fullBox.getSize(new THREE.Vector3());
+  const fullMax = Math.max(fullSize.x, fullSize.y, fullSize.z, 1);
+  const clusterMargin = Math.max(fullMax * 0.04, 5);
+  const ordered = boxes
+    .map((box, index) => ({ box, index, volume: getBagastudioBoxVolume(box) }))
+    .sort((a, b) => b.volume - a.volume);
+
+  const seed = ordered[0]?.box;
+  if (!seed) return fullBox.isEmpty() ? null : fullBox;
+
+  const clusterBox = seed.clone();
+  const used = new Set<number>([ordered[0].index]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const expandedCluster = clusterBox.clone().expandByScalar(clusterMargin);
+
+    ordered.forEach((item) => {
+      if (used.has(item.index)) return;
+      if (!expandedCluster.intersectsBox(item.box)) return;
+
+      clusterBox.union(item.box);
+      used.add(item.index);
+      changed = true;
+    });
+  }
+
+  return clusterBox.isEmpty() ? (fullBox.isEmpty() ? null : fullBox) : clusterBox;
+}
+
+function getBagastudioImportedDisplayScale(
+  root: THREE.Object3D | null,
+  format?: string | null,
+  dimensions?: { width?: number; height?: number; depth?: number },
+  importedModelName?: string | null
+) {
   if (!root) return 1;
 
-  const box = new THREE.Box3().setFromObject(root);
+  const box = getBagastudioImportedScaleBox(root) || new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
-  const maxDimension = Math.max(size.x, size.y, size.z);
+
+  const rawWidth = Math.abs(Number(size.x || 0));
+  const rawHeight = Math.abs(Number(size.y || 0));
+  const rawDepth = Math.abs(Number(size.z || 0));
+  const maxDimension = Math.max(rawWidth, rawHeight, rawDepth);
 
   if (!Number.isFinite(maxDimension) || maxDimension <= 0) return 1;
 
-  // BagaStudio Viewer UX V6.5:
-  // GLB generati da DAE/Spazio3D arrivano spesso già normalizzati oppure in unità non coerenti.
-  // Prima i GLB venivano forzati a 0.01 e il prodotto risultava praticamente invisibile.
-  const targetDimension = 8;
-  const scale = targetDimension / maxDimension;
+  const normalizedFormat = String(format || "").toLowerCase();
+  const isImported = isImportedModelFormat(normalizedFormat);
 
-  return THREE.MathUtils.clamp(scale, 0.01, 100);
+  const productWidthCm = Number(dimensions?.width || 0);
+  const productHeightCm = Number(dimensions?.height || 0);
+  const productDepthCm = Number(dimensions?.depth || 0);
+  const productMaxCm = Math.max(productWidthCm, productHeightCm, productDepthCm);
+
+  const isDefaultPlaceholderDimensions =
+    Math.abs(productWidthCm - 180) < 0.001 &&
+    Math.abs(productHeightCm - 60) < 0.001 &&
+    Math.abs(productDepthCm - 100) < 0.001;
+
+  // Scale Units V7:
+  // 1 unità Viewer = 1 metro, stanza = cm / 100.
+  // I valori 180x60x100 sono placeholder UI e NON devono scalare import DAE/STL reali.
+  // Per import diretti si normalizza prima l'unità nativa del file:
+  // 4180 => mm -> 4.18m, 418 => cm -> 4.18m, 41.8 => dm/CAD -> 4.18m, 4.18 => m.
+  const importedUnitScale = (() => {
+    if (!isImported) return 1;
+
+    // Import Scale V16:
+    // 1 unità Viewer = 1 metro.
+    // Non usare più il caso decimetri automatico: raw 90 veniva trasformato in 9 m
+    // e gli STL/DAE generici diventavano giganti.
+    // Regola conservativa:
+    // - valori molto grandi = millimetri;
+    // - valori medi tipo 90/180/420 = centimetri;
+    // - valori piccoli tipo 4.2/1.8 = metri.
+    if (maxDimension >= 1000) return 0.001;
+    if (maxDimension >= 20) return 0.01;
+    return 1;
+  })();
+
+  // Scale Real V11:
+  // Se il nome del file ci dà una larghezza reale nota, scala sull'asse X del modello,
+  // non sulla dimensione massima. La Vieira è 418 cm e deve quasi riempire una parete da 420 cm.
+  const knownWidthCm = getBagastudioKnownImportWidthCm(importedModelName);
+  if (isImported && knownWidthCm && rawWidth > 0) {
+    return THREE.MathUtils.clamp((knownWidthCm / 100) / rawWidth, 0.00001, 1000);
+  }
+
+  // Usa dimensioni prodotto solo quando sono esplicite e credibili.
+  // Il placeholder 180x60x100 non deve scalare import DAE/STL reali.
+  const hasReliableProductDimensions =
+    Number.isFinite(productMaxCm) &&
+    productMaxCm > 0 &&
+    !isDefaultPlaceholderDimensions &&
+    (!isImported || productMaxCm >= 250 || maxDimension < 100);
+
+  if (hasReliableProductDimensions) {
+    const targetMaxDimension = productMaxCm / 100;
+    return THREE.MathUtils.clamp(targetMaxDimension / maxDimension, 0.00001, 1000);
+  }
+
+  return importedUnitScale;
 }
-
 
 function getBagastudioImportedAxisCorrection(root: THREE.Object3D | null, format?: string | null): [number, number, number] {
   if (!root || !isImportedModelFormat(format ?? undefined)) return [0, 0, 0];
@@ -3133,6 +3234,9 @@ function setBagastudioModelEdgeDefinitionVisible(root: THREE.Object3D | null, vi
 }
 
 function ProductModel({
+  width,
+  height,
+  depth,
   materials = {},
   productMaterials = [],
   accessories = {},
@@ -3144,6 +3248,7 @@ function ProductModel({
   ledIntensity = {},
   productModel,
   productModelFormat,
+  importedModelName,
   activeViewId,
   views = [],
   productParts = [],
@@ -3152,6 +3257,7 @@ function ProductModel({
   xRayOpacity = 0.35,
   modelEdgesEnabled = true,
   environment,
+  importCalibration = DEFAULT_IMPORT_CALIBRATION,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -4016,14 +4122,33 @@ return clonedScene;
 ]);
 
 const importedModelDisplayScale = useMemo(
-  () => getBagastudioImportedDisplayScale(scene, runtimeModelFormat),
-  [scene, runtimeModelFormat]
+  () => getBagastudioImportedDisplayScale(scene, runtimeModelFormat, { width, height, depth }, importedModelName),
+  [scene, runtimeModelFormat, width, height, depth, importedModelName]
 );
 
 const importedModelAxisCorrection = useMemo(
   () => getBagastudioImportedAxisCorrection(scene, runtimeModelFormat),
   [scene, runtimeModelFormat]
 );
+
+const importedModelGroundOffsetY = useMemo(() => {
+  if (!scene) return 0;
+
+  const probe = scene.clone(true);
+  probe.rotation.set(
+    importedModelAxisCorrection[0] || 0,
+    importedModelAxisCorrection[1] || 0,
+    importedModelAxisCorrection[2] || 0
+  );
+  probe.scale.setScalar(importedModelDisplayScale || 1);
+  probe.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(probe);
+  if (box.isEmpty()) return 0;
+
+  const offsetY = -box.min.y;
+  return Number.isFinite(offsetY) ? offsetY : 0;
+}, [scene, importedModelAxisCorrection, importedModelDisplayScale]);
 
 const importedModelDiagnostics = useMemo(() => {
   if (!scene) return null;
@@ -4202,12 +4327,128 @@ mesh.renderOrder = 30;
     console.log("[BAGASTUDIO IMPORT OFFSET DIAGNOSTICS V1]", importedModelOffsetDiagnostics);
   }, [importedModelOffsetDiagnostics]);
 
+  const importedModelScaleDiagnostics = useMemo(() => {
+    if (!scene || !importedModelOffsetDiagnostics) return null;
+
+    const rawWidth = Number(importedModelOffsetDiagnostics.rawWidth || 0);
+    const rawHeight = Number(importedModelOffsetDiagnostics.rawHeight || 0);
+    const rawDepth = Number(importedModelOffsetDiagnostics.rawDepth || 0);
+    const viewerScale = Number(importedModelDisplayScale || 1);
+    const calibrationScale = Math.max(0.01, Number(importCalibration.scale || 1));
+    const totalVisualScale = viewerScale * calibrationScale;
+
+    // BagaStudio internal room unit: room cm / 100, quindi 1 unità viewer = 1000 mm.
+    const viewerUnitToMm = 1000;
+    const rawMax = Math.max(rawWidth, rawHeight, rawDepth);
+    const candidateScales = {
+      meters: 1,
+      decimeters: 0.1,
+      centimeters: 0.01,
+      millimeters: 0.001,
+    };
+
+    return {
+      format: runtimeModelFormat,
+      raw: {
+        width: rawWidth,
+        height: rawHeight,
+        depth: rawDepth,
+        max: rawMax,
+      },
+      productPropsCm: {
+        width,
+        height,
+        depth,
+      },
+      displayScale: viewerScale,
+      calibrationScale,
+      totalVisualScale,
+      finalViewerUnits: {
+        width: rawWidth * totalVisualScale,
+        height: rawHeight * totalVisualScale,
+        depth: rawDepth * totalVisualScale,
+      },
+      finalEstimatedCm: {
+        width: rawWidth * totalVisualScale * 100,
+        height: rawHeight * totalVisualScale * 100,
+        depth: rawDepth * totalVisualScale * 100,
+      },
+      finalEstimatedMm: {
+        width: rawWidth * totalVisualScale * viewerUnitToMm,
+        height: rawHeight * totalVisualScale * viewerUnitToMm,
+        depth: rawDepth * totalVisualScale * viewerUnitToMm,
+      },
+      candidatesCm: {
+        meters: {
+          width: rawWidth * candidateScales.meters * 100,
+          height: rawHeight * candidateScales.meters * 100,
+          depth: rawDepth * candidateScales.meters * 100,
+        },
+        decimeters: {
+          width: rawWidth * candidateScales.decimeters * 100,
+          height: rawHeight * candidateScales.decimeters * 100,
+          depth: rawDepth * candidateScales.decimeters * 100,
+        },
+        centimeters: {
+          width: rawWidth * candidateScales.centimeters * 100,
+          height: rawHeight * candidateScales.centimeters * 100,
+          depth: rawDepth * candidateScales.centimeters * 100,
+        },
+        millimeters: {
+          width: rawWidth * candidateScales.millimeters * 100,
+          height: rawHeight * candidateScales.millimeters * 100,
+          depth: rawDepth * candidateScales.millimeters * 100,
+        },
+      },
+      note:
+        "Diagnostica scala V16: confrontare candidatesCm/finalEstimatedCm con le misure reali note prima di cambiare moltiplicatori.",
+    };
+  }, [
+    scene,
+    runtimeModelFormat,
+    importedModelDisplayScale,
+    importCalibration.scale,
+    importedModelOffsetDiagnostics,
+    width,
+    height,
+    depth,
+  ]);
+
+  useEffect(() => {
+    if (!importedModelScaleDiagnostics) return;
+
+    console.log("[BAGASTUDIO SCALE DIAGNOSTICS V16]", importedModelScaleDiagnostics);
+    if (typeof window !== "undefined") {
+      (window as any).__bagastudioScaleDiagnosticsV8 = importedModelScaleDiagnostics;
+      window.dispatchEvent(
+        new CustomEvent("bagastudio:scale-diagnostics-v8", {
+          detail: importedModelScaleDiagnostics,
+        })
+      );
+    }
+  }, [importedModelScaleDiagnostics]);
+
   if (!scene) return null;
 
   return (
+    <group
+      name="bagastudio-import-calibration-v1"
+      position={[
+        Number(importCalibration.offsetX || 0),
+        Number(importCalibration.offsetY || 0),
+        Number(importCalibration.offsetZ || 0),
+      ]}
+      rotation={[
+        THREE.MathUtils.degToRad(Number(importCalibration.rotationXDeg || 0)),
+        THREE.MathUtils.degToRad(Number(importCalibration.rotationYDeg || 0)),
+        THREE.MathUtils.degToRad(Number(importCalibration.rotationZDeg || 0)),
+      ]}
+      scale={Math.max(0.01, Number(importCalibration.scale || 1))}
+    >
     <Center disableY>
 <group
   rotation={importedModelAxisCorrection}
+  position={[0, importedModelGroundOffsetY, 0]}
   onPointerMissed={() => {
     restoreHighlightedMesh();
 
@@ -4307,6 +4548,7 @@ const realPartKey =
   />
 </group>
   </Center>
+    </group>
 );
 }
 
@@ -4962,9 +5204,55 @@ productMaterials?.length
     format: string;
     name?: string;
     size?: number;
+    dimensions?: { width?: number; height?: number; depth?: number } | null;
     importedAt?: string;
   } | null>(null);
-  const runtimeImportedModelRef = useRef<{ url: string; format: string; name?: string } | null>(null);
+  const runtimeImportedModelRef = useRef<{
+    url: string;
+    format: string;
+    name?: string;
+    dimensions?: { width?: number; height?: number; depth?: number } | null;
+  } | null>(null);
+  const [importCalibration, setImportCalibration] = useState<ImportCalibrationSettings>(DEFAULT_IMPORT_CALIBRATION);
+  const [scaleDiagnosticsV8, setScaleDiagnosticsV8] = useState<any | null>(null);
+
+  const updateImportCalibration = (key: keyof ImportCalibrationSettings, value: string) => {
+    const parsedValue = Number(value);
+
+    if (!Number.isFinite(parsedValue)) return;
+
+    setImportCalibration((current) => ({
+      ...current,
+      [key]: key === "scale" ? Math.max(0.01, parsedValue) : parsedValue,
+    }));
+  };
+
+  const resetImportCalibration = () => {
+    setImportCalibration(DEFAULT_IMPORT_CALIBRATION);
+  };
+
+  useEffect(() => {
+    (window as any).__bagastudioImportCalibrationV1 = importCalibration;
+    (window as any).bagastudioGetImportCalibration = () => importCalibration;
+    (window as any).bagastudioResetImportCalibration = resetImportCalibration;
+
+    return () => {
+      delete (window as any).bagastudioGetImportCalibration;
+      delete (window as any).bagastudioResetImportCalibration;
+    };
+  }, [importCalibration]);
+
+  useEffect(() => {
+    const handleScaleDiagnostics = (event: Event) => {
+      setScaleDiagnosticsV8((event as CustomEvent).detail || null);
+    };
+
+    window.addEventListener("bagastudio:scale-diagnostics-v8", handleScaleDiagnostics);
+
+    return () => {
+      window.removeEventListener("bagastudio:scale-diagnostics-v8", handleScaleDiagnostics);
+    };
+  }, []);
 
   useEffect(() => {
     const setSelectMode = () => setViewerMode("select");
@@ -4992,6 +5280,27 @@ productMaterials?.length
         ?.trim()
         .toLowerCase() || "";
 
+    const productPackageDimensionsFromPayload = (payload: any) => {
+      const sourceDimensions =
+        payload?.productPackage?.dimensions ||
+        payload?.dimensions ||
+        payload?.package?.dimensions ||
+        null;
+
+      if (!sourceDimensions) return null;
+
+      const nextDimensions = {
+        width: Number(sourceDimensions.width || 0),
+        height: Number(sourceDimensions.height || 0),
+        depth: Number(sourceDimensions.depth || 0),
+      };
+
+      if (!Number.isFinite(nextDimensions.width + nextDimensions.height + nextDimensions.depth)) return null;
+      if (Math.max(nextDimensions.width, nextDimensions.height, nextDimensions.depth) <= 0) return null;
+
+      return nextDimensions;
+    };
+
     const applyRuntimeModel = (payload: any) => {
       const url = String(payload?.objectUrl || payload?.url || payload?.productModel || "");
       const name = String(payload?.name || payload?.fileName || "");
@@ -5016,11 +5325,14 @@ productMaterials?.length
         URL.revokeObjectURL(previous.url);
       }
 
+      const payloadDimensions = payload?.dimensions || productPackageDimensionsFromPayload(payload);
+
       const nextModel = {
         url,
         format,
         name: name || `BagaStudio import ${format.toUpperCase()}`,
         size: Number(payload?.size || 0),
+        dimensions: payloadDimensions,
         importedAt: String(payload?.importedAt || new Date().toISOString()),
       };
 
@@ -5123,6 +5435,8 @@ productMaterials?.length
               productPackage?.assets?.sourceFileName ||
               productPackage?.name ||
               "Product Package Model",
+            dimensions: productPackage?.dimensions || null,
+            productPackage,
             importedAt: new Date().toISOString(),
           });
         }
@@ -5319,6 +5633,57 @@ productMaterials?.length
         </div>
       </div>
 
+      {runtimeImportedModel && (
+        <div className="absolute right-3 top-[16.75rem] z-20 w-[250px] rounded-xl border border-amber-500/25 bg-black/70 p-3 text-xs text-amber-50 shadow-lg backdrop-blur">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="font-black uppercase tracking-[0.18em] text-amber-300">Import Calibration V1</div>
+              <div className="text-[10px] text-slate-300">Correzione locale modello importato</div>
+            </div>
+            <button
+              type="button"
+              onClick={resetImportCalibration}
+              className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 transition hover:bg-amber-400/20"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.keys(IMPORT_CALIBRATION_LABELS) as Array<keyof ImportCalibrationSettings>).map((key) => (
+              <label key={key} className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-300">
+                {IMPORT_CALIBRATION_LABELS[key]}
+                <input
+                  type="number"
+                  value={importCalibration[key]}
+                  step={key === "scale" ? 0.01 : 0.1}
+                  onChange={(event) => updateImportCalibration(key, event.target.value)}
+                  className="rounded-lg border border-white/10 bg-slate-950/90 px-2 py-1 text-xs text-white outline-none transition focus:border-amber-300/70"
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-2 text-[10px] leading-snug text-slate-400">
+            Usa Offset Y per alzare/abbassare DAE con origine CAD sbagliata. I valori sono temporanei nel Viewer.
+          </div>
+
+          {scaleDiagnosticsV8 && (
+            <div className="mt-3 rounded-lg border border-amber-300/20 bg-slate-950/80 p-2 text-[10px] leading-snug text-amber-50">
+              <div className="mb-1 font-black uppercase tracking-[0.14em] text-amber-300">Scale Debug V16</div>
+              <div>Raw: {Number(scaleDiagnosticsV8.raw?.width || 0).toFixed(3)} × {Number(scaleDiagnosticsV8.raw?.height || 0).toFixed(3)} × {Number(scaleDiagnosticsV8.raw?.depth || 0).toFixed(3)}</div>
+              <div>Scala auto: {Number(scaleDiagnosticsV8.displayScale || 0).toFixed(5)}</div>
+              <div>Finale cm: {Number(scaleDiagnosticsV8.finalEstimatedCm?.width || 0).toFixed(1)} × {Number(scaleDiagnosticsV8.finalEstimatedCm?.height || 0).toFixed(1)} × {Number(scaleDiagnosticsV8.finalEstimatedCm?.depth || 0).toFixed(1)}</div>
+              <div className="mt-1 text-slate-300">Candidate cm:</div>
+              <div>m: {Number(scaleDiagnosticsV8.candidatesCm?.meters?.width || 0).toFixed(1)}</div>
+              <div>dm: {Number(scaleDiagnosticsV8.candidatesCm?.decimeters?.width || 0).toFixed(1)}</div>
+              <div>cm: {Number(scaleDiagnosticsV8.candidatesCm?.centimeters?.width || 0).toFixed(1)}</div>
+              <div>mm: {Number(scaleDiagnosticsV8.candidatesCm?.millimeters?.width || 0).toFixed(1)}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
 
       <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
@@ -5428,9 +5793,10 @@ productMaterials?.length
         <RoomEnvironment environment={environment} />
 
         <ProductModel
-  width={width}
-  height={height}
-  depth={depth}
+  width={runtimeImportedModel?.dimensions?.width ?? width}
+  height={runtimeImportedModel?.dimensions?.height ?? height}
+  depth={runtimeImportedModel?.dimensions?.depth ?? depth}
+  importedModelName={runtimeImportedModel?.name}
   materials={materials}
   productMaterials={productMaterials}
   accessories={accessories}
@@ -5445,6 +5811,7 @@ productMaterials?.length
   productParts={productParts}
   woodDirection={woodDirection}
   environment={environment}
+  importCalibration={importCalibration}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}

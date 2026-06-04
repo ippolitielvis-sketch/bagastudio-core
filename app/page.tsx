@@ -50,27 +50,63 @@ const ENVIRONMENT_MATERIAL_OPTIONS = {
   ],
 };
 
+function getEnvironmentMaterialLabel(kind: "floors" | "walls", materialId: string) {
+  return ENVIRONMENT_MATERIAL_OPTIONS[kind].find((item) => item.id === materialId)?.label || materialId;
+}
+
 function getEnvironmentViewerSurfaces(settings: EnvironmentSettings) {
   const floorStyles: Record<string, any> = {
     "wood-neutral": {
-      background: "linear-gradient(135deg, rgba(143,103,61,0.38), rgba(72,49,31,0.62)), repeating-linear-gradient(90deg, rgba(255,255,255,0.07) 0 1px, transparent 1px 46px)",
+      backgroundColor: "#8a623d",
+      backgroundImage:
+        "linear-gradient(90deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 54px), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.16)), repeating-linear-gradient(0deg, rgba(76,44,22,0.22) 0 7px, rgba(148,99,55,0.16) 7px 14px)",
+      backgroundSize: "54px 100%, 100% 100%, 100% 28px",
     },
     "cement-light": {
-      background: "linear-gradient(135deg, rgba(190,190,184,0.24), rgba(96,99,102,0.42))",
+      backgroundColor: "#c8c8c1",
+      backgroundImage:
+        "radial-gradient(circle at 18% 28%, rgba(255,255,255,0.38), transparent 0 18px), radial-gradient(circle at 72% 62%, rgba(92,96,98,0.16), transparent 0 22px), linear-gradient(180deg, rgba(255,255,255,0.26), rgba(112,116,118,0.14))",
+      backgroundSize: "120px 90px, 150px 110px, 100% 100%",
     },
     "stone-greige": {
-      background: "linear-gradient(135deg, rgba(176,159,137,0.32), rgba(91,82,72,0.45)), repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 58px)",
+      backgroundColor: "#b6aa9b",
+      backgroundImage:
+        "linear-gradient(90deg, rgba(255,255,255,0.18) 0 1px, transparent 1px 72px), linear-gradient(0deg, rgba(255,255,255,0.14) 0 1px, transparent 1px 48px), linear-gradient(180deg, rgba(255,255,255,0.16), rgba(78,68,58,0.18))",
+      backgroundSize: "72px 100%, 100% 48px, 100% 100%",
     },
     "dark-matte": {
-      background: "linear-gradient(135deg, rgba(8,10,13,0.90), rgba(35,38,42,0.72))",
+      backgroundColor: "#111315",
+      backgroundImage:
+        "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.18)), repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 46px)",
+      backgroundSize: "100% 100%, 46px 100%",
     },
   };
 
   const wallStyles: Record<string, any> = {
-    "warm-white": { background: "linear-gradient(180deg, rgba(246,239,226,0.17), rgba(246,239,226,0.045))" },
-    tortora: { background: "linear-gradient(180deg, rgba(157,137,117,0.19), rgba(96,78,66,0.06))" },
-    cement: { background: "linear-gradient(180deg, rgba(158,166,166,0.15), rgba(91,99,101,0.055))" },
-    "dark-salon": { background: "linear-gradient(180deg, rgba(18,22,27,0.58), rgba(7,10,14,0.16))" },
+    "warm-white": {
+      backgroundColor: "#f2eadc",
+      backgroundImage:
+        "radial-gradient(circle at 24% 22%, rgba(255,255,255,0.65), transparent 0 26px), linear-gradient(180deg, rgba(255,255,255,0.28), rgba(188,174,154,0.14))",
+      backgroundSize: "140px 100px, 100% 100%",
+    },
+    tortora: {
+      backgroundColor: "#9b8775",
+      backgroundImage:
+        "linear-gradient(180deg, rgba(255,255,255,0.16), rgba(72,58,49,0.16)), radial-gradient(circle at 70% 40%, rgba(255,255,255,0.12), transparent 0 28px)",
+      backgroundSize: "100% 100%, 160px 120px",
+    },
+    cement: {
+      backgroundColor: "#a8adad",
+      backgroundImage:
+        "radial-gradient(circle at 20% 32%, rgba(255,255,255,0.32), transparent 0 22px), radial-gradient(circle at 78% 58%, rgba(65,70,72,0.13), transparent 0 24px), linear-gradient(180deg, rgba(255,255,255,0.18), rgba(71,78,80,0.12))",
+      backgroundSize: "130px 95px, 160px 115px, 100% 100%",
+    },
+    "dark-salon": {
+      backgroundColor: "#14181d",
+      backgroundImage:
+        "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(0,0,0,0.22)), repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 48px)",
+      backgroundSize: "100% 100%, 48px 100%",
+    },
   };
 
   return {
@@ -78,7 +114,6 @@ function getEnvironmentViewerSurfaces(settings: EnvironmentSettings) {
     wall: wallStyles[settings.wallMaterial] || wallStyles[DEFAULT_ENVIRONMENT_SETTINGS.wallMaterial],
   };
 }
-
 function normalizeEnvironmentSettings(value: any): EnvironmentSettings {
   return {
     width: Number(value?.width || DEFAULT_ENVIRONMENT_SETTINGS.width),
@@ -2915,6 +2950,26 @@ const availableAccessories = useMemo(() => {
                     </select>
                   </label>
 
+                  <div className="rounded-2xl border border-cyan-400/15 bg-white/[0.035] p-4 md:col-span-3">
+                    <span className="mb-3 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Preview materiali stanza</span>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                        <div key={`floor-preview-${environmentSettings.floorMaterial}`} className="h-16" style={environmentViewerSurfaces.floor} />
+                        <div className="flex items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-300">
+                          <span>Pavimento</span>
+                          <span className="text-cyan-100">{getEnvironmentMaterialLabel("floors", environmentSettings.floorMaterial)}</span>
+                        </div>
+                      </div>
+                      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                        <div key={`wall-preview-${environmentSettings.wallMaterial}`} className="h-16" style={environmentViewerSurfaces.wall} />
+                        <div className="flex items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-neutral-300">
+                          <span>Pareti</span>
+                          <span className="text-cyan-100">{getEnvironmentMaterialLabel("walls", environmentSettings.wallMaterial)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
                     <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Pareti visibili</span>
                     <div className="grid grid-cols-3 gap-2">
@@ -2942,10 +2997,10 @@ const availableAccessories = useMemo(() => {
 
                 <div className="rounded-[24px] border border-cyan-400/15 bg-[#06111d] p-4">
                   <div className="relative h-56 overflow-hidden rounded-[20px] border border-white/10 bg-[radial-gradient(circle_at_center,rgba(14,165,233,0.14),transparent_42%),#020812]">
-                    {environmentSettings.showBackWall && <div className="absolute left-[15%] right-[15%] top-[12%] h-[42%] rounded-t-2xl border border-white/10 bg-white/[0.08]" />}
-                    {environmentSettings.showLeftWall && <div className="absolute left-[8%] top-[18%] h-[53%] w-[22%] skew-y-[-18deg] rounded-l-2xl border border-white/10 bg-white/[0.045]" />}
-                    {environmentSettings.showRightWall && <div className="absolute right-[8%] top-[18%] h-[53%] w-[22%] skew-y-[18deg] rounded-r-2xl border border-white/10 bg-white/[0.045]" />}
-                    <div className="absolute bottom-[12%] left-[14%] right-[14%] h-[34%] skew-x-[-12deg] rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.08] shadow-[0_22px_60px_rgba(0,0,0,0.45)]" />
+                    {environmentSettings.showBackWall && <div className="absolute left-[15%] right-[15%] top-[12%] h-[42%] rounded-t-2xl border border-white/10" style={environmentViewerSurfaces.wall} />}
+                    {environmentSettings.showLeftWall && <div className="absolute left-[8%] top-[18%] h-[53%] w-[22%] skew-y-[-18deg] rounded-l-2xl border border-white/10" style={environmentViewerSurfaces.wall} />}
+                    {environmentSettings.showRightWall && <div className="absolute right-[8%] top-[18%] h-[53%] w-[22%] skew-y-[18deg] rounded-r-2xl border border-white/10" style={environmentViewerSurfaces.wall} />}
+                    <div className="absolute bottom-[12%] left-[14%] right-[14%] h-[34%] skew-x-[-12deg] rounded-2xl border border-cyan-300/15 shadow-[0_22px_60px_rgba(0,0,0,0.45)]" style={environmentViewerSurfaces.floor} />
                     <div className="absolute bottom-[29%] left-1/2 h-20 w-28 -translate-x-1/2 rounded-xl border border-emerald-300/25 bg-emerald-400/15 shadow-[0_0_30px_rgba(16,185,129,0.18)]" />
                     <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/80">
                       <span>{environmentSettings.width} × {environmentSettings.depth} cm</span>
@@ -3543,6 +3598,22 @@ const availableAccessories = useMemo(() => {
     />
     <div className="absolute left-5 top-5 rounded-2xl border border-white/10 bg-black/28 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-neutral-200 backdrop-blur-md">
       Ambiente {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
+    </div>
+    <div className="absolute left-5 top-[62px] w-[260px] rounded-2xl border border-cyan-400/18 bg-black/32 p-2 text-[10px] font-black uppercase tracking-[0.13em] text-neutral-200 backdrop-blur-md">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-neutral-400">Preview stanza</span>
+        <span className="text-cyan-100">live</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+          <div className="h-8" style={environmentViewerSurfaces.floor} />
+          <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pav. {getEnvironmentMaterialLabel("floors", environmentSettings.floorMaterial)}</div>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+          <div className="h-8" style={environmentViewerSurfaces.wall} />
+          <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pareti {getEnvironmentMaterialLabel("walls", environmentSettings.wallMaterial)}</div>
+        </div>
+      </div>
     </div>
   </div>
 
