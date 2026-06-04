@@ -4025,6 +4025,41 @@ const importedModelAxisCorrection = useMemo(
   [scene, runtimeModelFormat]
 );
 
+const importedModelDiagnostics = useMemo(() => {
+  if (!scene) return null;
+
+  const box = new THREE.Box3().setFromObject(scene);
+  if (box.isEmpty()) return null;
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  const targetDimension = 8;
+  const calculatedScale =
+    Number.isFinite(maxDimension) && maxDimension > 0
+      ? targetDimension / maxDimension
+      : 1;
+
+  return {
+    width: size.x,
+    height: size.y,
+    depth: size.z,
+    minY: box.min.y,
+    maxY: box.max.y,
+    maxDimension,
+    targetDimension,
+    calculatedScale,
+    finalScale: importedModelDisplayScale,
+  };
+}, [scene, importedModelDisplayScale]);
+
+useEffect(() => {
+  if (!importedModelDiagnostics) return;
+
+  console.log("[BAGASTUDIO IMPORT DIAGNOSTICS V1.1]", importedModelDiagnostics);
+}, [importedModelDiagnostics]);
+
 function createInsertPanel(
   mesh: THREE.Mesh,
   material: THREE.Material,
