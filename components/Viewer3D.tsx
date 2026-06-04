@@ -1,4 +1,4 @@
-"use client";
+  "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -27,7 +27,7 @@ import {
   createMirrorLedAccessory,
 } from "@/core/accessories/accessoryRenderer";
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
-import { RoomEnvironment, type RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
+import type { RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -136,6 +136,9 @@ type Viewer3DProps = {
  modelEdgesEnabled?: boolean;
  environment?: RoomEnvironmentSettings;
  importCalibration?: ImportCalibrationSettings;
+ modelSceneOffset?: { x: number; z: number; rotationYDeg?: number };
+ sceneModules?: any[];
+ activeSceneModuleId?: string;
   views?: {
   id: string;
   name: string;
@@ -3215,15 +3218,15 @@ function ensureBagastudioModelEdgeDefinition(root: THREE.Object3D | null, format
     const existing = mesh.children.find((item) => item.userData?.bagastudioEdgeOverlay);
     if (existing) return;
 
-    // Edge Smart V21: soglia alta per mostrare solo spigoli reali del mobile.
+    // Edge Smart V35: contorni più puliti e meno invasivi.
     // I DAE Spazio3D sono spesso triangolati: soglie basse mostrano diagonali/ventagli
-    // interni che sembrano errori grafici. Con 74 gradi restano leggibili gli spigoli
-    // dei pannelli, ma vengono nascosti quasi tutti gli edge di triangolazione.
-    const edgeGeometry = new THREE.EdgesGeometry(mesh.geometry as THREE.BufferGeometry, 74);
+    // interni che sembrano errori grafici. Con 82 gradi restano solo gli spigoli più
+    // importanti e l'overlay diventa più simile a una linea tecnica premium.
+    const edgeGeometry = new THREE.EdgesGeometry(mesh.geometry as THREE.BufferGeometry, 82);
     const edgeMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#475569"),
+      color: new THREE.Color("#64748b"),
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.26,
       depthTest: true,
       depthWrite: false,
       toneMapped: false,
@@ -3253,6 +3256,466 @@ function setBagastudioModelEdgeDefinitionVisible(root: THREE.Object3D | null, vi
   });
 }
 
+
+function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1536;
+  canvas.height = 1536;
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return null;
+
+  if (kind === "floor") {
+    const baseGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    baseGradient.addColorStop(0, "#8b5a32");
+    baseGradient.addColorStop(0.42, "#70401f");
+    baseGradient.addColorStop(1, "#9b6a3d");
+    ctx.fillStyle = baseGradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const plankHeight = 168;
+    const plankColors = ["#86532d", "#74431f", "#98633a", "#6d3b1c", "#8f5b34", "#7d4a26"];
+
+    for (let y = 0; y < canvas.height + plankHeight; y += plankHeight) {
+      const colorIndex = Math.floor(y / plankHeight) % plankColors.length;
+      const shade = plankColors[colorIndex];
+      const plankGradient = ctx.createLinearGradient(0, y, canvas.width, y + plankHeight);
+      plankGradient.addColorStop(0, shade);
+      plankGradient.addColorStop(0.48, colorIndex % 2 ? "#7a4724" : "#955f36");
+      plankGradient.addColorStop(1, shade);
+
+      ctx.fillStyle = plankGradient;
+      ctx.fillRect(0, y, canvas.width, plankHeight - 5);
+
+      ctx.strokeStyle = "rgba(255,244,220,0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y + 2);
+      ctx.lineTo(canvas.width, y + 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(38,19,8,0.34)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, y + plankHeight - 5);
+      ctx.lineTo(canvas.width, y + plankHeight - 5);
+      ctx.stroke();
+
+      const seamOffset = (Math.floor(y / plankHeight) % 3) * 330;
+      for (let x = seamOffset; x < canvas.width; x += 620) {
+        ctx.strokeStyle = "rgba(28,14,8,0.22)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 16);
+        ctx.lineTo(x, y + plankHeight - 24);
+        ctx.stroke();
+
+        ctx.strokeStyle = "rgba(255,236,205,0.07)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 3, y + 20);
+        ctx.lineTo(x + 3, y + plankHeight - 28);
+        ctx.stroke();
+      }
+
+      for (let grain = 0; grain < 18; grain += 1) {
+        const gy = y + 20 + grain * 7.2 + Math.sin(grain + y * 0.018) * 4;
+        const alpha = grain % 3 === 0 ? 0.11 : 0.06;
+        ctx.strokeStyle = grain % 2 ? `rgba(255,228,190,${alpha})` : `rgba(42,21,10,${alpha})`;
+        ctx.lineWidth = grain % 4 === 0 ? 1.4 : 0.8;
+        ctx.beginPath();
+        ctx.moveTo(-40, gy);
+        for (let x = 0; x <= canvas.width + 80; x += 90) {
+          ctx.lineTo(x, gy + Math.sin((x + y + grain * 43) / 105) * 5);
+        }
+        ctx.stroke();
+      }
+
+      for (let knot = 0; knot < 3; knot += 1) {
+        const kx = ((knot * 397 + y * 1.7) % canvas.width);
+        const ky = y + 42 + ((knot * 51) % Math.max(1, plankHeight - 88));
+        const knotGradient = ctx.createRadialGradient(kx, ky, 2, kx, ky, 42);
+        knotGradient.addColorStop(0, "rgba(43,22,12,0.24)");
+        knotGradient.addColorStop(0.42, "rgba(80,42,20,0.13)");
+        knotGradient.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = knotGradient;
+        ctx.beginPath();
+        ctx.ellipse(kx, ky, 48, 16, Math.sin(y + knot) * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 220, canvas.width / 2, canvas.height / 2, canvas.width * 0.78);
+    vignette.addColorStop(0, "rgba(255,255,255,0.05)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.20)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, "#ddc9ad");
+    gradient.addColorStop(0.42, "#d1bda2");
+    gradient.addColorStop(0.74, "#c8b399");
+    gradient.addColorStop(1, "#bea78b");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let i = 0; i < 480; i += 1) {
+      const alpha = 0.018 + ((i * 17) % 10) / 1200;
+      const size = 1 + (i % 4);
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.fillRect((i * 113) % canvas.width, (i * 67) % canvas.height, size, size);
+    }
+
+    for (let i = 0; i < 180; i += 1) {
+      const alpha = 0.014 + ((i * 11) % 6) / 1000;
+      ctx.fillStyle = `rgba(68,49,33,${alpha})`;
+      ctx.fillRect((i * 191) % canvas.width, (i * 83) % canvas.height, 2 + (i % 6), 2 + (i % 7));
+    }
+
+    ctx.strokeStyle = "rgba(255,255,255,0.024)";
+    ctx.lineWidth = 1;
+    for (let x = -canvas.height; x < canvas.width; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, canvas.height);
+      ctx.lineTo(x + canvas.height, 0);
+      ctx.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = bagastudioRendererMaxAnisotropy;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const BAGASTUDIO_ROOM_TEXTURE_PATHS = {
+  floorShowroom: "/textures/Gentle_2.webp",
+  wallShowroom: "/textures/Angel_White.webp",
+};
+
+function configurePremiumRoomTexture(texture: THREE.Texture, kind: "floor" | "wall") {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = bagastudioRendererMaxAnisotropy;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+
+  if (kind === "floor") {
+    // V34: Gentle_2 viene usata come texture showroom a doghe larghe, non come tile piccolo ripetuto.
+    texture.repeat.set(2.2, 3.35);
+    return texture;
+  }
+
+  texture.repeat.set(1.55, 1.1);
+  return texture;
+}
+
+function PremiumRoomEnvironment({ environment }: { environment?: RoomEnvironmentSettings }) {
+  const fallbackFloorTexture = useMemo(() => {
+    if (typeof document === "undefined") return null;
+    const texture = createPremiumRoomCanvasTexture("floor");
+    if (texture) configurePremiumRoomTexture(texture, "floor");
+    return texture;
+  }, []);
+
+  const fallbackWallTexture = useMemo(() => {
+    if (typeof document === "undefined") return null;
+    const texture = createPremiumRoomCanvasTexture("wall");
+    if (texture) configurePremiumRoomTexture(texture, "wall");
+    return texture;
+  }, []);
+
+  const [roomFloorTexture, setRoomFloorTexture] = useState<THREE.Texture | null>(null);
+  const [roomWallTexture, setRoomWallTexture] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+    const loader = new THREE.TextureLoader();
+
+    loader.load(
+      BAGASTUDIO_ROOM_TEXTURE_PATHS.floorShowroom,
+      (texture) => {
+        if (cancelled) {
+          texture.dispose();
+          return;
+        }
+
+        setRoomFloorTexture(configurePremiumRoomTexture(texture, "floor"));
+      },
+      undefined,
+      () => {
+        if (!cancelled) setRoomFloorTexture(null);
+      }
+    );
+
+    loader.load(
+      BAGASTUDIO_ROOM_TEXTURE_PATHS.wallShowroom,
+      (texture) => {
+        if (cancelled) {
+          texture.dispose();
+          return;
+        }
+
+        setRoomWallTexture(configurePremiumRoomTexture(texture, "wall"));
+      },
+      undefined,
+      () => {
+        if (!cancelled) setRoomWallTexture(null);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      fallbackFloorTexture?.dispose();
+      fallbackWallTexture?.dispose();
+    };
+  }, [fallbackFloorTexture, fallbackWallTexture]);
+
+  useEffect(() => {
+    return () => {
+      roomFloorTexture?.dispose();
+    };
+  }, [roomFloorTexture]);
+
+  useEffect(() => {
+    return () => {
+      roomWallTexture?.dispose();
+    };
+  }, [roomWallTexture]);
+
+  const floorTexture = roomFloorTexture || fallbackFloorTexture;
+  const wallTexture = roomWallTexture || fallbackWallTexture;
+
+  if (!environment) return null;
+
+  const roomWidth = Math.max(2.8, Number(environment.roomWidthCm || 420) / 100);
+  const roomDepth = Math.max(2.8, Number(environment.roomDepthCm || 360) / 100);
+  const roomHeight = Math.max(2.45, Number(environment.roomHeightCm || 280) / 100);
+  const floorY = 0.006;
+  const backZ = -roomDepth / 2;
+  const frontZ = roomDepth / 2;
+  const sideDepth = roomDepth;
+  const wallThickness = 0.12;
+  const ceilingThickness = 0.08;
+  const baseboardHeight = 0.115;
+  const baseboardThickness = 0.055;
+  const baseboardColor = "#f3eee7";
+  const wallColor = environment.wallMaterial === "dark-salon" ? "#34302b" : environment.wallMaterial === "cement" ? "#c7c2b7" : environment.wallMaterial === "tortora" ? "#d0baa0" : "#eee6da";
+  const ceilingColor = environment.wallMaterial === "dark-salon" ? "#2b2926" : "#f3eadf";
+  return (
+    <group name="bagastudio-premium-room-v34-gentle-2-lighting">
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]}>
+        <planeGeometry args={[roomWidth + 0.018, roomDepth + 0.018]} />
+        <meshPhysicalMaterial
+          map={floorTexture || undefined}
+          color="#f0e7d9"
+          roughness={0.78}
+          metalness={0.01}
+          clearcoat={0.04}
+          clearcoatRoughness={0.82}
+          reflectivity={0.08}
+        />
+      </mesh>
+
+      {/* V33.1 seam covers: floor is slightly raised and tucked under walls/baseboards to remove visible gaps. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY + 0.003, backZ + 0.018]}>
+        <planeGeometry args={[roomWidth, 0.055]} />
+        <meshBasicMaterial color="#2f241d" transparent opacity={0.12} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[-roomWidth / 2 + 0.018, floorY + 0.003, 0]}>
+        <planeGeometry args={[roomDepth, 0.052]} />
+        <meshBasicMaterial color="#2f241d" transparent opacity={0.105} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[roomWidth / 2 - 0.018, floorY + 0.003, 0]}>
+        <planeGeometry args={[roomDepth, 0.052]} />
+        <meshBasicMaterial color="#2f241d" transparent opacity={0.105} depthWrite={false} />
+      </mesh>
+
+      {environment.showBackWall !== false && (
+        <mesh receiveShadow castShadow position={[0, roomHeight / 2, backZ - wallThickness / 2]}>
+          <boxGeometry args={[roomWidth + wallThickness * 2, roomHeight, wallThickness]} />
+          <meshStandardMaterial
+            map={wallTexture || undefined}
+            color={wallColor}
+            roughness={0.78}
+            metalness={0}
+          />
+        </mesh>
+      )}
+
+      {environment.showLeftWall !== false && (
+        <mesh receiveShadow castShadow position={[-roomWidth / 2 - wallThickness / 2, roomHeight / 2, 0]}>
+          <boxGeometry args={[wallThickness, roomHeight, sideDepth + wallThickness]} />
+          <meshStandardMaterial
+            map={wallTexture || undefined}
+            color={wallColor}
+            roughness={0.80}
+            metalness={0}
+          />
+        </mesh>
+      )}
+
+      {environment.showRightWall !== false && (
+        <mesh receiveShadow castShadow position={[roomWidth / 2 + wallThickness / 2, roomHeight / 2, 0]}>
+          <boxGeometry args={[wallThickness, roomHeight, sideDepth + wallThickness]} />
+          <meshStandardMaterial
+            map={wallTexture || undefined}
+            color={wallColor}
+            roughness={0.80}
+            metalness={0}
+          />
+        </mesh>
+      )}
+
+      <mesh receiveShadow position={[0, roomHeight + ceilingThickness / 2, backZ + roomDepth * 0.34]}>
+        <boxGeometry args={[roomWidth + wallThickness * 2, ceilingThickness, roomDepth * 0.68]} />
+        <meshStandardMaterial color={ceilingColor} roughness={0.72} metalness={0} />
+      </mesh>
+
+      <mesh position={[0, roomHeight - 0.035, backZ + roomDepth * 0.68]}>
+        <boxGeometry args={[roomWidth + wallThickness * 2, 0.055, 0.08]} />
+        <meshStandardMaterial color={ceilingColor} roughness={0.68} metalness={0} />
+      </mesh>
+
+      {environment.showBackWall !== false && (
+        <>
+          <mesh receiveShadow castShadow position={[0, baseboardHeight / 2, backZ + baseboardThickness / 2]}>
+            <boxGeometry args={[roomWidth + 0.026, baseboardHeight, baseboardThickness]} />
+            <meshStandardMaterial color={baseboardColor} roughness={0.42} metalness={0.02} />
+          </mesh>
+          <mesh position={[0, baseboardHeight + 0.012, backZ + baseboardThickness + 0.003]}>
+            <boxGeometry args={[roomWidth + 0.026, 0.022, 0.025]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.36} metalness={0.03} />
+          </mesh>
+        </>
+      )}
+
+      {environment.showLeftWall !== false && (
+        <>
+          <mesh receiveShadow castShadow position={[-roomWidth / 2 + baseboardThickness / 2, baseboardHeight / 2, 0]}>
+            <boxGeometry args={[baseboardThickness, baseboardHeight, roomDepth]} />
+            <meshStandardMaterial color={baseboardColor} roughness={0.42} metalness={0.02} />
+          </mesh>
+          <mesh position={[-roomWidth / 2 + baseboardThickness + 0.004, baseboardHeight + 0.012, 0]}>
+            <boxGeometry args={[0.026, 0.022, roomDepth]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.36} metalness={0.03} />
+          </mesh>
+        </>
+      )}
+
+      {environment.showRightWall !== false && (
+        <>
+          <mesh receiveShadow castShadow position={[roomWidth / 2 - baseboardThickness / 2, baseboardHeight / 2, 0]}>
+            <boxGeometry args={[baseboardThickness, baseboardHeight, roomDepth]} />
+            <meshStandardMaterial color={baseboardColor} roughness={0.42} metalness={0.02} />
+          </mesh>
+          <mesh position={[roomWidth / 2 - baseboardThickness - 0.004, baseboardHeight + 0.012, 0]}>
+            <boxGeometry args={[0.026, 0.022, roomDepth]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.36} metalness={0.03} />
+          </mesh>
+        </>
+      )}
+
+      {environment.showLeftWall !== false && environment.showBackWall !== false && (
+        <mesh rotation={[0, Math.PI / 2, 0]} position={[-roomWidth / 2 + 0.012, roomHeight / 2, backZ + 0.018]}>
+          <planeGeometry args={[roomDepth * 0.42, roomHeight]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.135} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+
+      {environment.showRightWall !== false && environment.showBackWall !== false && (
+        <mesh rotation={[0, -Math.PI / 2, 0]} position={[roomWidth / 2 - 0.012, roomHeight / 2, backZ + 0.018]}>
+          <planeGeometry args={[roomDepth * 0.42, roomHeight]} />
+          <meshBasicMaterial color="#000000" transparent opacity={0.135} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY + 0.014, backZ + roomDepth * 0.42]}>
+        <ringGeometry args={[Math.min(roomWidth, roomDepth) * 0.18, Math.min(roomWidth, roomDepth) * 0.56, 96]} />
+        <meshBasicMaterial color="#000000" transparent opacity={0.095} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* V34 contact shadows: darker only at wall/floor joints to remove the flat showroom-box effect. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY + 0.018, backZ + 0.18]}>
+        <planeGeometry args={[roomWidth * 0.92, 0.34]} />
+        <meshBasicMaterial color="#1b120d" transparent opacity={0.12} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[-roomWidth / 2 + 0.16, floorY + 0.019, -0.02]}>
+        <planeGeometry args={[roomDepth * 0.9, 0.28]} />
+        <meshBasicMaterial color="#1b120d" transparent opacity={0.09} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, Math.PI / 2]} position={[roomWidth / 2 - 0.16, floorY + 0.019, -0.02]}>
+        <planeGeometry args={[roomDepth * 0.9, 0.28]} />
+        <meshBasicMaterial color="#1b120d" transparent opacity={0.09} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+
+      {[0.2, 0.4, 0.6, 0.8].map((ratio, index) => {
+        const x = -roomWidth / 2 + roomWidth * ratio;
+        const z = backZ + roomDepth * 0.22;
+        return (
+          <group key={`spot-v33-${index}`} position={[x, roomHeight - 0.055, z]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.085, 0.085, 0.026, 40]} />
+              <meshStandardMaterial color="#f9f7f2" roughness={0.24} metalness={0.18} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.016, 0]}>
+              <circleGeometry args={[0.056, 40]} />
+              <meshStandardMaterial color="#fff8ec" emissive="#fff0ca" emissiveIntensity={2.15} roughness={0.2} />
+            </mesh>
+            <spotLight
+              color="#fff0ca"
+              intensity={1.22}
+              distance={5.4}
+              angle={0.62}
+              penumbra={0.9}
+              decay={2}
+              position={[0, -0.04, 0]}
+              castShadow
+            />
+            <pointLight color="#fff2d0" intensity={0.24} distance={1.25} decay={2} position={[0, -0.12, 0]} />
+          </group>
+        );
+      })}
+
+      <spotLight
+        castShadow
+        position={[0, roomHeight - 0.16, backZ + roomDepth * 0.52]}
+        intensity={1.18}
+        angle={0.82}
+        penumbra={0.72}
+        distance={6.5}
+        decay={2}
+        color="#fff4dc"
+      />
+
+      <hemisphereLight
+        color="#fff8ec"
+        groundColor="#b58f68"
+        intensity={0.38}
+      />
+
+      <pointLight
+        position={[0, roomHeight * 0.58, frontZ * 0.78]}
+        intensity={0.44}
+        distance={6.4}
+        decay={2}
+        color="#fff3df"
+      />
+    </group>
+  );
+}
+
 function ProductModel({
   width,
   height,
@@ -3278,6 +3741,9 @@ function ProductModel({
   modelEdgesEnabled = true,
   environment,
   importCalibration = DEFAULT_IMPORT_CALIBRATION,
+  modelSceneOffset = { x: 0, z: 0, rotationYDeg: 0 },
+  sceneModules = [],
+  activeSceneModuleId,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -4454,19 +4920,85 @@ mesh.renderOrder = 30;
     }
   }, [importedModelScaleDiagnostics]);
 
+  const sceneModulePreviewClonesV39 = useMemo(() => {
+    if (!scene || !Array.isArray(sceneModules) || sceneModules.length <= 1) return [];
+
+    return sceneModules
+      .filter((module: any) => module?.id && module.id !== activeSceneModuleId)
+      .map((module: any) => {
+        const transform = module?.transform || {};
+        const clonedScene = scene.clone(true);
+
+        clonedScene.traverse((object: any) => {
+          object.userData = {
+            ...(object.userData || {}),
+            bagastudioIgnoreRaycast: true,
+            bagastudioSceneModulePreview: true,
+            bagastudioSceneModuleId: module.id,
+          };
+
+          if (object?.isMesh) {
+            object.castShadow = true;
+            object.receiveShadow = true;
+            object.frustumCulled = false;
+          }
+        });
+
+        return {
+          id: String(module.id),
+          name: String(module.name || module.id),
+          object: clonedScene,
+          transform: {
+            x: Number(transform.x || 0),
+            z: Number(transform.z || 0),
+            rotationYDeg: Number(transform.rotationYDeg || 0),
+          },
+        };
+      });
+  }, [scene, sceneModules, activeSceneModuleId]);
+
   if (!scene) return null;
 
   return (
+    <>
+      {sceneModulePreviewClonesV39.map((module: any) => (
+        <group
+          key={`scene-module-preview-v39-${module.id}`}
+          name={`bagastudio-scene-module-preview-v39-${module.id}`}
+          position={[
+            Number(importCalibration.offsetX || 0) + Number(module.transform?.x || 0),
+            Number(importCalibration.offsetY || 0),
+            Number(importCalibration.offsetZ || 0) + Number(module.transform?.z || 0),
+          ]}
+          rotation={[
+            THREE.MathUtils.degToRad(Number(importCalibration.rotationXDeg || 0)),
+            THREE.MathUtils.degToRad(
+              Number(importCalibration.rotationYDeg || 0) + Number(module.transform?.rotationYDeg || 0)
+            ),
+            THREE.MathUtils.degToRad(Number(importCalibration.rotationZDeg || 0)),
+          ]}
+          scale={Math.max(0.01, Number(importCalibration.scale || 1))}
+        >
+          <Center disableY>
+            <group rotation={importedModelAxisCorrection} position={[0, importedModelGroundOffsetY, 0]}>
+              <primitive object={module.object} scale={importedModelDisplayScale} castShadow receiveShadow />
+            </group>
+          </Center>
+        </group>
+      ))}
+
     <group
       name="bagastudio-import-calibration-v1"
       position={[
-        Number(importCalibration.offsetX || 0),
+        Number(importCalibration.offsetX || 0) + Number(modelSceneOffset?.x || 0),
         Number(importCalibration.offsetY || 0),
-        Number(importCalibration.offsetZ || 0),
+        Number(importCalibration.offsetZ || 0) + Number(modelSceneOffset?.z || 0),
       ]}
       rotation={[
         THREE.MathUtils.degToRad(Number(importCalibration.rotationXDeg || 0)),
-        THREE.MathUtils.degToRad(Number(importCalibration.rotationYDeg || 0)),
+        THREE.MathUtils.degToRad(
+          Number(importCalibration.rotationYDeg || 0) + Number(modelSceneOffset?.rotationYDeg || 0)
+        ),
         THREE.MathUtils.degToRad(Number(importCalibration.rotationZDeg || 0)),
       ]}
       scale={Math.max(0.01, Number(importCalibration.scale || 1))}
@@ -4575,6 +5107,7 @@ const realPartKey =
 </group>
   </Center>
     </group>
+    </>
 );
 }
 
@@ -5225,6 +5758,32 @@ productMaterials?.length
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
   const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<BagaStudioRuntimeComponent[]>([]);
   const [viewerModelEdgesEnabled, setViewerModelEdgesEnabled] = useState(modelEdgesEnabled);
+  // Scene Composer Foundation V38:
+  // mantiene il controllo singolo validato in V37, ma introduce la struttura dati
+  // per gestire più moduli/prodotti nella stessa stanza senza toccare import/scaling.
+  const createSceneModuleV38 = (overrides: any = {}) => ({
+    id: overrides.id || `scene-module-${Date.now()}`,
+    name: overrides.name || "Modulo 1",
+    source: overrides.source || {},
+    transform: {
+      x: Number(overrides.transform?.x ?? 0),
+      z: Number(overrides.transform?.z ?? -0.62),
+      rotationYDeg: Number(overrides.transform?.rotationYDeg ?? 0),
+      activeWallSnap: overrides.transform?.activeWallSnap ?? null,
+    },
+    createdAt: overrides.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const [modelSceneOffset, setModelSceneOffset] = useState({ x: 0, z: -0.62, rotationYDeg: 0 });
+  const [activeWallSnap, setActiveWallSnap] = useState<"back" | "front" | "left" | "right" | "center" | null>(null);
+  const [wallSnapDistanceMode, setWallSnapDistanceMode] = useState<"touch" | "5" | "10" | "custom">("touch");
+  const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
+  const [wallSnapNotice, setWallSnapNotice] = useState("");
+  const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
+    createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
+  ]);
+  const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState("primary-module");
   const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
     url: string;
@@ -5263,6 +5822,244 @@ productMaterials?.length
     setImportCalibration(DEFAULT_IMPORT_CALIBRATION);
   };
 
+  const getRoomInteriorBoundsMeters = () => {
+    const roomWidth = Math.max(2.8, Number(environment?.roomWidthCm || 420) / 100);
+    const roomDepth = Math.max(2.8, Number(environment?.roomDepthCm || 360) / 100);
+    const wallSafetyInset = 0.065;
+
+    return {
+      left: -roomWidth / 2 + wallSafetyInset,
+      right: roomWidth / 2 - wallSafetyInset,
+      back: -roomDepth / 2 + wallSafetyInset,
+      front: roomDepth / 2 - wallSafetyInset,
+      centerZ: -0.18,
+    };
+  };
+
+  const getSceneModelFootprintMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
+    const finalEstimatedCm = scaleDiagnosticsV8?.finalEstimatedCm || {};
+    const rawWidthM = Math.max(0.18, Number(finalEstimatedCm.width || width || 180) / 100);
+    const rawDepthM = Math.max(0.18, Number(finalEstimatedCm.depth || depth || 60) / 100);
+    const normalizedRotation = THREE.MathUtils.euclideanModulo(Number(rotationYDeg || 0), 360);
+    const isQuarterTurn = Math.abs((normalizedRotation % 180) - 90) < 45;
+
+    return {
+      width: isQuarterTurn ? rawDepthM : rawWidthM,
+      depth: isQuarterTurn ? rawWidthM : rawDepthM,
+    };
+  };
+
+  const getActiveWallSnapDistanceCm = () => {
+    if (wallSnapDistanceMode === "5") return 5;
+    if (wallSnapDistanceMode === "10") return 10;
+    if (wallSnapDistanceMode === "custom") {
+      return Math.max(0, Math.min(100, Number(customWallSnapDistanceCm || 0)));
+    }
+
+    // V40 Snap Parete:
+    // "Appoggiato" non deve entrare nella parete. Mantiene un distacco tecnico minimo
+    // per non far sparire specchi, cornici e parti sottili del modello.
+    return 0.5;
+  };
+
+  const getWallSnapSceneInsetMeters = (distanceCm = getActiveWallSnapDistanceCm()) => {
+    // Le coordinate stanza sono normalizzate rispetto alla scena Three.
+    // Manteniamo una base visiva di sicurezza e aggiungiamo la distanza cliente-friendly.
+    // Non tocca scala/import del DAE: serve solo al posizionamento nel Scene Composer.
+    return 0.12 + Math.max(0, Number(distanceCm || 0)) * 0.012;
+  };
+
+  const getWallSnapModeLabel = () => {
+    if (wallSnapDistanceMode === "5") return "5 cm";
+    if (wallSnapDistanceMode === "10") return "10 cm";
+    if (wallSnapDistanceMode === "custom") return `${getActiveWallSnapDistanceCm().toFixed(1)} cm`;
+    return "0.5 cm";
+  };
+
+  const showWallSnapConfirmation = (wall: "back" | "front" | "left" | "right" | "center") => {
+    const wallLabel =
+      wall === "back"
+        ? "parete fondo"
+        : wall === "front"
+          ? "parete frontale"
+          : wall === "left"
+            ? "parete sinistra"
+            : wall === "right"
+              ? "parete destra"
+              : "centro stanza";
+
+    setWallSnapNotice(
+      wall === "center"
+        ? "Modulo riportato al centro stanza"
+        : `Modulo distaccato dalla ${wallLabel}: ${getWallSnapModeLabel()}`
+    );
+
+    window.setTimeout(() => setWallSnapNotice(""), 2600);
+  };
+
+  const clampModelSceneTransform = (next: { x: number; z: number; rotationYDeg?: number }) => {
+    const bounds = getRoomInteriorBoundsMeters();
+
+    // Scene Composer V39.2:
+    // non usare il bounding box totale del DAE per lo snap/limite parete.
+    // Alcuni modelli hanno cornici, top o elementi sporgenti che falsano l'ingombro reale
+    // e lasciano il mobile staccato dalla parete. Manteniamo un limite leggero di stanza
+    // e lasciamo che "Snap Fondo" lavori sul retro produttivo/visivo del modulo.
+    const wallContactInset = 0.08;
+
+    return {
+      x: THREE.MathUtils.clamp(Number(next.x || 0), bounds.left + wallContactInset, bounds.right - wallContactInset),
+      z: THREE.MathUtils.clamp(Number(next.z || 0), bounds.back + wallContactInset, bounds.front - wallContactInset),
+      rotationYDeg: THREE.MathUtils.euclideanModulo(Number(next.rotationYDeg || 0), 360),
+    };
+  };
+
+  const syncActiveSceneModuleV38 = (
+    nextTransform: { x: number; z: number; rotationYDeg?: number },
+    nextWallSnap: typeof activeWallSnap = activeWallSnap
+  ) => {
+    const clampedTransform = clampModelSceneTransform(nextTransform);
+
+    setSceneModulesV38((current) =>
+      current.map((module) =>
+        module.id === activeSceneModuleIdV38
+          ? {
+              ...module,
+              transform: {
+                ...clampedTransform,
+                activeWallSnap: nextWallSnap,
+                wallSnapDistanceCm: getActiveWallSnapDistanceCm(),
+                wallSnapDistanceMode,
+              },
+              updatedAt: new Date().toISOString(),
+            }
+          : module
+      )
+    );
+
+    return clampedTransform;
+  };
+
+  const selectSceneModuleV38 = (moduleId: string) => {
+    const target = sceneModulesV38.find((module) => module.id === moduleId);
+    if (!target) return;
+
+    const nextTransform = clampModelSceneTransform(target.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
+    setActiveSceneModuleIdV38(moduleId);
+    setModelSceneOffset(nextTransform);
+    setActiveWallSnap(target.transform?.activeWallSnap || null);
+  };
+
+  const addSceneModuleSnapshotV38 = () => {
+    const nextIndex = sceneModulesV38.length + 1;
+    const nextModule = createSceneModuleV38({
+      name: `Modulo ${nextIndex}`,
+      source: {
+        modelUrl: effectiveProductModel,
+        format: effectiveProductModelFormat,
+        importedModelName: effectiveImportedModelName || importedModelName || "",
+      },
+      transform: {
+        ...modelSceneOffset,
+        activeWallSnap,
+      },
+    });
+
+    setSceneModulesV38((current) => [...current, nextModule]);
+    setActiveSceneModuleIdV38(nextModule.id);
+    window.dispatchEvent(new CustomEvent("bagastudio:scene-module-created-v38", { detail: nextModule }));
+  };
+
+  const moveModelInRoom = (deltaX = 0, deltaZ = 0) => {
+    setActiveWallSnap(null);
+    setModelSceneOffset((current) => {
+      const nextTransform = syncActiveSceneModuleV38(
+        {
+          ...current,
+          x: Number(current.x || 0) + deltaX,
+          z: Number(current.z || 0) + deltaZ,
+        },
+        null
+      );
+      return nextTransform;
+    });
+  };
+
+  const rotateModelInRoom = (deltaRotationYDeg = 0) => {
+    setActiveWallSnap(null);
+    setModelSceneOffset((current) => {
+      const nextTransform = syncActiveSceneModuleV38(
+        {
+          ...current,
+          rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
+        },
+        null
+      );
+      return nextTransform;
+    });
+  };
+
+  const getWallSnapTarget = (
+    wall: "back" | "front" | "left" | "right" | "center",
+    current: { x: number; z: number; rotationYDeg?: number }
+  ) => {
+    const bounds = getRoomInteriorBoundsMeters();
+    const wallRotations = {
+      back: 0,
+      front: 180,
+      left: 90,
+      right: 270,
+      center: Number(current.rotationYDeg || 0),
+    } as const;
+    const rotationYDeg = wallRotations[wall];
+
+    // Scene Composer V40:
+    // snap "Appoggiato" = distacco tecnico minimo 0.5 cm.
+    // Evita che cornici, specchi o parti sottili entrino nella parete e spariscano.
+    const contactInset = getWallSnapSceneInsetMeters();
+
+    if (wall === "back") {
+      return { x: 0, z: bounds.back + contactInset, rotationYDeg };
+    }
+
+    if (wall === "front") {
+      return { x: 0, z: bounds.front - contactInset, rotationYDeg };
+    }
+
+    if (wall === "left") {
+      return { x: bounds.left + contactInset, z: bounds.centerZ, rotationYDeg };
+    }
+
+    if (wall === "right") {
+      return { x: bounds.right - contactInset, z: bounds.centerZ, rotationYDeg };
+    }
+
+    return { x: 0, z: bounds.centerZ, rotationYDeg };
+  };
+
+  const snapModelToWall = (wall: "back" | "front" | "left" | "right" | "center") => {
+    setActiveWallSnap(wall);
+    setModelSceneOffset((current) => {
+      const nextTransform = syncActiveSceneModuleV38(
+        {
+          ...current,
+          ...getWallSnapTarget(wall, current),
+        },
+        wall
+      );
+      return nextTransform;
+    });
+    showWallSnapConfirmation(wall);
+  };
+
+  const snapModelToBackWall = () => snapModelToWall("back");
+
+  const resetModelRoomPosition = () => {
+    const nextTransform = syncActiveSceneModuleV38({ x: 0, z: -0.62, rotationYDeg: 0 }, null);
+    setActiveWallSnap(null);
+    setModelSceneOffset(nextTransform);
+  };
+
   useEffect(() => {
     (window as any).__bagastudioImportCalibrationV1 = importCalibration;
     (window as any).bagastudioGetImportCalibration = () => importCalibration;
@@ -5273,6 +6070,48 @@ productMaterials?.length
       delete (window as any).bagastudioResetImportCalibration;
     };
   }, [importCalibration]);
+  useEffect(() => {
+    const activeModule = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const scenePackageV38 = {
+      schema: "bagastudio.sceneComposer.v40",
+      activeModuleId: activeSceneModuleIdV38,
+      activeWallSnap,
+      activeWallSnapDistanceCm: getActiveWallSnapDistanceCm(),
+      activeWallSnapDistanceMode: wallSnapDistanceMode,
+      activeTransform: modelSceneOffset,
+      modules: sceneModulesV38,
+      note: "Scene Composer V40: snap parete con distacco tecnico, UI premium e transform multi-modulo. Import multiplo reale previsto nello step successivo.",
+      updatedAt: new Date().toISOString(),
+    };
+
+    (window as any).__bagastudioSceneComposerTransformV36 = modelSceneOffset;
+    (window as any).__bagastudioSceneComposerModulesV38 = sceneModulesV38;
+    (window as any).__bagastudioSceneComposerPackageV38 = scenePackageV38;
+    (window as any).bagastudioGetSceneComposerTransform = () => modelSceneOffset;
+    (window as any).bagastudioGetSceneComposerModules = () => sceneModulesV38;
+    (window as any).bagastudioGetSceneComposerPackage = () => scenePackageV38;
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:scene-composer-transform-updated", {
+        detail: {
+          ...modelSceneOffset,
+          schema: "bagastudio.sceneComposerTransform.v40",
+          activeWallSnap,
+          activeWallSnapDistanceCm: getActiveWallSnapDistanceCm(),
+          activeWallSnapDistanceMode: wallSnapDistanceMode,
+          activeModule,
+          moduleCount: sceneModulesV38.length,
+          note: scenePackageV38.note,
+        },
+      })
+    );
+
+    return () => {
+      delete (window as any).bagastudioGetSceneComposerTransform;
+      delete (window as any).bagastudioGetSceneComposerModules;
+      delete (window as any).bagastudioGetSceneComposerPackage;
+    };
+  }, [modelSceneOffset, activeWallSnap, wallSnapDistanceMode, customWallSnapDistanceCm, sceneModulesV38, activeSceneModuleIdV38]);
+
 
   useEffect(() => {
     const handleScaleDiagnostics = (event: Event) => {
@@ -5634,9 +6473,10 @@ productMaterials?.length
   // Import Calibration V23:
   // Il pannello deve comparire anche quando il DAE arriva da page.tsx come productModel,
   // quindi il formato va sempre inferito dal model URL/data-url e non solo da runtimeImportedModel.
-  const hasActiveImportCalibrationPanel =
-    Boolean(effectiveProductModel) &&
-    (isImportedModelFormat(effectiveProductModelFormat) || Boolean(scaleDiagnosticsV8));
+  // Empty Room Premium V32.1:
+  // pannello calibrazione/debug nascosto nel Viewer cliente.
+  // La logica di scala/import resta invariata; viene solo disattivata la UI overlay.
+  const hasActiveImportCalibrationPanel = false;
 
   const emitViewerCommand = (eventName: string) => {
     if (typeof window === "undefined") return;
@@ -5679,6 +6519,26 @@ productMaterials?.length
           Spegni per verificare triangoli/linee del DAE senza overlay.
         </div>
       </div>
+
+      {activeWallSnap && activeWallSnap !== "center" && (
+        <div className="pointer-events-none absolute bottom-[118px] right-[294px] z-30 hidden rounded-2xl border border-emerald-400/30 bg-black/46 px-3 py-2 text-xs font-black text-emerald-100 shadow-[0_16px_40px_rgba(0,0,0,0.38)] backdrop-blur-md md:block">
+          <div className="mb-1 h-px w-16 bg-emerald-300/70" />
+          <div className="flex items-center gap-2">
+            <span className="text-lg leading-none text-emerald-300">↔</span>
+            <span>{getWallSnapModeLabel()}</span>
+          </div>
+        </div>
+      )}
+
+      {wallSnapNotice && (
+        <div className="pointer-events-none absolute bottom-10 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-lg font-black text-white">✓</span>
+          <div>
+            <div className="font-black">Modulo distaccato dalla parete</div>
+            <div className="text-xs font-semibold text-slate-300">{getWallSnapModeLabel()} ({wallSnapDistanceMode === "touch" ? "appoggiato" : "snap"})</div>
+          </div>
+        </div>
+      )}
 
       {hasActiveImportCalibrationPanel && (
         <div className="fixed left-[230px] top-[145px] z-[99999] max-h-[70vh] w-[330px] overflow-y-auto rounded-xl border-2 border-amber-300/60 bg-black/95 p-3 text-xs text-amber-50 shadow-2xl shadow-amber-950/40 backdrop-blur">
@@ -5735,6 +6595,274 @@ productMaterials?.length
       )}
 
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
+
+      <div className="absolute bottom-24 right-4 z-30 w-[260px] rounded-[24px] border border-emerald-400/20 bg-slate-950/78 p-3 text-[10px] font-black text-slate-100 shadow-2xl shadow-emerald-950/25 backdrop-blur-xl">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div>
+            <span className="block uppercase tracking-[0.18em] text-emerald-200">Muovi modulo</span>
+            <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-500">Scene V38</span>
+          </div>
+          <button
+            type="button"
+            onClick={resetModelRoomPosition}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-wide text-slate-200 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+            title="Riporta il modulo vicino alla parete"
+          >
+            Reset
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1">
+          <span />
+          <button
+            type="button"
+            onClick={() => moveModelInRoom(0, -0.16)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+            title="Avvicina alla parete"
+          >
+            ↑
+          </button>
+          <span />
+          <button
+            type="button"
+            onClick={() => moveModelInRoom(-0.16, 0)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+            title="Sposta a sinistra"
+          >
+            ←
+          </button>
+          <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-2 py-1.5 text-center text-[9px] text-emerald-100">
+            X {modelSceneOffset.x.toFixed(1)}<br />Z {modelSceneOffset.z.toFixed(1)}
+          </div>
+          <button
+            type="button"
+            onClick={() => moveModelInRoom(0.16, 0)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+            title="Sposta a destra"
+          >
+            →
+          </button>
+          <span />
+          <button
+            type="button"
+            onClick={() => moveModelInRoom(0, 0.16)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+            title="Allontana dalla parete"
+          >
+            ↓
+          </button>
+          <span />
+        </div>
+
+        <div className="mt-2 grid grid-cols-3 gap-1">
+          <button
+            type="button"
+            onClick={() => rotateModelInRoom(-15)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-cyan-300/45 hover:bg-cyan-400/10"
+            title="Ruota modulo a sinistra"
+          >
+            ↺
+          </button>
+          <div className="rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1.5 text-center text-[9px] text-cyan-100">
+            R {Math.round(modelSceneOffset.rotationYDeg || 0)}°
+          </div>
+          <button
+            type="button"
+            onClick={() => rotateModelInRoom(15)}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-cyan-300/45 hover:bg-cyan-400/10"
+            title="Ruota modulo a destra"
+          >
+            ↻
+          </button>
+        </div>
+
+        <div className="mt-3 rounded-[22px] border border-emerald-400/25 bg-[#07111c]/90 p-3 shadow-[0_18px_46px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-300/25 bg-emerald-400/10 text-base text-emerald-200">⌁</span>
+              <div>
+                <span className="block text-[11px] uppercase tracking-[0.18em] text-emerald-100">Snap parete</span>
+                <span className="block text-[9px] font-semibold normal-case tracking-normal text-slate-400">
+                  {activeWallSnap ? `Parete: ${activeWallSnap}` : "Seleziona lato"}
+                </span>
+              </div>
+            </div>
+            <span className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-1 text-[9px] font-black text-emerald-100">
+              {getWallSnapModeLabel()}
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            {[
+              ["touch", "Appoggiato", "0.5 cm"],
+              ["5", "5 cm", ""],
+              ["10", "10 cm", ""],
+            ].map(([mode, label, value]) => {
+              const isActiveMode = wallSnapDistanceMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setWallSnapDistanceMode(mode as "touch" | "5" | "10")}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-[12px] transition ${
+                    isActiveMode
+                      ? "border-emerald-300/70 bg-emerald-400/12 text-white shadow-[0_0_18px_rgba(16,185,129,0.12)]"
+                      : "border-white/10 bg-white/[0.035] text-slate-200 hover:border-emerald-300/35 hover:bg-emerald-400/8"
+                  }`}
+                >
+                  <span className="font-bold">{label}</span>
+                  {value && (
+                    <span className="rounded-lg border border-emerald-300/30 bg-black/20 px-2 py-0.5 text-[11px] font-black text-emerald-100">
+                      {value}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div
+              className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                wallSnapDistanceMode === "custom"
+                  ? "border-emerald-300/70 bg-emerald-400/12"
+                  : "border-white/10 bg-white/[0.035]"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setWallSnapDistanceMode("custom")}
+                className="text-left text-[12px] font-bold text-slate-100"
+              >
+                Personalizzato
+              </button>
+              <label className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/25 px-2 py-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={customWallSnapDistanceCm}
+                  onChange={(event) => {
+                    setCustomWallSnapDistanceCm(Number(event.target.value));
+                    setWallSnapDistanceMode("custom");
+                  }}
+                  className="w-12 bg-transparent text-right text-[11px] font-black text-emerald-100 outline-none"
+                />
+                <span className="text-[10px] font-bold text-slate-400">cm</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <span />
+            <button
+              type="button"
+              onClick={() => snapModelToWall("back")}
+              className={`rounded-xl border px-2 py-2 text-[9px] uppercase tracking-wide transition ${
+                activeWallSnap === "back"
+                  ? "border-emerald-200/75 bg-emerald-400/22 text-white"
+                  : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/16"
+              }`}
+              title="Aggancia alla parete di fondo"
+            >
+              Fondo
+            </button>
+            <span />
+            <button
+              type="button"
+              onClick={() => snapModelToWall("left")}
+              className={`rounded-xl border px-2 py-2 text-[9px] uppercase tracking-wide transition ${
+                activeWallSnap === "left"
+                  ? "border-emerald-200/75 bg-emerald-400/22 text-white"
+                  : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/16"
+              }`}
+              title="Aggancia alla parete sinistra"
+            >
+              SX
+            </button>
+            <button
+              type="button"
+              onClick={() => snapModelToWall("center")}
+              className={`rounded-xl border px-2 py-2 text-[9px] uppercase tracking-wide transition ${
+                activeWallSnap === "center"
+                  ? "border-emerald-200/75 bg-emerald-400/22 text-white"
+                  : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/16"
+              }`}
+              title="Riporta il modulo al centro stanza"
+            >
+              Centro
+            </button>
+            <button
+              type="button"
+              onClick={() => snapModelToWall("right")}
+              className={`rounded-xl border px-2 py-2 text-[9px] uppercase tracking-wide transition ${
+                activeWallSnap === "right"
+                  ? "border-emerald-200/75 bg-emerald-400/22 text-white"
+                  : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/16"
+              }`}
+              title="Aggancia alla parete destra"
+            >
+              DX
+            </button>
+            <span />
+            <button
+              type="button"
+              onClick={() => snapModelToWall("front")}
+              className={`rounded-xl border px-2 py-2 text-[9px] uppercase tracking-wide transition ${
+                activeWallSnap === "front"
+                  ? "border-emerald-200/75 bg-emerald-400/22 text-white"
+                  : "border-emerald-300/20 bg-emerald-400/8 text-emerald-100 hover:border-emerald-200/60 hover:bg-emerald-400/16"
+              }`}
+              title="Aggancia alla parete frontale"
+            >
+              Fronte
+            </button>
+            <span />
+          </div>
+
+          <p className="mt-2 text-[9px] font-semibold leading-snug text-slate-400">
+            Distanza del modulo dalla parete sul lato selezionato.
+          </p>
+        </div>
+
+        <div className="mt-2 rounded-xl border border-violet-300/15 bg-violet-400/[0.055] p-1.5">
+          <div className="mb-1 flex items-center justify-between gap-2 px-1">
+            <span className="text-[8px] font-black uppercase tracking-[0.16em] text-violet-100">Moduli scena V38</span>
+            <span className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
+              {sceneModulesV38.length} mod.
+            </span>
+          </div>
+
+          <div className="mb-1 max-h-[70px] space-y-1 overflow-auto pr-1">
+            {sceneModulesV38.map((module) => (
+              <button
+                key={module.id}
+                type="button"
+                onClick={() => selectSceneModuleV38(module.id)}
+                className={`w-full rounded-lg border px-2 py-1 text-left text-[9px] transition ${
+                  activeSceneModuleIdV38 === module.id
+                    ? "border-violet-200/70 bg-violet-400/25 text-white"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:border-violet-200/50 hover:bg-violet-400/12"
+                }`}
+                title="Seleziona modulo scena"
+              >
+                <span className="block truncate font-black">{module.name}</span>
+                <span className="block truncate text-[8px] text-slate-500">
+                  X {Number(module.transform?.x || 0).toFixed(1)} · Z {Number(module.transform?.z || 0).toFixed(1)} · R {Math.round(Number(module.transform?.rotationYDeg || 0))}°
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addSceneModuleSnapshotV38}
+            className="w-full rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 py-1.5 text-[9px] uppercase tracking-wide text-violet-100 transition hover:border-violet-200/60 hover:bg-violet-400/18"
+            title="Duplica la posizione corrente come nuovo modulo scena V38"
+          >
+            + Modulo scena
+          </button>
+        </div>
+      </div>
 
       <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
         <button
@@ -5840,7 +6968,7 @@ productMaterials?.length
 <CameraController activeViewId={activeViewId} views={views} />
 <ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
 
-        <RoomEnvironment environment={environment} />
+        <PremiumRoomEnvironment environment={environment} />
 
         <ProductModel
   width={runtimeImportedModel?.dimensions?.width ?? width}
@@ -5862,6 +6990,9 @@ productMaterials?.length
   woodDirection={woodDirection}
   environment={environment}
   importCalibration={importCalibration}
+  modelSceneOffset={modelSceneOffset}
+  sceneModules={sceneModulesV38}
+  activeSceneModuleId={activeSceneModuleIdV38}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}

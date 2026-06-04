@@ -59,10 +59,10 @@ function getEnvironmentMaterialLabel(kind: "floors" | "walls", materialId: strin
 function getEnvironmentViewerSurfaces(settings: EnvironmentSettings) {
   const floorStyles: Record<string, any> = {
     "wood-neutral": {
-      backgroundColor: "#8a623d",
+      backgroundColor: "#7c5a3a",
       backgroundImage:
-        "linear-gradient(90deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 54px), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.16)), repeating-linear-gradient(0deg, rgba(76,44,22,0.22) 0 7px, rgba(148,99,55,0.16) 7px 14px)",
-      backgroundSize: "54px 100%, 100% 100%, 100% 28px",
+        "linear-gradient(90deg, rgba(255,255,255,0.08) 0px, transparent 2px, transparent 120px), repeating-linear-gradient(90deg, #7b5738 0px, #8b6645 120px, #765131 240px), linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.15))",
+      backgroundSize: "120px 100%, 240px 100%, 100% 100%",
     },
     "cement-light": {
       backgroundColor: "#c8c8c1",
@@ -3590,49 +3590,74 @@ const availableAccessories = useMemo(() => {
   )}
 
   {environmentSettings.showRoom && runtimeProduct && (
-  <div className="pointer-events-none absolute inset-3 z-10 overflow-hidden rounded-[24px] border border-white/[0.035]">
-    {environmentSettings.showBackWall && (
-      <div
-        className="absolute left-[14%] right-[14%] top-[6%] h-[43%] rounded-t-[28px] border border-white/[0.055] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-        style={environmentViewerSurfaces.wall}
-      />
-    )}
-    {environmentSettings.showLeftWall && (
-      <div
-        className="absolute bottom-[18%] left-[3%] top-[14%] w-[26%] origin-bottom-right skew-y-[-18deg] rounded-l-[28px] border border-white/[0.045] opacity-80"
-        style={environmentViewerSurfaces.wall}
-      />
-    )}
-    {environmentSettings.showRightWall && (
-      <div
-        className="absolute bottom-[18%] right-[3%] top-[14%] w-[26%] origin-bottom-left skew-y-[18deg] rounded-r-[28px] border border-white/[0.045] opacity-80"
-        style={environmentViewerSurfaces.wall}
-      />
-    )}
-    <div
-      className="absolute bottom-0 left-[7%] right-[7%] h-[36%] origin-bottom rounded-t-[34px] border border-white/[0.055] opacity-85 shadow-[0_-22px_70px_rgba(0,0,0,0.20)]"
-      style={{ ...environmentViewerSurfaces.floor, transform: "perspective(620px) rotateX(62deg)", transformOrigin: "bottom center" }}
-    />
-    <div className="absolute left-5 top-5 rounded-2xl border border-white/10 bg-black/28 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-neutral-200 backdrop-blur-md">
-      Ambiente {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
-    </div>
-    <div className="absolute left-5 top-[62px] w-[260px] rounded-2xl border border-cyan-400/18 bg-black/32 p-2 text-[10px] font-black uppercase tracking-[0.13em] text-neutral-200 backdrop-blur-md">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-neutral-400">Preview stanza</span>
-        <span className="text-cyan-100">live</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
-          <div className="h-8" style={environmentViewerSurfaces.floor} />
-          <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pav. {getEnvironmentMaterialLabel("floors", environmentSettings.floorMaterial)}</div>
+    <div className="pointer-events-none absolute inset-3 z-10 overflow-hidden rounded-[24px]">
+      {/* Empty Room Premium V32 - CSS shell only, no Viewer3D/import/scaling changes */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(255,255,255,0.13),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_52%)]" />
+
+      <div className="absolute left-[9%] right-[9%] top-[5%] h-[9%] rounded-t-[30px] border border-white/[0.055] bg-[#f4efe6] shadow-[inset_0_-24px_50px_rgba(0,0,0,0.08)]" />
+
+      {environmentSettings.showBackWall && (
+        <div
+          className="absolute left-[9%] right-[9%] top-[14%] bottom-[31%] border-x border-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-26px_60px_rgba(0,0,0,0.10)]"
+          style={environmentViewerSurfaces.wall}
+        />
+      )}
+
+      {environmentSettings.showLeftWall && (
+        <div
+          className="absolute left-0 top-[14%] bottom-[31%] w-[9%] border-r border-white/[0.045] opacity-95 shadow-[inset_-28px_0_50px_rgba(0,0,0,0.10)]"
+          style={environmentViewerSurfaces.wall}
+        />
+      )}
+
+      {environmentSettings.showRightWall && (
+        <div
+          className="absolute right-0 top-[14%] bottom-[31%] w-[9%] border-l border-white/[0.045] opacity-95 shadow-[inset_28px_0_50px_rgba(0,0,0,0.10)]"
+          style={environmentViewerSurfaces.wall}
+        />
+      )}
+
+      <div className="absolute left-[9%] right-[9%] bottom-[31%] h-[12px] bg-[#f8f3e9] shadow-[0_-1px_0_rgba(255,255,255,0.55),0_10px_22px_rgba(0,0,0,0.18)]" />
+      <div className="absolute left-0 top-[14%] bottom-[31%] w-[1px] bg-white/10" />
+      <div className="absolute right-0 top-[14%] bottom-[31%] w-[1px] bg-black/10" />
+
+      {[22, 38, 54, 70].map((position) => (
+        <div key={`premium-spot-${position}`} className="absolute top-[8.5%] h-3 w-3 rounded-full bg-white shadow-[0_0_35px_rgba(255,255,255,0.95),0_0_75px_rgba(255,244,214,0.35)]" style={{ left: `${position}%` }}>
+          <div className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-xl" />
         </div>
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
-          <div className="h-8" style={environmentViewerSurfaces.wall} />
-          <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pareti {getEnvironmentMaterialLabel("walls", environmentSettings.wallMaterial)}</div>
+      ))}
+
+      <div
+        className="absolute bottom-[-3%] left-[4%] right-[4%] h-[43%] origin-bottom rounded-t-[36px] border border-white/[0.06] opacity-95 shadow-[0_-34px_90px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.13)]"
+        style={{
+          ...environmentViewerSurfaces.floor,
+          transform: "perspective(1200px) rotateX(72deg)",
+          transformOrigin: "bottom center",
+        }}
+      />
+
+      <div className="absolute bottom-[30%] left-[9%] right-[9%] h-16 bg-[linear-gradient(180deg,rgba(0,0,0,0.16),transparent)]" />
+
+      <div className="absolute left-5 top-5 rounded-2xl border border-white/10 bg-black/28 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-neutral-200 backdrop-blur-md">
+        Ambiente {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
+      </div>
+      <div className="absolute left-5 top-[62px] w-[260px] rounded-2xl border border-cyan-400/18 bg-black/32 p-2 text-[10px] font-black uppercase tracking-[0.13em] text-neutral-200 backdrop-blur-md">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-neutral-400">Preview stanza</span>
+          <span className="text-cyan-100">V32</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+            <div className="h-8" style={environmentViewerSurfaces.floor} />
+            <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pav. {getEnvironmentMaterialLabel("floors", environmentSettings.floorMaterial)}</div>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+            <div className="h-8" style={environmentViewerSurfaces.wall} />
+            <div className="truncate px-2 py-1 text-[9px] text-neutral-300">Pareti {getEnvironmentMaterialLabel("walls", environmentSettings.wallMaterial)}</div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
   )}
 
   <div className="absolute right-5 top-5 z-30 w-[230px] rounded-3xl border border-cyan-400/25 bg-[#061522]/88 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45),0_0_28px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
@@ -3717,6 +3742,9 @@ const availableAccessories = useMemo(() => {
 
   {runtimeProduct ? (
     <div className="relative z-20 h-full overflow-hidden rounded-2xl">
+      {environmentSettings.showRoom && (
+        <div className="pointer-events-none absolute bottom-[18%] left-1/2 z-0 h-32 w-[55%] -translate-x-1/2 rounded-full bg-black/25 blur-[60px]" />
+      )}
       <Viewer3D
         width={dimensions?.width}
         height={dimensions?.height}
