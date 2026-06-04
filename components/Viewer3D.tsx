@@ -83,6 +83,7 @@ type ImportCalibrationSettings = {
   rotationYDeg: number;
   rotationZDeg: number;
   scale: number;
+  realWidthCm: number;
 };
 
 const DEFAULT_IMPORT_CALIBRATION: ImportCalibrationSettings = {
@@ -93,6 +94,7 @@ const DEFAULT_IMPORT_CALIBRATION: ImportCalibrationSettings = {
   rotationYDeg: 0,
   rotationZDeg: 0,
   scale: 1,
+  realWidthCm: 0,
 };
 
 const IMPORT_CALIBRATION_LABELS: Record<keyof ImportCalibrationSettings, string> = {
@@ -103,6 +105,7 @@ const IMPORT_CALIBRATION_LABELS: Record<keyof ImportCalibrationSettings, string>
   rotationYDeg: "Rot. Y",
   rotationZDeg: "Rot. Z",
   scale: "Scala",
+  realWidthCm: "Largh. reale cm",
 };
 
 type Viewer3DProps = {
@@ -493,7 +496,8 @@ function getBagastudioImportedDisplayScale(
   root: THREE.Object3D | null,
   format?: string | null,
   dimensions?: { width?: number; height?: number; depth?: number },
-  importedModelName?: string | null
+  importedModelName?: string | null,
+  manualRealWidthCm?: number
 ) {
   if (!root) return 1;
 
@@ -541,6 +545,15 @@ function getBagastudioImportedDisplayScale(
     return 1;
   })();
 
+  // Import Scale V19:
+  // La scala universale degli import non deve dipendere dal placeholder 180x60x100.
+  // Se l'utente inserisce la larghezza reale nel pannello Import Calibration,
+  // quella misura diventa la fonte di verità per qualunque DAE/STL/OBJ/FBX.
+  const explicitRealWidthCm = Number(manualRealWidthCm || 0);
+  if (isImported && explicitRealWidthCm > 0 && rawWidth > 0) {
+    return THREE.MathUtils.clamp((explicitRealWidthCm / 100) / rawWidth, 0.00001, 1000);
+  }
+
   // Scale Real V11:
   // Se il nome del file ci dà una larghezza reale nota, scala sull'asse X del modello,
   // non sulla dimensione massima. La Vieira è 418 cm e deve quasi riempire una parete da 420 cm.
@@ -551,11 +564,18 @@ function getBagastudioImportedDisplayScale(
 
   // Usa dimensioni prodotto solo quando sono esplicite e credibili.
   // Il placeholder 180x60x100 non deve scalare import DAE/STL reali.
+  // Import Scale V24:
+  // Gli import DAE/STL/OBJ/FBX NON devono essere scalati usando le dimensioni UI del prodotto
+  // (180x60x100 o varianti scambiate): quel placeholder trasformava un cubo 50 cm in circa 180 cm.
+  // Per gli import la fonte di scala deve essere:
+  // 1) Largh. reale cm manuale;
+  // 2) larghezza nota dal nome file;
+  // 3) unità nativa stimata del file.
   const hasReliableProductDimensions =
+    !isImported &&
     Number.isFinite(productMaxCm) &&
     productMaxCm > 0 &&
-    !isDefaultPlaceholderDimensions &&
-    (!isImported || productMaxCm >= 250 || maxDimension < 100);
+    !isDefaultPlaceholderDimensions;
 
   if (hasReliableProductDimensions) {
     const targetMaxDimension = productMaxCm / 100;
@@ -4122,8 +4142,14 @@ return clonedScene;
 ]);
 
 const importedModelDisplayScale = useMemo(
-  () => getBagastudioImportedDisplayScale(scene, runtimeModelFormat, { width, height, depth }, importedModelName),
-  [scene, runtimeModelFormat, width, height, depth, importedModelName]
+  () => getBagastudioImportedDisplayScale(
+    scene,
+    runtimeModelFormat,
+    { width, height, depth },
+    importedModelName,
+    importCalibration.realWidthCm
+  ),
+  [scene, runtimeModelFormat, width, height, depth, importedModelName, importCalibration.realWidthCm]
 );
 
 const importedModelAxisCorrection = useMemo(
@@ -5177,6 +5203,7 @@ export default function Viewer3D({
   visibility,
   productModel,
   productModelFormat,
+  importedModelName,
   productParts,
   views = [],
   activeViewId,
@@ -5223,7 +5250,12 @@ productMaterials?.length
 
     setImportCalibration((current) => ({
       ...current,
-      [key]: key === "scale" ? Math.max(0.01, parsedValue) : parsedValue,
+      [key]:
+        key === "scale"
+          ? Math.max(0.01, parsedValue)
+          : key === "realWidthCm"
+            ? Math.max(0, parsedValue)
+            : parsedValue,
     }));
   };
 
@@ -5589,7 +5621,22 @@ productMaterials?.length
   }, [selectedRuntimePartId, viewerRuntimeComponents]);
 
   const effectiveProductModel = runtimeImportedModel?.url || productModel;
-  const effectiveProductModelFormat = runtimeImportedModel?.format || productModelFormat;
+  const effectiveProductModelFormat = useMemo(
+    () => inferModelFormat(effectiveProductModel || "", runtimeImportedModel?.format || productModelFormat),
+    [effectiveProductModel, runtimeImportedModel?.format, productModelFormat]
+  );
+  const effectiveImportedModelName =
+    runtimeImportedModel?.name ||
+    importedModelName ||
+    (typeof effectiveProductModel === "string" ? effectiveProductModel.split("/").pop() : "") ||
+    "import";
+
+  // Import Calibration V23:
+  // Il pannello deve comparire anche quando il DAE arriva da page.tsx come productModel,
+  // quindi il formato va sempre inferito dal model URL/data-url e non solo da runtimeImportedModel.
+  const hasActiveImportCalibrationPanel =
+    Boolean(effectiveProductModel) &&
+    (isImportedModelFormat(effectiveProductModelFormat) || Boolean(scaleDiagnosticsV8));
 
   const emitViewerCommand = (eventName: string) => {
     if (typeof window === "undefined") return;
@@ -5633,12 +5680,15 @@ productMaterials?.length
         </div>
       </div>
 
-      {runtimeImportedModel && (
-        <div className="absolute right-3 top-[16.75rem] z-20 w-[250px] rounded-xl border border-amber-500/25 bg-black/70 p-3 text-xs text-amber-50 shadow-lg backdrop-blur">
+      {hasActiveImportCalibrationPanel && (
+        <div className="fixed left-[230px] top-[145px] z-[99999] max-h-[70vh] w-[330px] overflow-y-auto rounded-xl border-2 border-amber-300/60 bg-black/95 p-3 text-xs text-amber-50 shadow-2xl shadow-amber-950/40 backdrop-blur">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
-              <div className="font-black uppercase tracking-[0.18em] text-amber-300">Import Calibration V1</div>
+              <div className="font-black uppercase tracking-[0.18em] text-amber-300">Import Calibration V23</div>
               <div className="text-[10px] text-slate-300">Correzione locale modello importato</div>
+              <div className="mt-1 max-w-[220px] truncate text-[10px] font-bold text-amber-100">
+                Modello: {effectiveImportedModelName || effectiveProductModelFormat || "import"}
+              </div>
             </div>
             <button
               type="button"
@@ -5656,7 +5706,7 @@ productMaterials?.length
                 <input
                   type="number"
                   value={importCalibration[key]}
-                  step={key === "scale" ? 0.01 : 0.1}
+                  step={key === "scale" ? 0.01 : key === "realWidthCm" ? 1 : 0.1}
                   onChange={(event) => updateImportCalibration(key, event.target.value)}
                   className="rounded-lg border border-white/10 bg-slate-950/90 px-2 py-1 text-xs text-white outline-none transition focus:border-amber-300/70"
                 />
@@ -5665,12 +5715,12 @@ productMaterials?.length
           </div>
 
           <div className="mt-2 text-[10px] leading-snug text-slate-400">
-            Usa Offset Y per alzare/abbassare DAE con origine CAD sbagliata. I valori sono temporanei nel Viewer.
+            Usa Offset Y per alzare/abbassare DAE. Largh. reale cm forza la scala corretta del modello importato.
           </div>
 
           {scaleDiagnosticsV8 && (
             <div className="mt-3 rounded-lg border border-amber-300/20 bg-slate-950/80 p-2 text-[10px] leading-snug text-amber-50">
-              <div className="mb-1 font-black uppercase tracking-[0.14em] text-amber-300">Scale Debug V16</div>
+              <div className="mb-1 font-black uppercase tracking-[0.14em] text-amber-300">Scale Debug V19</div>
               <div>Raw: {Number(scaleDiagnosticsV8.raw?.width || 0).toFixed(3)} × {Number(scaleDiagnosticsV8.raw?.height || 0).toFixed(3)} × {Number(scaleDiagnosticsV8.raw?.depth || 0).toFixed(3)}</div>
               <div>Scala auto: {Number(scaleDiagnosticsV8.displayScale || 0).toFixed(5)}</div>
               <div>Finale cm: {Number(scaleDiagnosticsV8.finalEstimatedCm?.width || 0).toFixed(1)} × {Number(scaleDiagnosticsV8.finalEstimatedCm?.height || 0).toFixed(1)} × {Number(scaleDiagnosticsV8.finalEstimatedCm?.depth || 0).toFixed(1)}</div>
@@ -5796,7 +5846,7 @@ productMaterials?.length
   width={runtimeImportedModel?.dimensions?.width ?? width}
   height={runtimeImportedModel?.dimensions?.height ?? height}
   depth={runtimeImportedModel?.dimensions?.depth ?? depth}
-  importedModelName={runtimeImportedModel?.name}
+  importedModelName={effectiveImportedModelName}
   materials={materials}
   productMaterials={productMaterials}
   accessories={accessories}
