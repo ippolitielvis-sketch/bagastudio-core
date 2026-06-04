@@ -21,6 +21,8 @@ type SceneComposerPanelProps = {
   activeSceneModuleIdV38: string;
   selectSceneModuleV38: (moduleId: string) => void;
   addSceneModuleSnapshotV38: () => void;
+  duplicateActiveSceneModuleV42: () => void;
+  deleteActiveSceneModuleV42: () => void;
 };
 
 export default function SceneComposerPanel({
@@ -39,13 +41,15 @@ export default function SceneComposerPanel({
   activeSceneModuleIdV38,
   selectSceneModuleV38,
   addSceneModuleSnapshotV38,
+  duplicateActiveSceneModuleV42,
+  deleteActiveSceneModuleV42,
 }: SceneComposerPanelProps) {
   return (
 <div className="absolute bottom-24 right-4 z-30 w-[260px] rounded-[24px] border border-emerald-400/20 bg-slate-950/78 p-3 text-[10px] font-black text-slate-100 shadow-2xl shadow-emerald-950/25 backdrop-blur-xl">
   <div className="mb-2 flex items-center justify-between gap-2">
     <div>
       <span className="block uppercase tracking-[0.18em] text-emerald-200">Muovi modulo</span>
-      <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-500">Scene V38</span>
+      <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-500">Scene V42</span>
     </div>
     <button
       type="button"
@@ -271,7 +275,7 @@ export default function SceneComposerPanel({
 
   <div className="mt-2 rounded-xl border border-violet-300/15 bg-violet-400/[0.055] p-1.5">
     <div className="mb-1 flex items-center justify-between gap-2 px-1">
-      <span className="text-[8px] font-black uppercase tracking-[0.16em] text-violet-100">Moduli scena V38</span>
+      <span className="text-[8px] font-black uppercase tracking-[0.16em] text-violet-100">Moduli scena V42</span>
       <span className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
         {sceneModulesV38.length} mod.
       </span>
@@ -298,14 +302,33 @@ export default function SceneComposerPanel({
       ))}
     </div>
 
-    <button
-      type="button"
-      onClick={addSceneModuleSnapshotV38}
-      className="w-full rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 py-1.5 text-[9px] uppercase tracking-wide text-violet-100 transition hover:border-violet-200/60 hover:bg-violet-400/18"
-      title="Duplica la posizione corrente come nuovo modulo scena V38"
-    >
-      + Modulo scena
-    </button>
+    <div className="grid grid-cols-3 gap-1">
+      <button
+        type="button"
+        onClick={addSceneModuleSnapshotV38}
+        className="rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 py-1.5 text-[9px] uppercase tracking-wide text-violet-100 transition hover:border-violet-200/60 hover:bg-violet-400/18"
+        title="Crea un nuovo modulo scena dalla posizione corrente"
+      >
+        + Nuovo
+      </button>
+      <button
+        type="button"
+        onClick={duplicateActiveSceneModuleV42}
+        className="rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1.5 text-[9px] uppercase tracking-wide text-cyan-100 transition hover:border-cyan-200/60 hover:bg-cyan-400/18"
+        title="Duplica il modulo attivo con posizione indipendente"
+      >
+        Duplica
+      </button>
+      <button
+        type="button"
+        onClick={deleteActiveSceneModuleV42}
+        disabled={sceneModulesV38.length <= 1}
+        className="rounded-lg border border-red-300/20 bg-red-400/10 px-2 py-1.5 text-[9px] uppercase tracking-wide text-red-100 transition hover:border-red-200/60 hover:bg-red-400/18 disabled:cursor-not-allowed disabled:opacity-35"
+        title="Elimina il modulo attivo"
+      >
+        Elimina
+      </button>
+    </div>
   </div>
 </div>  );
 }

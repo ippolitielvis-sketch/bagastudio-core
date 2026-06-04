@@ -140,6 +140,7 @@ type Viewer3DProps = {
  modelSceneOffset?: { x: number; z: number; rotationYDeg?: number };
  sceneModules?: any[];
  activeSceneModuleId?: string;
+  onSelectSceneModule?: (moduleId: string) => void;
   views?: {
   id: string;
   name: string;
@@ -3288,6 +3289,7 @@ function ProductModel({
   modelSceneOffset = { x: 0, z: 0, rotationYDeg: 0 },
   sceneModules = [],
   activeSceneModuleId,
+  onSelectSceneModule,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -3456,10 +3458,22 @@ function ProductModel({
   const selectedPartId = useConfigStore(
 (state) => state.selectedPartId
 );
+const lastSelectionWasMultiRef = useRef(false);
 const highlightedRef = useRef<{
   mesh: THREE.Mesh;
   material: THREE.Material | THREE.Material[];
+  highlightMaterial?: THREE.Material | THREE.Material[];
 } | null>(null);
+const highlightedMeshMapRef = useRef<
+  Map<
+    string,
+    {
+      mesh: THREE.Mesh;
+      material: THREE.Material | THREE.Material[];
+      highlightMaterial?: THREE.Material | THREE.Material[];
+    }
+  >
+>(new Map());
 
 const cloneMaterialForRestore = (
   material: THREE.Material | THREE.Material[] | null | undefined
@@ -3471,15 +3485,115 @@ const cloneMaterialForRestore = (
   return material ? material.clone() : createBagastudioNeutralImportMaterial();
 };
 
-const restoreHighlightedMesh = () => {
-  if (!highlightedRef.current) return;
+const restoreHighlightedMesh = (targetKey?: string) => {
+  const restoreEntry = (
+    key: string,
+    entry: {
+      mesh: THREE.Mesh;
+      material: THREE.Material | THREE.Material[];
+      highlightMaterial?: THREE.Material | THREE.Material[];
+    }
+  ) => {
+    const { mesh, material, highlightMaterial } = entry;
 
-  // Recovery V6: never restore a previously cloned material on deselect/selection change.
-  // The old restore path could overwrite a texture that had just been applied asynchronously,
-  // making the material disappear when clicking another component. Selection must be
-  // non-destructive: only reset render priority.
-  highlightedRef.current.mesh.renderOrder = 0;
+    // BagaStudio V42.5:
+    // ripristino conservativo multi-selezione. Ripristina solo i mesh che stanno
+    // ancora usando il materiale clone di highlight, senza sovrascrivere texture/materiali applicati dopo.
+    if (highlightMaterial) {
+      if (Array.isArray(mesh.material) && Array.isArray(highlightMaterial)) {
+        const stillUsingHighlight =
+          mesh.material.length === highlightMaterial.length &&
+          mesh.material.every((item, index) => item === highlightMaterial[index]);
+
+        if (stillUsingHighlight) {
+          mesh.material = material as THREE.Material[];
+        }
+      } else if (!Array.isArray(mesh.material) && !Array.isArray(highlightMaterial) && mesh.material === highlightMaterial) {
+        mesh.material = material as THREE.Material;
+      }
+    }
+
+    mesh.renderOrder = 0;
+    highlightedMeshMapRef.current.delete(key);
+  };
+
+  if (targetKey) {
+    const targetEntry = highlightedMeshMapRef.current.get(targetKey);
+    if (targetEntry) restoreEntry(targetKey, targetEntry);
+    if (highlightedRef.current?.mesh === targetEntry?.mesh) highlightedRef.current = null;
+    return;
+  }
+
+  Array.from(highlightedMeshMapRef.current.entries()).forEach(([key, entry]) => {
+    restoreEntry(key, entry);
+  });
+
+  if (highlightedRef.current) {
+    const { mesh, material, highlightMaterial } = highlightedRef.current;
+    if (highlightMaterial && mesh.material === highlightMaterial) {
+      mesh.material = material as THREE.Material;
+    }
+    mesh.renderOrder = 0;
+  }
+
   highlightedRef.current = null;
+};
+
+const createSelectedPartHighlightMaterial = (
+  material: THREE.Material | THREE.Material[]
+): THREE.Material | THREE.Material[] => {
+  const enhanceMaterial = (sourceMaterial: THREE.Material) => {
+    const highlightedMaterial = sourceMaterial.clone() as THREE.Material & {
+      color?: THREE.Color;
+      emissive?: THREE.Color;
+      emissiveIntensity?: number;
+      metalness?: number;
+      roughness?: number;
+      opacity?: number;
+      transparent?: boolean;
+    };
+
+    highlightedMaterial.userData = {
+      ...(highlightedMaterial.userData || {}),
+      bagastudioSelectionHighlightV42: true,
+    };
+
+    if (highlightedMaterial.emissive) {
+      highlightedMaterial.emissive = new THREE.Color("#38bdf8");
+      highlightedMaterial.emissiveIntensity = Math.max(0.55, Number(highlightedMaterial.emissiveIntensity || 0) + 0.55);
+    }
+
+    if (highlightedMaterial.color) {
+      highlightedMaterial.color = highlightedMaterial.color.clone().lerp(new THREE.Color("#7dd3fc"), 0.18);
+    }
+
+    highlightedMaterial.needsUpdate = true;
+    return highlightedMaterial;
+  };
+
+  return Array.isArray(material) ? material.map((item) => enhanceMaterial(item)) : enhanceMaterial(material);
+};
+
+const applySelectedPartLightUpV42 = (mesh: THREE.Mesh, highlightKey = mesh.uuid) => {
+  const existing = highlightedMeshMapRef.current.get(highlightKey);
+  if (existing?.mesh === mesh) return;
+
+  restoreHighlightedMesh(highlightKey);
+
+  const originalMaterial = mesh.material;
+  const highlightMaterial = createSelectedPartHighlightMaterial(originalMaterial);
+
+  mesh.material = highlightMaterial as any;
+  mesh.renderOrder = 90;
+
+  const entry = {
+    mesh,
+    material: originalMaterial,
+    highlightMaterial,
+  };
+
+  highlightedRef.current = entry;
+  highlightedMeshMapRef.current.set(highlightKey, entry);
 };
 
 const applyBagastudioXRayMaterialState = (
@@ -4290,7 +4404,12 @@ if (position === "top") {
   useEffect(() => {
     if (!scene) return;
 
-    restoreHighlightedMesh();
+    const keepExistingHighlights = lastSelectionWasMultiRef.current;
+    lastSelectionWasMultiRef.current = false;
+
+    if (!keepExistingHighlights) {
+      restoreHighlightedMesh();
+    }
 
     if (!selectedPartId) return;
 
@@ -4317,20 +4436,7 @@ if (position === "top") {
     if (!targetMesh) return;
 const mesh = targetMesh as THREE.Mesh;
 
-   highlightedRef.current = {
-  mesh,
-  material: cloneMaterialForRestore(mesh.material),
-};
-
-const applySoftSelectionHighlight = (_material: THREE.Material | THREE.Material[]) => {
-  // Recovery V6: no material mutation for selection highlight.
-  // Mutating emissive/material state on the selected mesh interfered with runtime texture
-  // persistence when another component was clicked. Keep selection visual non-destructive.
-  return;
-};
-
-applySoftSelectionHighlight(mesh.material);
-mesh.renderOrder = 30;
+applySelectedPartLightUpV42(mesh, String(selectedPartId));
   }, [scene, selectedPartId]);
 
   const importedModelOffsetDiagnostics = useMemo(() => {
@@ -4502,6 +4608,71 @@ mesh.renderOrder = 30;
       });
   }, [scene, sceneModules, activeSceneModuleId]);
 
+  const sceneModuleCollisionMapV42 = useMemo(() => {
+    const modules = Array.isArray(sceneModules) ? sceneModules : [];
+    const footprintWidth = Math.max(0.24, Number(width || 180) / 100);
+    const footprintDepth = Math.max(0.24, Number(depth || 60) / 100);
+    const joinTolerance = 0.08;
+
+    const getBox = (module: any, fallbackTransform?: any) => {
+      const transform = module?.transform || fallbackTransform || {};
+      const rotation = THREE.MathUtils.euclideanModulo(Number(transform.rotationYDeg || 0), 360);
+      const quarterTurn = Math.abs((rotation % 180) - 90) < 45;
+      const boxWidth = quarterTurn ? footprintDepth : footprintWidth;
+      const boxDepth = quarterTurn ? footprintWidth : footprintDepth;
+      const x = Number(transform.x || 0);
+      const z = Number(transform.z || 0);
+
+      return {
+        id: String(module?.id || activeSceneModuleId || "primary-module"),
+        x,
+        z,
+        width: boxWidth,
+        depth: boxDepth,
+        left: x - boxWidth / 2,
+        right: x + boxWidth / 2,
+        back: z - boxDepth / 2,
+        front: z + boxDepth / 2,
+      };
+    };
+
+    const boxes = modules.map((module: any) => getBox(module));
+    const status = new Map<string, "ok" | "join" | "collision">();
+
+    boxes.forEach((box) => status.set(box.id, "ok"));
+
+    for (let index = 0; index < boxes.length; index += 1) {
+      for (let nextIndex = index + 1; nextIndex < boxes.length; nextIndex += 1) {
+        const a = boxes[index];
+        const b = boxes[nextIndex];
+
+        const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const overlapZ = Math.min(a.front, b.front) - Math.max(a.back, b.back);
+        const intersects = overlapX > 0 && overlapZ > 0;
+
+        const nearlyJoined =
+          !intersects &&
+          (
+            (Math.abs(a.right - b.left) <= joinTolerance || Math.abs(b.right - a.left) <= joinTolerance) &&
+            Math.min(a.front, b.front) - Math.max(a.back, b.back) > -joinTolerance
+          ||
+            (Math.abs(a.front - b.back) <= joinTolerance || Math.abs(b.front - a.back) <= joinTolerance) &&
+            Math.min(a.right, b.right) - Math.max(a.left, b.left) > -joinTolerance
+          );
+
+        if (intersects) {
+          status.set(a.id, "collision");
+          status.set(b.id, "collision");
+        } else if (nearlyJoined) {
+          if (status.get(a.id) !== "collision") status.set(a.id, "join");
+          if (status.get(b.id) !== "collision") status.set(b.id, "join");
+        }
+      }
+    }
+
+    return status;
+  }, [sceneModules, width, depth, activeSceneModuleId]);
+
   if (!scene) return null;
 
   return (
@@ -4510,6 +4681,10 @@ mesh.renderOrder = 30;
         <group
           key={`scene-module-preview-v39-${module.id}`}
           name={`bagastudio-scene-module-preview-v39-${module.id}`}
+          onClick={(event: any) => {
+            event.stopPropagation();
+            onSelectSceneModule?.(String(module.id));
+          }}
           position={[
             Number(importCalibration.offsetX || 0) + Number(module.transform?.x || 0),
             Number(importCalibration.offsetY || 0),
@@ -4524,6 +4699,17 @@ mesh.renderOrder = 30;
           ]}
           scale={Math.max(0.01, Number(importCalibration.scale || 1))}
         >
+          {sceneModuleCollisionMapV42.get(String(module.id)) !== "ok" && (
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} renderOrder={8}>
+              <planeGeometry args={[Math.max(0.3, Number(width || 180) / 100), Math.max(0.3, Number(depth || 60) / 100)]} />
+              <meshBasicMaterial
+                color={sceneModuleCollisionMapV42.get(String(module.id)) === "collision" ? "#ef4444" : "#22c55e"}
+                transparent
+                opacity={0.18}
+                depthWrite={false}
+              />
+            </mesh>
+          )}
           <Center disableY>
             <group rotation={importedModelAxisCorrection} position={[0, importedModelGroundOffsetY, 0]}>
               <primitive object={module.object} scale={importedModelDisplayScale} castShadow receiveShadow />
@@ -4548,6 +4734,17 @@ mesh.renderOrder = 30;
       ]}
       scale={Math.max(0.01, Number(importCalibration.scale || 1))}
     >
+    {sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module")) !== "ok" && (
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} renderOrder={8}>
+        <planeGeometry args={[Math.max(0.3, Number(width || 180) / 100), Math.max(0.3, Number(depth || 60) / 100)]} />
+        <meshBasicMaterial
+          color={sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module")) === "collision" ? "#ef4444" : "#22c55e"}
+          transparent
+          opacity={0.18}
+          depthWrite={false}
+        />
+      </mesh>
+    )}
     <Center disableY>
 <group
   rotation={importedModelAxisCorrection}
@@ -4623,12 +4820,14 @@ const realPartKey =
   scene.getObjectByName(clickedPart?.meshName || clickedName) as THREE.Mesh ||
   (e.object as THREE.Mesh);
 
-      restoreHighlightedMesh();
+      const isMultiSelectionClick = Boolean(e?.nativeEvent?.ctrlKey || e?.nativeEvent?.metaKey || e?.nativeEvent?.shiftKey);
+      lastSelectionWasMultiRef.current = isMultiSelectionClick;
 
-      highlightedRef.current = {
-        mesh: clickedMesh,
-        material: cloneMaterialForRestore(clickedMesh.material),
-      };
+      if (!isMultiSelectionClick) {
+        restoreHighlightedMesh();
+      }
+
+      applySelectedPartLightUpV42(clickedMesh, realPartKey);
 
       setSelectedPartId(realPartKey);
       if (typeof window !== "undefined") {
@@ -5300,6 +5499,7 @@ productMaterials?.length
     : MATERIAL_LIBRARY;
   const ledKelvin = useConfigStore((state) => state.ledKelvin);
   const ledIntensityStore = useConfigStore((state) => state.ledIntensity);
+  const lastSelectionWasMultiRef = useRef(false);
   const selectedRuntimePartId = useConfigStore((state) => state.selectedPartId);
   const setRuntimeSelectedPartId = useConfigStore((state) => state.setSelectedPart);
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
@@ -5372,7 +5572,10 @@ productMaterials?.length
   const getRoomInteriorBoundsMeters = () => {
     const roomWidth = Math.max(2.8, Number(environment?.roomWidthCm || 420) / 100);
     const roomDepth = Math.max(2.8, Number(environment?.roomDepthCm || 360) / 100);
-    const wallSafetyInset = 0.065;
+    // V42.4 Close Fit:
+    // inset ridotto: il limite stanza deve bloccare il modulo dentro la stanza
+    // senza allontanarlo visivamente troppo dalle pareti quando usa Snap Parete.
+    const wallSafetyInset = 0.035;
 
     return {
       left: -roomWidth / 2 + wallSafetyInset,
@@ -5410,10 +5613,10 @@ productMaterials?.length
   };
 
   const getWallSnapSceneInsetMeters = (distanceCm = getActiveWallSnapDistanceCm()) => {
-    // Le coordinate stanza sono normalizzate rispetto alla scena Three.
-    // Manteniamo una base visiva di sicurezza e aggiungiamo la distanza cliente-friendly.
-    // Non tocca scala/import del DAE: serve solo al posizionamento nel Scene Composer.
-    return 0.12 + Math.max(0, Number(distanceCm || 0)) * 0.012;
+    // V42.5 Close Fit reale:
+    // lo snap parete deve usare una distanza fisica cliente-friendly.
+    // Appoggiato = 0.5 cm circa, senza aggiungere offset grafici che staccano troppo il mobile.
+    return 0.002 + Math.max(0, Number(distanceCm || 0)) / 100;
   };
 
   const getWallSnapModeLabel = () => {
@@ -5446,18 +5649,31 @@ productMaterials?.length
 
   const clampModelSceneTransform = (next: { x: number; z: number; rotationYDeg?: number }) => {
     const bounds = getRoomInteriorBoundsMeters();
+    const rotationYDeg = THREE.MathUtils.euclideanModulo(Number(next.rotationYDeg || 0), 360);
+    const footprint = getSceneModelFootprintMeters(rotationYDeg);
+    // V42.4 Close Fit:
+    // safety minima per evitare compenetrazione, ma non abbastanza grande
+    // da staccare il modulo dalla parete quando lo snap è "Appoggiato".
+    const boundarySafety = 0.004;
 
-    // Scene Composer V39.2:
-    // non usare il bounding box totale del DAE per lo snap/limite parete.
-    // Alcuni modelli hanno cornici, top o elementi sporgenti che falsano l'ingombro reale
-    // e lasciano il mobile staccato dalla parete. Manteniamo un limite leggero di stanza
-    // e lasciamo che "Snap Fondo" lavori sul retro produttivo/visivo del modulo.
-    const wallContactInset = 0.08;
+    const clampInsideRange = (value: number, min: number, max: number) => {
+      if (!Number.isFinite(min) || !Number.isFinite(max)) return Number(value || 0);
+      if (min > max) return (min + max) / 2;
+      return THREE.MathUtils.clamp(Number(value || 0), min, max);
+    };
+
+    // Scene Composer V42.3:
+    // il modulo deve restare dentro i limiti reali della stanza/piantina.
+    // Il clamp usa l'ingombro X/Z del modulo e impedisce attraversamento pareti.
+    const minX = bounds.left + footprint.width / 2 + boundarySafety;
+    const maxX = bounds.right - footprint.width / 2 - boundarySafety;
+    const minZ = bounds.back + footprint.depth / 2 + boundarySafety;
+    const maxZ = bounds.front - footprint.depth / 2 - boundarySafety;
 
     return {
-      x: THREE.MathUtils.clamp(Number(next.x || 0), bounds.left + wallContactInset, bounds.right - wallContactInset),
-      z: THREE.MathUtils.clamp(Number(next.z || 0), bounds.back + wallContactInset, bounds.front - wallContactInset),
-      rotationYDeg: THREE.MathUtils.euclideanModulo(Number(next.rotationYDeg || 0), 360),
+      x: clampInsideRange(Number(next.x || 0), minX, maxX),
+      z: clampInsideRange(Number(next.z || 0), minZ, maxZ),
+      rotationYDeg,
     };
   };
 
@@ -5514,7 +5730,68 @@ productMaterials?.length
 
     setSceneModulesV38((current) => [...current, nextModule]);
     setActiveSceneModuleIdV38(nextModule.id);
-    window.dispatchEvent(new CustomEvent("bagastudio:scene-module-created-v38", { detail: nextModule }));
+    window.dispatchEvent(new CustomEvent("bagastudio:scene-module-created-v42", { detail: nextModule }));
+  };
+
+  const duplicateActiveSceneModuleV42 = () => {
+    const activeModule = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0];
+    if (!activeModule) return;
+
+    const nextIndex = sceneModulesV38.length + 1;
+    const sourceTransform = activeModule.transform || modelSceneOffset;
+    const duplicatedModule = createSceneModuleV38({
+      name: `${activeModule.name || "Modulo"} copia`,
+      source: {
+        ...(activeModule.source || {}),
+        modelUrl: activeModule.source?.modelUrl || effectiveProductModel,
+        format: activeModule.source?.format || effectiveProductModelFormat,
+        importedModelName: activeModule.source?.importedModelName || effectiveImportedModelName || importedModelName || "",
+      },
+      transform: {
+        x: Number(sourceTransform.x || 0) + 0.35,
+        z: Number(sourceTransform.z ?? -0.62) + 0.35,
+        rotationYDeg: Number(sourceTransform.rotationYDeg || 0),
+        activeWallSnap: null,
+      },
+    });
+
+    duplicatedModule.name = `Modulo ${nextIndex}`;
+    const clampedTransform = clampModelSceneTransform(duplicatedModule.transform);
+    duplicatedModule.transform = {
+      ...duplicatedModule.transform,
+      ...clampedTransform,
+      activeWallSnap: null,
+    };
+
+    setSceneModulesV38((current) => [...current, duplicatedModule]);
+    setActiveSceneModuleIdV38(duplicatedModule.id);
+    setModelSceneOffset(clampedTransform);
+    setActiveWallSnap(null);
+    window.dispatchEvent(new CustomEvent("bagastudio:scene-module-duplicated-v42", { detail: duplicatedModule }));
+  };
+
+  const deleteActiveSceneModuleV42 = () => {
+    if (sceneModulesV38.length <= 1) return;
+
+    const currentIndex = sceneModulesV38.findIndex((module) => module.id === activeSceneModuleIdV38);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextModules = sceneModulesV38.filter((module) => module.id !== activeSceneModuleIdV38);
+    const nextActiveModule = nextModules[Math.max(0, safeIndex - 1)] || nextModules[0];
+
+    setSceneModulesV38(nextModules);
+
+    if (nextActiveModule) {
+      const nextTransform = clampModelSceneTransform(nextActiveModule.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
+      setActiveSceneModuleIdV38(nextActiveModule.id);
+      setModelSceneOffset(nextTransform);
+      setActiveWallSnap(nextActiveModule.transform?.activeWallSnap || null);
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("bagastudio:scene-module-deleted-v42", {
+        detail: { deletedModuleId: activeSceneModuleIdV38, nextActiveModuleId: nextActiveModule?.id || "" },
+      })
+    );
   };
 
   const moveModelInRoom = (deltaX = 0, deltaZ = 0) => {
@@ -5560,25 +5837,26 @@ productMaterials?.length
     } as const;
     const rotationYDeg = wallRotations[wall];
 
-    // Scene Composer V40:
-    // snap "Appoggiato" = distacco tecnico minimo 0.5 cm.
-    // Evita che cornici, specchi o parti sottili entrino nella parete e spariscano.
-    const contactInset = getWallSnapSceneInsetMeters();
+    // Scene Composer V42.3:
+    // lo snap usa l'ingombro del modulo, non il suo centro.
+    // Distanza 0.5 cm = leggero distacco tecnico senza entrare nella parete.
+    const footprint = getSceneModelFootprintMeters(rotationYDeg);
+    const contactClearance = Math.max(0.003, getActiveWallSnapDistanceCm() / 100);
 
     if (wall === "back") {
-      return { x: 0, z: bounds.back + contactInset, rotationYDeg };
+      return { x: 0, z: bounds.back + footprint.depth / 2 + contactClearance, rotationYDeg };
     }
 
     if (wall === "front") {
-      return { x: 0, z: bounds.front - contactInset, rotationYDeg };
+      return { x: 0, z: bounds.front - footprint.depth / 2 - contactClearance, rotationYDeg };
     }
 
     if (wall === "left") {
-      return { x: bounds.left + contactInset, z: bounds.centerZ, rotationYDeg };
+      return { x: bounds.left + footprint.width / 2 + contactClearance, z: bounds.centerZ, rotationYDeg };
     }
 
     if (wall === "right") {
-      return { x: bounds.right - contactInset, z: bounds.centerZ, rotationYDeg };
+      return { x: bounds.right - footprint.width / 2 - contactClearance, z: bounds.centerZ, rotationYDeg };
     }
 
     return { x: 0, z: bounds.centerZ, rotationYDeg };
@@ -5620,14 +5898,14 @@ productMaterials?.length
   useEffect(() => {
     const activeModule = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
     const scenePackageV38 = {
-      schema: "bagastudio.sceneComposer.v40",
+      schema: "bagastudio.sceneComposer.v42",
       activeModuleId: activeSceneModuleIdV38,
       activeWallSnap,
       activeWallSnapDistanceCm: getActiveWallSnapDistanceCm(),
       activeWallSnapDistanceMode: wallSnapDistanceMode,
       activeTransform: modelSceneOffset,
       modules: sceneModulesV38,
-      note: "Scene Composer V40: snap parete con distacco tecnico, UI premium e transform multi-modulo. Import multiplo reale previsto nello step successivo.",
+      note: "Scene Composer V42: registry multi-modulo con modulo attivo, duplica/elimina e transform indipendente. Import multiplo reale previsto nello step successivo.",
       updatedAt: new Date().toISOString(),
     };
 
@@ -5944,6 +6222,7 @@ productMaterials?.length
       const detail = (event as CustomEvent).detail || {};
       const partId = String(detail?.partId || detail?.id || detail?.meshName || "");
       if (!partId) return;
+      lastSelectionWasMultiRef.current = Boolean(detail?.multiSelect || detail?.additive || detail?.range);
       setRuntimeSelectedPartId(partId);
     };
 
@@ -6077,6 +6356,77 @@ productMaterials?.length
         </div>
       )}
 
+      {sceneModulesV38.length > 1 && (() => {
+        const collisionMap = new Map<string, "ok" | "join" | "collision">();
+        const footprint = getSceneModelFootprintMeters(modelSceneOffset.rotationYDeg);
+        const joinTolerance = 0.08;
+        const boxes = sceneModulesV38.map((module: any) => {
+          const transform = module?.id === activeSceneModuleIdV38 ? modelSceneOffset : module?.transform || {};
+          const rotation = THREE.MathUtils.euclideanModulo(Number(transform.rotationYDeg || 0), 360);
+          const quarterTurn = Math.abs((rotation % 180) - 90) < 45;
+          const boxWidth = quarterTurn ? footprint.depth : footprint.width;
+          const boxDepth = quarterTurn ? footprint.width : footprint.depth;
+          const x = Number(transform.x || 0);
+          const z = Number(transform.z || 0);
+          return {
+            id: String(module.id),
+            left: x - boxWidth / 2,
+            right: x + boxWidth / 2,
+            back: z - boxDepth / 2,
+            front: z + boxDepth / 2,
+          };
+        });
+
+        boxes.forEach((box) => collisionMap.set(box.id, "ok"));
+
+        for (let i = 0; i < boxes.length; i += 1) {
+          for (let j = i + 1; j < boxes.length; j += 1) {
+            const a = boxes[i];
+            const b = boxes[j];
+            const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const overlapZ = Math.min(a.front, b.front) - Math.max(a.back, b.back);
+            const intersects = overlapX > 0 && overlapZ > 0;
+            const nearlyJoined =
+              !intersects &&
+              (
+                (Math.abs(a.right - b.left) <= joinTolerance || Math.abs(b.right - a.left) <= joinTolerance) &&
+                Math.min(a.front, b.front) - Math.max(a.back, b.back) > -joinTolerance
+              ||
+                (Math.abs(a.front - b.back) <= joinTolerance || Math.abs(b.front - a.back) <= joinTolerance) &&
+                Math.min(a.right, b.right) - Math.max(a.left, b.left) > -joinTolerance
+              );
+
+            if (intersects) {
+              collisionMap.set(a.id, "collision");
+              collisionMap.set(b.id, "collision");
+            } else if (nearlyJoined) {
+              if (collisionMap.get(a.id) !== "collision") collisionMap.set(a.id, "join");
+              if (collisionMap.get(b.id) !== "collision") collisionMap.set(b.id, "join");
+            }
+          }
+        }
+
+        const activeStatus = collisionMap.get(activeSceneModuleIdV38);
+        if (activeStatus === "ok") return null;
+
+        return (
+          <div className={`pointer-events-none absolute right-[318px] top-[112px] z-40 rounded-2xl border px-4 py-3 text-xs font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
+            activeStatus === "collision"
+              ? "border-red-400/40 bg-red-950/80 text-red-50"
+              : "border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
+          }`}>
+            <div className="uppercase tracking-[0.18em]">
+              {activeStatus === "collision" ? "Collisione modulo" : "Giunzione possibile"}
+            </div>
+            <div className="mt-1 text-[11px] font-semibold opacity-80">
+              {activeStatus === "collision"
+                ? "Sposta il modulo: sta attraversando un altro ingombro."
+                : "Modulo vicino a un altro: aggancio/affiancamento valido."}
+            </div>
+          </div>
+        );
+      })()}
+
       {wallSnapNotice && (
         <div className="pointer-events-none absolute bottom-10 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-lg font-black text-white">✓</span>
@@ -6159,6 +6509,8 @@ productMaterials?.length
         activeSceneModuleIdV38={activeSceneModuleIdV38}
         selectSceneModuleV38={selectSceneModuleV38}
         addSceneModuleSnapshotV38={addSceneModuleSnapshotV38}
+        duplicateActiveSceneModuleV42={duplicateActiveSceneModuleV42}
+        deleteActiveSceneModuleV42={deleteActiveSceneModuleV42}
       />
       <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
         <button
@@ -6289,6 +6641,7 @@ productMaterials?.length
   modelSceneOffset={modelSceneOffset}
   sceneModules={sceneModulesV38}
   activeSceneModuleId={activeSceneModuleIdV38}
+  onSelectSceneModule={selectSceneModuleV38}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}
