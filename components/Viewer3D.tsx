@@ -4034,30 +4034,27 @@ const importedModelDiagnostics = useMemo(() => {
   const size = new THREE.Vector3();
   box.getSize(size);
 
-  const maxDimension = Math.max(size.x, size.y, size.z);
-  const targetDimension = 8;
-  const calculatedScale =
-    Number.isFinite(maxDimension) && maxDimension > 0
-      ? targetDimension / maxDimension
-      : 1;
-
   return {
     width: size.x,
     height: size.y,
     depth: size.z,
     minY: box.min.y,
     maxY: box.max.y,
-    maxDimension,
-    targetDimension,
-    calculatedScale,
-    finalScale: importedModelDisplayScale,
+    scale: importedModelDisplayScale,
   };
 }, [scene, importedModelDisplayScale]);
 
 useEffect(() => {
   if (!importedModelDiagnostics) return;
 
-  console.log("[BAGASTUDIO IMPORT DIAGNOSTICS V1.1]", importedModelDiagnostics);
+  console.log("[BAGASTUDIO IMPORT DIAGNOSTICS]", {
+    width: importedModelDiagnostics.width,
+    height: importedModelDiagnostics.height,
+    depth: importedModelDiagnostics.depth,
+    minY: importedModelDiagnostics.minY,
+    maxY: importedModelDiagnostics.maxY,
+    scale: importedModelDiagnostics.scale,
+  });
 }, [importedModelDiagnostics]);
 
 function createInsertPanel(
@@ -4174,6 +4171,36 @@ const applySoftSelectionHighlight = (_material: THREE.Material | THREE.Material[
 applySoftSelectionHighlight(mesh.material);
 mesh.renderOrder = 30;
   }, [scene, selectedPartId]);
+
+  const importedModelOffsetDiagnostics = useMemo(() => {
+    if (!scene) return null;
+
+    const box = new THREE.Box3().setFromObject(scene);
+    if (box.isEmpty()) return null;
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    return {
+      rawWidth: size.x,
+      rawHeight: size.y,
+      rawDepth: size.z,
+      rawMinY: box.min.y,
+      rawMaxY: box.max.y,
+      displayScale: importedModelDisplayScale,
+      scaledMinY: box.min.y * importedModelDisplayScale,
+      scaledMaxY: box.max.y * importedModelDisplayScale,
+      scaledHeight: size.y * importedModelDisplayScale,
+      suggestedGroundOffsetY: -box.min.y * importedModelDisplayScale,
+      centerMode: "Center disableY",
+    };
+  }, [scene, importedModelDisplayScale]);
+
+  useEffect(() => {
+    if (!importedModelOffsetDiagnostics) return;
+
+    console.log("[BAGASTUDIO IMPORT OFFSET DIAGNOSTICS V1]", importedModelOffsetDiagnostics);
+  }, [importedModelOffsetDiagnostics]);
 
   if (!scene) return null;
 
