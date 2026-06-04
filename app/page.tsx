@@ -13,6 +13,85 @@ import { accessoriesCatalog } from "@/core/catalogs/accessories.catalog";
 
 type AnyProduct = any;
 
+type EnvironmentSettings = {
+  width: number;
+  depth: number;
+  height: number;
+  floorMaterial: string;
+  wallMaterial: string;
+  showBackWall: boolean;
+  showLeftWall: boolean;
+  showRightWall: boolean;
+};
+
+const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = {
+  width: 420,
+  depth: 360,
+  height: 280,
+  floorMaterial: "wood-neutral",
+  wallMaterial: "warm-white",
+  showBackWall: true,
+  showLeftWall: true,
+  showRightWall: true,
+};
+
+const ENVIRONMENT_MATERIAL_OPTIONS = {
+  floors: [
+    { id: "wood-neutral", label: "Legno neutro" },
+    { id: "cement-light", label: "Cemento chiaro" },
+    { id: "stone-greige", label: "Gres tortora" },
+    { id: "dark-matte", label: "Nero opaco" },
+  ],
+  walls: [
+    { id: "warm-white", label: "Bianco caldo" },
+    { id: "tortora", label: "Tortora" },
+    { id: "cement", label: "Cemento" },
+    { id: "dark-salon", label: "Scuro elegante" },
+  ],
+};
+
+function getEnvironmentViewerSurfaces(settings: EnvironmentSettings) {
+  const floorStyles: Record<string, any> = {
+    "wood-neutral": {
+      background: "linear-gradient(135deg, rgba(143,103,61,0.38), rgba(72,49,31,0.62)), repeating-linear-gradient(90deg, rgba(255,255,255,0.07) 0 1px, transparent 1px 46px)",
+    },
+    "cement-light": {
+      background: "linear-gradient(135deg, rgba(190,190,184,0.24), rgba(96,99,102,0.42))",
+    },
+    "stone-greige": {
+      background: "linear-gradient(135deg, rgba(176,159,137,0.32), rgba(91,82,72,0.45)), repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 58px)",
+    },
+    "dark-matte": {
+      background: "linear-gradient(135deg, rgba(8,10,13,0.90), rgba(35,38,42,0.72))",
+    },
+  };
+
+  const wallStyles: Record<string, any> = {
+    "warm-white": { background: "linear-gradient(180deg, rgba(246,239,226,0.17), rgba(246,239,226,0.045))" },
+    tortora: { background: "linear-gradient(180deg, rgba(157,137,117,0.19), rgba(96,78,66,0.06))" },
+    cement: { background: "linear-gradient(180deg, rgba(158,166,166,0.15), rgba(91,99,101,0.055))" },
+    "dark-salon": { background: "linear-gradient(180deg, rgba(18,22,27,0.58), rgba(7,10,14,0.16))" },
+  };
+
+  return {
+    floor: floorStyles[settings.floorMaterial] || floorStyles[DEFAULT_ENVIRONMENT_SETTINGS.floorMaterial],
+    wall: wallStyles[settings.wallMaterial] || wallStyles[DEFAULT_ENVIRONMENT_SETTINGS.wallMaterial],
+  };
+}
+
+function normalizeEnvironmentSettings(value: any): EnvironmentSettings {
+  return {
+    width: Number(value?.width || DEFAULT_ENVIRONMENT_SETTINGS.width),
+    depth: Number(value?.depth || DEFAULT_ENVIRONMENT_SETTINGS.depth),
+    height: Number(value?.height || DEFAULT_ENVIRONMENT_SETTINGS.height),
+    floorMaterial: String(value?.floorMaterial || DEFAULT_ENVIRONMENT_SETTINGS.floorMaterial),
+    wallMaterial: String(value?.wallMaterial || DEFAULT_ENVIRONMENT_SETTINGS.wallMaterial),
+    showBackWall: value?.showBackWall !== false,
+    showLeftWall: value?.showLeftWall !== false,
+    showRightWall: value?.showRightWall !== false,
+  };
+}
+
 const DEFAULT_MATERIALS = MATERIAL_LIBRARY;
 
 // BagaStudio Viewer axes convention:
@@ -557,16 +636,17 @@ function getInitialLanguage(): "it" | "en" {
   return savedLanguage === "en" ? "en" : "it";
 }
 
-function createBagaStudioProject(configuration: any, projectName = "Progetto BagaStudio") {
+function createBagaStudioProject(configuration: any, projectName = "Progetto BagaStudio", environment?: EnvironmentSettings) {
   const now = new Date().toISOString();
 
   return {
     type: "bagastudio-project",
-    version: "1.0",
+    version: "1.1",
     name: projectName || "Progetto BagaStudio",
     createdAt: now,
     updatedAt: now,
     configuration,
+    environment: normalizeEnvironmentSettings(environment),
   };
 }
 
@@ -687,6 +767,8 @@ const [structureCounts, setStructureCounts] = useState({
   drawers: 0,
   doors: 2,
 });
+const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>(DEFAULT_ENVIRONMENT_SETTINGS);
+const environmentViewerSurfaces = useMemo(() => getEnvironmentViewerSurfaces(environmentSettings), [environmentSettings]);
 const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const uiNoticeTimerRef = useRef<number | null>(null);
 
@@ -708,6 +790,18 @@ const updateStructureCount = (key: keyof typeof structureCounts, delta: number) 
     ...current,
     [key]: Math.max(0, Number(current[key] || 0) + delta),
   }));
+};
+
+const updateEnvironmentSetting = <K extends keyof EnvironmentSettings,>(key: K, value: EnvironmentSettings[K]) => {
+  setEnvironmentSettings((current) => normalizeEnvironmentSettings({
+    ...current,
+    [key]: value,
+  }));
+};
+
+const resetEnvironmentSettings = () => {
+  setEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS);
+  showUiNotice("Ambiente riportato ai valori base", "info");
 };
 
 useEffect(() => {
@@ -1066,7 +1160,7 @@ function requestViewerFullscreen() {
 
 function registerRecentProject(projectName: string, projectData?: any) {
   const normalizedName = (projectName || "Progetto BagaStudio").trim() || "Progetto BagaStudio";
-  const project = projectData || createBagaStudioProject(exportConfiguration(), normalizedName);
+  const project = projectData || createBagaStudioProject(exportConfiguration(), normalizedName, environmentSettings);
   const fileName = getSafeProjectFilename(normalizedName);
   const id = `${fileName.toLowerCase()}::${normalizedName.toLowerCase()}`;
   const nextItem: RecentBagaStudioProject = {
@@ -1093,6 +1187,7 @@ function openRecentProject(projectId: string) {
   }
 
   importConfiguration(target.project.configuration);
+  setEnvironmentSettings(normalizeEnvironmentSettings(target.project.environment));
   const nextName = target.project.name || target.name || "Progetto BagaStudio";
   setCurrentProjectName(nextName);
   setImportName(nextName);
@@ -1113,6 +1208,7 @@ function newProject() {
   importConfiguration({});
   setCurrentProjectName(nextName);
   setImportName(nextName);
+  setEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS);
   setLastProjectAction(`Nuovo progetto avviato: ${nextName}`);
   showUiNotice(`Nuovo progetto avviato: ${nextName}`, "info");
   setSelectedPart(null);
@@ -1121,7 +1217,7 @@ function newProject() {
 
 async function saveProject() {
   const projectName = getCurrentProjectName();
-  const project = createBagaStudioProject(exportConfiguration(), projectName);
+  const project = createBagaStudioProject(exportConfiguration(), projectName, environmentSettings);
   const fileName = getSafeProjectFilename(projectName);
 
   try {
@@ -1167,6 +1263,7 @@ async function openProject(file: File) {
 
     if (data?.type === "bagastudio-project" && data?.configuration) {
       importConfiguration(data.configuration);
+      setEnvironmentSettings(normalizeEnvironmentSettings(data.environment));
       const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
       setCurrentProjectName(nextName);
       setImportName(nextName);
@@ -1178,10 +1275,11 @@ async function openProject(file: File) {
 
     if (data?.configuration) {
       importConfiguration(data.configuration);
+      setEnvironmentSettings(normalizeEnvironmentSettings(data.environment));
       const nextName = data?.name || file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
       setCurrentProjectName(nextName);
       setImportName(nextName);
-      registerRecentProject(nextName, createBagaStudioProject(data.configuration, nextName));
+      registerRecentProject(nextName, createBagaStudioProject(data.configuration, nextName, environmentSettings));
       setLastProjectAction(`Configurazione importata: ${nextName}`);
       showUiNotice(`Configurazione importata: ${nextName}`);
       return;
@@ -1191,7 +1289,7 @@ async function openProject(file: File) {
     const nextName = file.name.replace(/\.baga$|\.json$/i, "") || "Progetto BagaStudio";
     setCurrentProjectName(nextName);
     setImportName(nextName);
-    registerRecentProject(nextName, createBagaStudioProject(data, nextName));
+    registerRecentProject(nextName, createBagaStudioProject(data, nextName, environmentSettings));
     setLastProjectAction(`Configurazione importata: ${nextName}`);
     showUiNotice(`Configurazione importata: ${nextName}`);
   } catch (error) {
@@ -2751,6 +2849,116 @@ const availableAccessories = useMemo(() => {
 
         <div className="min-h-0 flex-1 overflow-auto p-6">
           <div className="grid gap-5 xl:grid-cols-2">
+            <section className="rounded-[24px] border border-cyan-400/20 bg-black/24 p-5 xl:col-span-2">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300">00</p>
+                  <h3 className="mt-1 text-xl font-black text-white">Ambiente V1</h3>
+                  <p className="mt-1 text-sm text-neutral-400">Dimensione stanza, pavimento e pareti base per non vedere più il mobile sospeso nel vuoto.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetEnvironmentSettings}
+                  className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100 hover:bg-cyan-400/20"
+                >
+                  Reset
+                </button>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="grid gap-3 md:grid-cols-3">
+                  {([
+                    ["width", "Larghezza stanza", 200, 1200],
+                    ["depth", "Profondità stanza", 200, 1200],
+                    ["height", "Altezza stanza", 220, 500],
+                  ] as const).map(([key, label, min, max]) => (
+                    <label key={key} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">{label}</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={min}
+                          max={max}
+                          step={1}
+                          value={environmentSettings[key]}
+                          onChange={(event) => updateEnvironmentSetting(key, Number(event.target.value))}
+                          className="w-full rounded-xl border border-white/10 bg-neutral-950 px-3 py-2 text-sm font-black text-white outline-none focus:border-cyan-300/60"
+                        />
+                        <span className="text-xs font-black text-cyan-200">cm</span>
+                      </div>
+                    </label>
+                  ))}
+
+                  <label className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Pavimento</span>
+                    <select
+                      value={environmentSettings.floorMaterial}
+                      onChange={(event) => updateEnvironmentSetting("floorMaterial", event.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-neutral-950 px-3 py-2 text-sm font-bold text-white outline-none focus:border-cyan-300/60"
+                    >
+                      {ENVIRONMENT_MATERIAL_OPTIONS.floors.map((item) => (
+                        <option key={item.id} value={item.id}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Pareti</span>
+                    <select
+                      value={environmentSettings.wallMaterial}
+                      onChange={(event) => updateEnvironmentSetting("wallMaterial", event.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-neutral-950 px-3 py-2 text-sm font-bold text-white outline-none focus:border-cyan-300/60"
+                    >
+                      {ENVIRONMENT_MATERIAL_OPTIONS.walls.map((item) => (
+                        <option key={item.id} value={item.id}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-neutral-400">Pareti visibili</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        ["showBackWall", "Fondo"],
+                        ["showLeftWall", "SX"],
+                        ["showRightWall", "DX"],
+                      ] as const).map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => updateEnvironmentSetting(key, !environmentSettings[key])}
+                          className={`rounded-xl border px-2 py-2 text-xs font-black ${
+                            environmentSettings[key]
+                              ? "border-cyan-300/45 bg-cyan-500/20 text-white"
+                              : "border-white/10 bg-black/25 text-neutral-400"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-cyan-400/15 bg-[#06111d] p-4">
+                  <div className="relative h-56 overflow-hidden rounded-[20px] border border-white/10 bg-[radial-gradient(circle_at_center,rgba(14,165,233,0.14),transparent_42%),#020812]">
+                    {environmentSettings.showBackWall && <div className="absolute left-[15%] right-[15%] top-[12%] h-[42%] rounded-t-2xl border border-white/10 bg-white/[0.08]" />}
+                    {environmentSettings.showLeftWall && <div className="absolute left-[8%] top-[18%] h-[53%] w-[22%] skew-y-[-18deg] rounded-l-2xl border border-white/10 bg-white/[0.045]" />}
+                    {environmentSettings.showRightWall && <div className="absolute right-[8%] top-[18%] h-[53%] w-[22%] skew-y-[18deg] rounded-r-2xl border border-white/10 bg-white/[0.045]" />}
+                    <div className="absolute bottom-[12%] left-[14%] right-[14%] h-[34%] skew-x-[-12deg] rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.08] shadow-[0_22px_60px_rgba(0,0,0,0.45)]" />
+                    <div className="absolute bottom-[29%] left-1/2 h-20 w-28 -translate-x-1/2 rounded-xl border border-emerald-300/25 bg-emerald-400/15 shadow-[0_0_30px_rgba(16,185,129,0.18)]" />
+                    <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/80">
+                      <span>{environmentSettings.width} × {environmentSettings.depth} cm</span>
+                      <span>H {environmentSettings.height} cm</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-neutral-400">
+                    Ambiente salvato nel progetto .baga e visualizzato come guscio ambiente nel Viewer. La geometria 3D reale interna a Viewer3D sarà lo step successivo con il file Viewer3D.
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <section className="rounded-[24px] border border-sky-400/15 bg-black/24 p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
@@ -3310,6 +3518,34 @@ const availableAccessories = useMemo(() => {
     </div>
   )}
 
+  <div className="pointer-events-none absolute inset-3 z-10 overflow-hidden rounded-[24px] border border-white/[0.035]">
+    {environmentSettings.showBackWall && (
+      <div
+        className="absolute left-[14%] right-[14%] top-[6%] h-[43%] rounded-t-[28px] border border-white/[0.055] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        style={environmentViewerSurfaces.wall}
+      />
+    )}
+    {environmentSettings.showLeftWall && (
+      <div
+        className="absolute bottom-[18%] left-[3%] top-[14%] w-[26%] origin-bottom-right skew-y-[-18deg] rounded-l-[28px] border border-white/[0.045] opacity-80"
+        style={environmentViewerSurfaces.wall}
+      />
+    )}
+    {environmentSettings.showRightWall && (
+      <div
+        className="absolute bottom-[18%] right-[3%] top-[14%] w-[26%] origin-bottom-left skew-y-[18deg] rounded-r-[28px] border border-white/[0.045] opacity-80"
+        style={environmentViewerSurfaces.wall}
+      />
+    )}
+    <div
+      className="absolute bottom-0 left-[7%] right-[7%] h-[36%] origin-bottom rounded-t-[34px] border border-white/[0.055] opacity-85 shadow-[0_-22px_70px_rgba(0,0,0,0.20)]"
+      style={{ ...environmentViewerSurfaces.floor, transform: "perspective(620px) rotateX(62deg)", transformOrigin: "bottom center" }}
+    />
+    <div className="absolute left-5 top-5 rounded-2xl border border-white/10 bg-black/28 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-neutral-200 backdrop-blur-md">
+      Ambiente {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
+    </div>
+  </div>
+
   <div className="absolute right-5 top-5 z-30 w-[230px] rounded-3xl border border-cyan-400/25 bg-[#061522]/88 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45),0_0_28px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
     <div className="mb-2 flex items-center justify-between gap-2">
       <div>
@@ -3391,28 +3627,40 @@ const availableAccessories = useMemo(() => {
   </div>
 
   {runtimeProduct ? (
-    <Viewer3D
-      width={dimensions?.width}
-      height={dimensions?.height}
-      depth={dimensions?.depth}
-      materials={materials}
-      accessories={accessories}
-      inserts={inserts}
-      insertMaterials={insertMaterials}
-      insertSizes={insertSizes}
-      visibility={visibility}
-      ledKelvin={ledKelvin}
-      ledIntensity={ledIntensity}
-      activeViewId={activeViewId}
-      productModel={getModelUrl(runtimeProduct)}
-      productModelFormat={getModelFormat(runtimeProduct)}
-      productMaterials={MATERIAL_LIBRARY}
-      productParts={runtimeProduct.parts}
-      views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
-      woodDirection={woodDirection}
-      xRayEnabled={xRayEnabled}
-      xRayOpacity={xRayOpacity}
-    />
+    <div className="relative z-20 h-full overflow-hidden rounded-2xl">
+      <Viewer3D
+        width={dimensions?.width}
+        height={dimensions?.height}
+        depth={dimensions?.depth}
+        materials={materials}
+        accessories={accessories}
+        inserts={inserts}
+        insertMaterials={insertMaterials}
+        insertSizes={insertSizes}
+        visibility={visibility}
+        ledKelvin={ledKelvin}
+        ledIntensity={ledIntensity}
+        activeViewId={activeViewId}
+        productModel={getModelUrl(runtimeProduct)}
+        productModelFormat={getModelFormat(runtimeProduct)}
+        productMaterials={MATERIAL_LIBRARY}
+        productParts={runtimeProduct.parts}
+        views={runtimeProduct.views?.length ? runtimeProduct.views : DEFAULT_VIEWS}
+        woodDirection={woodDirection}
+        xRayEnabled={xRayEnabled}
+        xRayOpacity={xRayOpacity}
+        environment={{
+          roomWidthCm: environmentSettings.width,
+          roomDepthCm: environmentSettings.depth,
+          roomHeightCm: environmentSettings.height,
+          floorMaterial: environmentSettings.floorMaterial,
+          wallMaterial: environmentSettings.wallMaterial,
+          showBackWall: environmentSettings.showBackWall,
+          showLeftWall: environmentSettings.showLeftWall,
+          showRightWall: environmentSettings.showRightWall,
+        }}
+      />
+    </div>
   ) : (
     <div className="flex h-full items-center justify-center rounded-2xl border border-sky-400/10 bg-[radial-gradient(circle_at_center,rgba(14,165,233,0.10),transparent_38%),#050d16] p-6">
       <label className="group flex w-full max-w-[560px] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-sky-300/25 bg-[#06111d]/62 px-8 py-11 text-center shadow-[0_20px_80px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-sky-300/55 hover:bg-sky-400/[0.07]">
@@ -3636,6 +3884,10 @@ const availableAccessories = useMemo(() => {
                 <div className="flex items-center justify-between gap-3 text-neutral-300">
                   <span>▤ {t.backup}</span>
                   <span>{autosaveLabel ? `${t.autosave} ${autosaveLabel}` : t.ready}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-neutral-300">
+                  <span>▱ Ambiente</span>
+                  <span>{environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm</span>
                 </div>
               </div>
 

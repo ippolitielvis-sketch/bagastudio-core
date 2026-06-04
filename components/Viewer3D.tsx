@@ -74,6 +74,17 @@ function getBagastudioTextureRepeat(mesh: THREE.Mesh, materialData: any, rotateW
   return { repeatX: 1, repeatY: 1, rotate: false };
 }
 
+type RoomEnvironmentSettings = {
+  roomWidthCm: number;
+  roomDepthCm: number;
+  roomHeightCm: number;
+  floorMaterial: string;
+  wallMaterial: string;
+  showBackWall: boolean;
+  showLeftWall: boolean;
+  showRightWall: boolean;
+};
+
 type Viewer3DProps = {
   width?: number;
   height?: number;
@@ -99,6 +110,7 @@ type Viewer3DProps = {
  xRayEnabled?: boolean;
  xRayOpacity?: number;
  modelEdgesEnabled?: boolean;
+ environment?: RoomEnvironmentSettings;
   views?: {
   id: string;
   name: string;
@@ -132,6 +144,76 @@ led?: boolean;
 }[];
 };
 
+
+function getRoomEnvironmentColor(materialId: string, fallback = "#d8d3c7") {
+  const key = String(materialId || "").toLowerCase();
+
+  if (key.includes("cemento-scuro")) return "#565656";
+  if (key.includes("cemento")) return "#b8b8b2";
+  if (key.includes("legno") || key.includes("7040")) return "#9a7650";
+  if (key.includes("tortora")) return "#9b8f83";
+  if (key.includes("nero")) return "#171717";
+  if (key.includes("bianco")) return "#e8e1d4";
+
+  return fallback;
+}
+
+function RoomEnvironment({ environment }: { environment?: RoomEnvironmentSettings }) {
+  if (!environment) return null;
+
+  const roomWidth = Math.max(1, Number(environment.roomWidthCm || 400) / 10);
+  const roomDepth = Math.max(1, Number(environment.roomDepthCm || 350) / 10);
+  const roomHeight = Math.max(1, Number(environment.roomHeightCm || 270) / 10);
+  const floorColor = getRoomEnvironmentColor(environment.floorMaterial, "#b8b8b2");
+  const wallColor = getRoomEnvironmentColor(environment.wallMaterial, "#e8e1d4");
+  const wallThickness = 0.12;
+
+  return (
+    <group name="bagastudio-room-environment-v1">
+      <mesh
+        name="bagastudio-room-floor"
+        receiveShadow
+        position={[0, -0.06, 0]}
+      >
+        <boxGeometry args={[roomWidth, wallThickness, roomDepth]} />
+        <meshStandardMaterial color={floorColor} roughness={0.82} metalness={0.02} />
+      </mesh>
+
+      {environment.showBackWall && (
+        <mesh
+          name="bagastudio-room-back-wall"
+          receiveShadow
+          position={[0, roomHeight / 2, -roomDepth / 2]}
+        >
+          <boxGeometry args={[roomWidth, roomHeight, wallThickness]} />
+          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
+        </mesh>
+      )}
+
+      {environment.showLeftWall && (
+        <mesh
+          name="bagastudio-room-left-wall"
+          receiveShadow
+          position={[-roomWidth / 2, roomHeight / 2, 0]}
+        >
+          <boxGeometry args={[wallThickness, roomHeight, roomDepth]} />
+          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
+        </mesh>
+      )}
+
+      {environment.showRightWall && (
+        <mesh
+          name="bagastudio-room-right-wall"
+          receiveShadow
+          position={[roomWidth / 2, roomHeight / 2, 0]}
+        >
+          <boxGeometry args={[wallThickness, roomHeight, roomDepth]} />
+          <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.01} />
+        </mesh>
+      )}
+    </group>
+  );
+}
 
 function sniffDataUrlModelFormat(url: string): string {
   if (!url.startsWith("data:")) return "";
@@ -3069,6 +3151,7 @@ function ProductModel({
   xRayEnabled = false,
   xRayOpacity = 0.35,
   modelEdgesEnabled = true,
+  environment,
 }: Viewer3DProps) {
   const materialsSource =
   productMaterials?.length
@@ -4060,7 +4143,7 @@ mesh.renderOrder = 30;
   if (!scene) return null;
 
   return (
-    <Center>
+    <Center disableY>
 <group
   rotation={importedModelAxisCorrection}
   onPointerMissed={() => {
@@ -4798,6 +4881,7 @@ export default function Viewer3D({
   xRayEnabled = false,
   xRayOpacity = 0.35,
   modelEdgesEnabled = true,
+  environment,
 }: Viewer3DProps) {
   const materialsSource =
 productMaterials?.length
@@ -5144,6 +5228,12 @@ productMaterials?.length
         </div>
       )}
 
+      {environment && (
+        <div className="pointer-events-none absolute left-3 top-16 z-10 rounded-xl border border-cyan-500/25 bg-black/65 px-3 py-2 text-xs text-cyan-50 shadow-lg backdrop-blur">
+          Ambiente: {environment.roomWidthCm} × {environment.roomDepthCm} × {environment.roomHeightCm} cm
+        </div>
+      )}
+
       <div className="absolute right-3 top-[7.25rem] z-20 rounded-xl border border-cyan-500/25 bg-black/65 p-3 text-xs text-cyan-50 shadow-lg backdrop-blur">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
@@ -5273,6 +5363,8 @@ productMaterials?.length
 <CameraController activeViewId={activeViewId} views={views} />
 <ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
 
+        <RoomEnvironment environment={environment} />
+
         <ProductModel
   width={width}
   height={height}
@@ -5290,6 +5382,7 @@ productMaterials?.length
   productModelFormat={effectiveProductModelFormat}
   productParts={productParts}
   woodDirection={woodDirection}
+  environment={environment}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}
