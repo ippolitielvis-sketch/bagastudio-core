@@ -1,12 +1,14 @@
   "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
   Center,
   Environment,
   Edges,
+  Line,
+  Text,
 } from "@react-three/drei";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -32,6 +34,224 @@ import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
+
+
+type ViewerMiniTabId = "room" | "module" | "view" | "join" | "quotes" | "help";
+
+type ViewerMiniTabProps = {
+  id: ViewerMiniTabId;
+  label: string;
+  eyebrow?: string;
+  defaultPosition: { left: number; top: number };
+  open: boolean;
+  onToggle: (id: ViewerMiniTabId) => void;
+  dockRight?: boolean;
+  children?: ReactNode;
+};
+
+function ViewerMiniTab({ id, label, eyebrow, defaultPosition, open, onToggle, dockRight = true, children }: ViewerMiniTabProps) {
+  const [position, setPosition] = useState(defaultPosition);
+  const [isDockedRight, setIsDockedRight] = useState(dockRight);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startLeft: number;
+    startTop: number;
+  } | null>(null);
+
+  const startDrag = (event: any) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: isDockedRight ? defaultPosition.left : position.left,
+      startTop: position.top,
+    };
+    setIsDockedRight(false);
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveDrag = (event: any) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    setPosition({
+      left: Math.max(12, Math.min(980, drag.startLeft + event.clientX - drag.startX)),
+      top: Math.max(12, Math.min(720, drag.startTop + event.clientY - drag.startY)),
+    });
+  };
+
+  const dockBackRight = () => {
+    setIsDockedRight(true);
+    setPosition((current) => ({ ...current, left: defaultPosition.left }));
+  };
+
+  const endDrag = (event: any) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    event.currentTarget?.releasePointerCapture?.(event.pointerId);
+
+    const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1440;
+    const finalLeft = Math.max(12, Math.min(980, drag.startLeft + event.clientX - drag.startX));
+    // Se la mini-tab viene trascinata vicino alla destra, torna automaticamente nel dock.
+    if (finalLeft > viewportWidth - 520) {
+      dockBackRight();
+    }
+  };
+
+  return (
+    <div
+      className="absolute z-[60] select-none"
+      style={isDockedRight ? { right: 6, top: position.top } : { left: position.left, top: position.top }}
+      data-bagastudio-mini-tab={id}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onToggle(id)}
+          className={`min-w-[86px] rounded-xl border px-3 py-1.5 text-center text-[10px] font-black uppercase tracking-[0.18em] shadow-[0_16px_38px_rgba(0,0,0,0.38)] backdrop-blur-xl transition ${
+            open
+              ? "border-cyan-300/40 bg-cyan-500/18 text-cyan-50"
+              : "border-white/10 bg-slate-950/78 text-slate-300 hover:border-cyan-300/30 hover:text-cyan-100"
+          }`}
+          title={open ? `Chiudi ${label}` : `Apri ${label}`}
+        >
+          {label}
+        </button>
+        <button
+          type="button"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dockBackRight();
+          }}
+          className="h-7 w-7 cursor-grab rounded-xl border border-white/10 bg-slate-950/72 text-[13px] font-black text-slate-300 shadow-[0_16px_38px_rgba(0,0,0,0.32)] backdrop-blur-xl active:cursor-grabbing"
+          title="Trascina mini-scheda. Doppio click per riagganciarla a destra."
+        >
+          ⋮⋮
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute right-0 top-9 max-h-[560px] w-[430px] overflow-y-auto overflow-x-hidden rounded-2xl pr-0 [&>*]:!static [&>*]:!bottom-auto [&>*]:!left-auto [&>*]:!right-auto [&>*]:!top-auto [&>*]:!w-full">
+          {eyebrow && (
+            <div className="mb-2 w-fit rounded-full border border-cyan-300/20 bg-slate-950/80 px-3 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-cyan-200 shadow-xl backdrop-blur">
+              {eyebrow}
+            </div>
+          )}
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+type ViewerQuoteOverlayV5Props = {
+  enabled: boolean;
+  environment?: RoomEnvironmentSettings;
+  sceneModules: any[];
+  activeSceneModuleId?: string;
+  productWidthCm: number;
+  productDepthCm: number;
+  productHeightCm: number;
+};
+
+function ViewerQuoteLabelV5({ position, children }: { position: [number, number, number]; children: ReactNode }) {
+  return (
+    <Text
+      position={position}
+      rotation={[-Math.PI / 2, 0, 0]}
+      fontSize={0.105}
+      color="#e0faff"
+      anchorX="center"
+      anchorY="middle"
+      outlineWidth={0.006}
+      outlineColor="#06111d"
+    >
+      {children as any}
+    </Text>
+  );
+}
+
+function ViewerQuoteOverlayV5({
+  enabled,
+  environment,
+  sceneModules,
+  activeSceneModuleId,
+  productWidthCm,
+  productDepthCm,
+  productHeightCm,
+}: ViewerQuoteOverlayV5Props) {
+  if (!enabled) return null;
+
+  const roomWidthM = Math.max(1, Number(environment?.roomWidthCm || 420) / 100);
+  const roomDepthM = Math.max(1, Number(environment?.roomDepthCm || 360) / 100);
+  const roomHeightCm = Number(environment?.roomHeightCm || 280);
+  const moduleWidthM = Math.max(0.2, Number(productWidthCm || 180) / 100);
+  const moduleDepthM = Math.max(0.2, Number(productDepthCm || 60) / 100);
+  const moduleHeightCm = Math.max(1, Number(productHeightCm || 100));
+  const floorY = 0.045;
+  const roomX = roomWidthM / 2;
+  const roomZ = roomDepthM / 2;
+  const roomLinePoints: [number, number, number][] = [
+    [-roomX, floorY, -roomZ],
+    [roomX, floorY, -roomZ],
+    [roomX, floorY, roomZ],
+    [-roomX, floorY, roomZ],
+    [-roomX, floorY, -roomZ],
+  ];
+
+  return (
+    <group name="bagastudio-quote-overlay-v5">
+      <Line points={roomLinePoints} color="#22d3ee" lineWidth={1.4} transparent opacity={0.9} />
+      <ViewerQuoteLabelV5 position={[0, floorY + 0.018, roomZ + 0.18]}>{Math.round(roomWidthM * 100)} cm</ViewerQuoteLabelV5>
+      <ViewerQuoteLabelV5 position={[roomX + 0.18, floorY + 0.018, 0]}>{Math.round(roomDepthM * 100)} cm</ViewerQuoteLabelV5>
+      <ViewerQuoteLabelV5 position={[-roomX + 0.38, floorY + 0.018, -roomZ - 0.18]}>H {Math.round(roomHeightCm)} cm</ViewerQuoteLabelV5>
+
+      {(sceneModules || []).map((module: any, index: number) => {
+        const transform = module?.transform || {};
+        const x = Number(transform.x || 0);
+        const z = Number(transform.z ?? -0.62);
+        const rotationY = THREE.MathUtils.degToRad(Number(transform.rotationYDeg || 0));
+        const isActive = module?.id === activeSceneModuleId;
+        const localX = moduleWidthM / 2;
+        const localZ = moduleDepthM / 2;
+        const localPoints: [number, number, number][] = [
+          [-localX, floorY + 0.035, -localZ],
+          [localX, floorY + 0.035, -localZ],
+          [localX, floorY + 0.035, localZ],
+          [-localX, floorY + 0.035, localZ],
+          [-localX, floorY + 0.035, -localZ],
+        ];
+
+        return (
+          <group key={`quote-module-${module?.id || index}`} position={[x, 0, z]} rotation={[0, rotationY, 0]}>
+            <Line
+              points={localPoints}
+              color={isActive ? "#67e8f9" : "#a78bfa"}
+              lineWidth={isActive ? 2.2 : 1.2}
+              transparent
+              opacity={isActive ? 0.98 : 0.68}
+            />
+            <ViewerQuoteLabelV5 position={[0, floorY + 0.075, -localZ - 0.16]}>{Math.round(moduleWidthM * 100)} cm</ViewerQuoteLabelV5>
+            <ViewerQuoteLabelV5 position={[localX + 0.16, floorY + 0.075, 0]}>{Math.round(moduleDepthM * 100)} cm</ViewerQuoteLabelV5>
+            <ViewerQuoteLabelV5 position={[-localX - 0.16, floorY + 0.075, 0]}>H {Math.round(moduleHeightCm)} cm</ViewerQuoteLabelV5>
+            <ViewerQuoteLabelV5 position={[0, floorY + 0.12, localZ + 0.18]}>{module?.name || `Modulo ${index + 1}`}</ViewerQuoteLabelV5>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -5626,6 +5846,21 @@ productMaterials?.length
   ]);
   const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState("primary-module");
   const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
+  const [viewerMiniTabsOpenV5, setViewerMiniTabsOpenV5] = useState<Record<ViewerMiniTabId, boolean>>({
+    room: false,
+    module: false,
+    view: false,
+    join: false,
+    quotes: false,
+    help: false,
+  });
+  const toggleViewerMiniTabV5 = (id: ViewerMiniTabId) => {
+    setViewerMiniTabsOpenV5((current) => ({
+      ...current,
+      [id]: !current[id],
+    }));
+  };
+
   const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
     url: string;
@@ -7016,8 +7251,13 @@ productMaterials?.length
         const activeStatus = collisionMap.get(activeSceneModuleIdV38);
         if (!activeStatus || activeStatus === "ok") return null;
 
+        // UX V5.1: se l'assistente giunzione è già aperto nella mini-tab,
+        // non mostrare anche il toast verde sopra al modello.
+        // Lascia invece sempre visibile il warning rosso di collisione.
+        if (activeStatus === "join" && joinAssistantOpenV42 && viewerMiniTabsOpenV5.join) return null;
+
         return (
-          <div className={`absolute right-[318px] top-[112px] z-40 rounded-2xl border px-4 py-3 text-xs font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
+          <div className={`absolute right-4 top-20 z-40 max-w-[300px] rounded-2xl border px-3 py-2 text-[11px] font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
             activeStatus === "collision"
               ? "border-red-400/40 bg-red-950/80 text-red-50"
               : "border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
@@ -7025,25 +7265,28 @@ productMaterials?.length
             <div className="uppercase tracking-[0.18em]">
               {activeStatus === "collision" ? "Collisione modulo" : "Giunzione possibile"}
             </div>
-            <div className="mt-1 text-[11px] font-semibold opacity-80">
+            <div className="mt-1 text-[10px] font-semibold opacity-80">
               {activeStatus === "collision"
                 ? "Sposta il modulo: sta attraversando un altro ingombro."
-                : "Modulo accostato a un altro: puoi aprire l'assistente giunzione."}
+                : "Modulo accostato: apri la mini-tab GIUNZIONE."}
             </div>
             {activeStatus === "join" && (
               <button
                 type="button"
-                onClick={() => setJoinAssistantOpenV42(true)}
-                className="pointer-events-auto mt-3 rounded-xl border border-emerald-300/40 bg-emerald-400/16 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-400/26"
+                onClick={() => {
+                  setJoinAssistantOpenV42(true);
+                  setViewerMiniTabsOpenV5((current) => ({ ...current, join: true }));
+                }}
+                className="pointer-events-auto mt-2 rounded-xl border border-emerald-300/40 bg-emerald-400/16 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-400/26"
               >
-                Apri assistente giunzione
+                Apri giunzione
               </button>
             )}
           </div>
         );
       })()}
 
-      {joinAssistantOpenV42 && (() => {
+      {joinAssistantOpenV42 && viewerMiniTabsOpenV5.join && (() => {
         const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null;
         const activeBounds = getSceneModuleBoundsV42(modelSceneOffset);
         const otherModule = sceneModulesV38.find((module: any) => {
@@ -7064,7 +7307,15 @@ productMaterials?.length
         });
 
         return (
-          <div className="absolute right-[318px] top-[214px] z-50 w-[320px] rounded-3xl border border-emerald-300/35 bg-slate-950/92 p-4 text-xs text-emerald-50 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+          <ViewerMiniTab
+            id="join"
+            label="Giunzione"
+            eyebrow="Scene Composer V42"
+            defaultPosition={{ left: 1180, top: 253 }}
+            open={viewerMiniTabsOpenV5.join}
+            onToggle={toggleViewerMiniTabV5}
+          >
+            <div className="w-[390px] rounded-3xl border border-emerald-300/35 bg-slate-950/92 p-4 text-xs text-emerald-50 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Scene Composer V42</div>
@@ -7111,7 +7362,8 @@ productMaterials?.length
             <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-[11px] font-semibold leading-relaxed text-amber-100/85">
               V42 recovery: questa scheda ripristina il workflow. La scelta reale di ferramenta/fianco condiviso resta roadmap Modular Merge Engine.
             </div>
-          </div>
+            </div>
+          </ViewerMiniTab>
         );
       })()}
 
@@ -7193,48 +7445,118 @@ productMaterials?.length
 
       <RoomOrientationOverlay />
 
-      <RoomPanel
-        environment={effectiveEnvironment}
-        visibility={roomQuickVisibility}
-        roomVisible={roomVisible}
-        onToggleRoomVisible={() => setRoomVisible((current) => !current)}
-        onToggleWall={toggleRoomQuickVisibility}
-        onResetWalls={resetRoomQuickVisibility}
-        onApplyRoom={applyRoomPanelSettings}
-        onResetRoom={resetRoomPanelSettings}
-      />
+      <ViewerMiniTab
+        id="room"
+        label="Stanza"
+        eyebrow="Ambiente"
+        defaultPosition={{ left: 1180, top: 28 }}
+        open={viewerMiniTabsOpenV5.room}
+        onToggle={toggleViewerMiniTabV5}
+      >
+        <RoomPanel
+          environment={effectiveEnvironment}
+          visibility={roomQuickVisibility}
+          roomVisible={roomVisible}
+          onToggleRoomVisible={() => setRoomVisible((current) => !current)}
+          onToggleWall={toggleRoomQuickVisibility}
+          onResetWalls={resetRoomQuickVisibility}
+          onApplyRoom={applyRoomPanelSettings}
+          onResetRoom={resetRoomPanelSettings}
+        />
+      </ViewerMiniTab>
 
-      <ViewerToolsPanel
-        xRayEnabled={xRayEnabled}
-        xRayOpacity={xRayOpacity}
-        onToggleXRay={onToggleXRay}
-        onChangeXRayOpacity={onChangeXRayOpacity}
-        contoursEnabled={viewerModelEdgesEnabled}
-        onToggleContours={() => setViewerModelEdgesEnabled((current) => !current)}
-        onFocus={() => emitViewerCommand("bagastudio:focus-selection")}
-        onFit={() => emitViewerCommand("bagastudio:autofit-camera")}
-        onResetView={() => emitViewerCommand("bagastudio:reset-camera")}
-      />
+      <ViewerMiniTab
+        id="view"
+        label="Vista"
+        eyebrow="Viewer Tools"
+        defaultPosition={{ left: 1180, top: 73 }}
+        open={viewerMiniTabsOpenV5.view}
+        onToggle={toggleViewerMiniTabV5}
+      >
+        <ViewerToolsPanel
+          xRayEnabled={xRayEnabled}
+          xRayOpacity={xRayOpacity}
+          onToggleXRay={onToggleXRay}
+          onChangeXRayOpacity={onChangeXRayOpacity}
+          contoursEnabled={viewerModelEdgesEnabled}
+          onToggleContours={() => setViewerModelEdgesEnabled((current) => !current)}
+          onFocus={() => emitViewerCommand("bagastudio:focus-selection")}
+          onFit={() => emitViewerCommand("bagastudio:autofit-camera")}
+          onResetView={() => emitViewerCommand("bagastudio:reset-camera")}
+        />
+      </ViewerMiniTab>
 
-      <SceneComposerPanel
-        modelSceneOffset={modelSceneOffset}
-        resetModelRoomPosition={resetModelRoomPosition}
-        moveModelInRoom={moveModelInRoom}
-        rotateModelInRoom={rotateModelInRoom}
-        activeWallSnap={activeWallSnap}
-        wallSnapDistanceMode={wallSnapDistanceMode}
-        setWallSnapDistanceMode={setWallSnapDistanceMode}
-        customWallSnapDistanceCm={customWallSnapDistanceCm}
-        setCustomWallSnapDistanceCm={setCustomWallSnapDistanceCm}
-        getWallSnapModeLabel={getWallSnapModeLabel}
-        snapModelToWall={snapModelToWall}
-        sceneModulesV38={sceneModulesV38}
-        activeSceneModuleIdV38={activeSceneModuleIdV38}
-        selectSceneModuleV38={selectSceneModuleV38}
-        addSceneModuleSnapshotV38={addSceneModuleSnapshotV38}
-        duplicateActiveSceneModuleV42={duplicateActiveSceneModuleV42}
-        deleteActiveSceneModuleV42={deleteActiveSceneModuleV42}
-      />
+      <ViewerMiniTab
+        id="module"
+        label="Modulo"
+        eyebrow="Crea / Muovi"
+        defaultPosition={{ left: 1180, top: 118 }}
+        open={viewerMiniTabsOpenV5.module}
+        onToggle={toggleViewerMiniTabV5}
+      >
+        <SceneComposerPanel
+          modelSceneOffset={modelSceneOffset}
+          resetModelRoomPosition={resetModelRoomPosition}
+          moveModelInRoom={moveModelInRoom}
+          rotateModelInRoom={rotateModelInRoom}
+          activeWallSnap={activeWallSnap}
+          wallSnapDistanceMode={wallSnapDistanceMode}
+          setWallSnapDistanceMode={setWallSnapDistanceMode}
+          customWallSnapDistanceCm={customWallSnapDistanceCm}
+          setCustomWallSnapDistanceCm={setCustomWallSnapDistanceCm}
+          getWallSnapModeLabel={getWallSnapModeLabel}
+          snapModelToWall={snapModelToWall}
+          sceneModulesV38={sceneModulesV38}
+          activeSceneModuleIdV38={activeSceneModuleIdV38}
+          selectSceneModuleV38={selectSceneModuleV38}
+          addSceneModuleSnapshotV38={addSceneModuleSnapshotV38}
+          duplicateActiveSceneModuleV42={duplicateActiveSceneModuleV42}
+          deleteActiveSceneModuleV42={deleteActiveSceneModuleV42}
+        />
+      </ViewerMiniTab>
+
+      <ViewerMiniTab
+        id="quotes"
+        label="Quote"
+        eyebrow="Misure"
+        defaultPosition={{ left: 1180, top: 163 }}
+        open={viewerMiniTabsOpenV5.quotes}
+        onToggle={toggleViewerMiniTabV5}
+      >
+        <div className="w-[390px] rounded-3xl border border-cyan-300/22 bg-slate-950/90 p-4 text-xs text-cyan-50 shadow-[0_22px_70px_rgba(0,0,0,0.50)] backdrop-blur-xl">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300">Quote V5</div>
+          <div className="mt-1 text-lg font-black uppercase tracking-wide text-white">Misure ambiente</div>
+          <div className="mt-3 rounded-2xl border border-emerald-300/18 bg-emerald-400/10 p-3 text-[11px] font-semibold leading-relaxed text-emerald-100/90">
+            Quote visibili nel Viewer: stanza, moduli e ingombri principali. Questa è la base per quotare tutto senza coprire il modello.
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-[0.12em]">
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-2 text-slate-200">Stanza<br />{effectiveEnvironment?.roomWidthCm ?? baseRoomEnvironment?.roomWidthCm ?? 420}×{effectiveEnvironment?.roomDepthCm ?? baseRoomEnvironment?.roomDepthCm ?? 360}×{effectiveEnvironment?.roomHeightCm ?? baseRoomEnvironment?.roomHeightCm ?? 280}</div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-2 text-slate-200">Modulo<br />{width}×{depth}×{height}</div>
+          </div>
+          <div className="mt-3 rounded-2xl border border-amber-300/18 bg-amber-400/10 p-3 text-[10px] font-semibold leading-relaxed text-amber-100/90">
+            Prossimo livello: distanza da pareti, distanza tra moduli, battiscopa, snap e quote selezionabili per schede tecniche/PDF.
+          </div>
+        </div>
+      </ViewerMiniTab>
+
+      <ViewerMiniTab
+        id="help"
+        label="Aiuto"
+        eyebrow="Guida"
+        defaultPosition={{ left: 1180, top: 208 }}
+        open={viewerMiniTabsOpenV5.help}
+        onToggle={toggleViewerMiniTabV5}
+      >
+        <div className="w-[390px] rounded-3xl border border-amber-300/22 bg-slate-950/90 p-4 text-xs text-amber-50 shadow-[0_22px_70px_rgba(0,0,0,0.50)] backdrop-blur-xl">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">Guida rapida</div>
+          <div className="mt-2 space-y-2 text-[11px] font-semibold leading-relaxed text-amber-100/85">
+            <p><b>STANZA</b>: misure, pareti, battiscopa.</p>
+            <p><b>MODULO</b>: movimento, snap, duplica/elimina.</p>
+            <p><b>VISTA</b>: X-Ray, contorni, focus, fit.</p>
+            <p><b>QUOTE</b>: misure tecniche in arrivo nello step dedicato.</p>
+          </div>
+        </div>
+      </ViewerMiniTab>
       <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
         <button
           type="button"
@@ -7369,6 +7691,16 @@ productMaterials?.length
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}
 />
+
+        <ViewerQuoteOverlayV5
+          enabled={viewerMiniTabsOpenV5.quotes}
+          environment={effectiveEnvironment || baseRoomEnvironment}
+          sceneModules={sceneModulesV38}
+          activeSceneModuleId={activeSceneModuleIdV38}
+          productWidthCm={Number(runtimeImportedModel?.dimensions?.width ?? width ?? 180)}
+          productDepthCm={Number(runtimeImportedModel?.dimensions?.depth ?? depth ?? 60)}
+          productHeightCm={Number(runtimeImportedModel?.dimensions?.height ?? height ?? 100)}
+        />
 
       <OrbitControls
   makeDefault
