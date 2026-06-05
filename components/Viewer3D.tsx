@@ -30,6 +30,7 @@ import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import ViewerWallQuickControls from "./viewer-ui/ViewerWallQuickControls";
+import DraggablePanel from "./viewer-ui/DraggablePanel";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -6975,10 +6976,16 @@ productMaterials?.length
 
 
       {joinAssistantDraftV42 && (
-        <div className="absolute left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-emerald-400/35 bg-slate-950/92 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.58)] backdrop-blur-xl">
-          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Giunzione possibile</div>
-          <div className="mt-2 text-lg font-black">Assistente giunzione V1</div>
-          <div className="mt-2 text-xs font-semibold leading-relaxed text-slate-300">
+        <DraggablePanel
+          id="join-assistant-v42"
+          title="Assistente giunzione V1"
+          eyebrow="Giunzione possibile"
+          defaultPosition={{ x: 560, y: 230 }}
+          widthClassName="w-[360px]"
+          zIndex={80}
+          onClose={() => setJoinAssistantDraftV42(null)}
+        >
+          <div className="text-xs font-semibold leading-relaxed text-slate-300">
             {joinAssistantDraftV42.reason}
           </div>
           <div className="mt-4 grid gap-2 text-xs">
@@ -7007,7 +7014,7 @@ productMaterials?.length
               Apri giunzione
             </button>
           </div>
-        </div>
+        </DraggablePanel>
       )}
 
       {wallSnapNotice && (
