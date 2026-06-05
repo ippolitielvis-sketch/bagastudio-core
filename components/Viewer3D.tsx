@@ -29,10 +29,9 @@ import {
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
-import ViewerWallQuickControls from "./viewer-ui/ViewerWallQuickControls";
-import DraggablePanel from "./viewer-ui/DraggablePanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
+import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -138,6 +137,8 @@ type Viewer3DProps = {
  woodDirection?: Record<string, "x" | "z">;
  xRayEnabled?: boolean;
  xRayOpacity?: number;
+ onToggleXRay?: () => void;
+ onChangeXRayOpacity?: (value: number) => void;
  modelEdgesEnabled?: boolean;
  environment?: RoomEnvironmentSettings;
  importCalibration?: ImportCalibrationSettings;
@@ -3287,6 +3288,8 @@ function ProductModel({
   woodDirection,
   xRayEnabled = false,
   xRayOpacity = 0.35,
+  onToggleXRay,
+  onChangeXRayOpacity,
   modelEdgesEnabled = true,
   environment,
   importCalibration = DEFAULT_IMPORT_CALIBRATION,
@@ -5578,6 +5581,8 @@ export default function Viewer3D({
   woodDirection,
   xRayEnabled = false,
   xRayOpacity = 0.35,
+  onToggleXRay,
+  onChangeXRayOpacity,
   modelEdgesEnabled = true,
   environment,
 }: Viewer3DProps) {
@@ -5616,10 +5621,6 @@ productMaterials?.length
   const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
   const [wallSnapNotice, setWallSnapNotice] = useState("");
   const [wallCollisionNotice, setWallCollisionNotice] = useState("");
-  const [joinAssistantDraftV42, setJoinAssistantDraftV42] = useState<{
-    sourceName: string;
-    reason: string;
-  } | null>(null);
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
@@ -5648,20 +5649,17 @@ productMaterials?.length
     rightWall: true,
     ceiling: true,
   });
-  const [roomPanelEnvironmentOverride, setRoomPanelEnvironmentOverride] = useState<RoomEnvironmentSettings | null>(null);
-  const [roomPanelBaseboard, setRoomPanelBaseboard] = useState({
-    heightCm: 10,
-    depthCm: 2,
-  });
+  const [roomVisible, setRoomVisible] = useState(true);
+  const [roomPanelEnvironment, setRoomPanelEnvironment] = useState<RoomEnvironmentSettings | null>(null);
 
   const baseRoomEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
-    if (!environment && !roomPanelEnvironmentOverride) return environment;
+    if (!environment && !roomPanelEnvironment) return undefined;
 
     return {
       ...(environment || {}),
-      ...(roomPanelEnvironmentOverride || {}),
+      ...(roomPanelEnvironment || {}),
     };
-  }, [environment, roomPanelEnvironmentOverride]);
+  }, [environment, roomPanelEnvironment]);
 
   const effectiveEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
     if (!baseRoomEnvironment) return baseRoomEnvironment;
@@ -5679,23 +5677,22 @@ productMaterials?.length
     roomWidthCm: number;
     roomDepthCm: number;
     roomHeightCm: number;
-    baseboardHeightCm: number;
-    baseboardDepthCm: number;
+    baseboardHeightCm?: number;
+    baseboardDepthCm?: number;
   }) => {
-    setRoomPanelEnvironmentOverride({
+    setRoomPanelEnvironment((current) => ({
+      ...(environment || {}),
+      ...(current || {}),
       roomWidthCm: settings.roomWidthCm,
       roomDepthCm: settings.roomDepthCm,
       roomHeightCm: settings.roomHeightCm,
-    });
-    setRoomPanelBaseboard({
-      heightCm: settings.baseboardHeightCm,
-      depthCm: settings.baseboardDepthCm,
-    });
+    }));
   };
 
   const resetRoomPanelSettings = () => {
-    setRoomPanelEnvironmentOverride(null);
-    setRoomPanelBaseboard({ heightCm: 10, depthCm: 2 });
+    setRoomPanelEnvironment(null);
+    setRoomVisible(true);
+    resetRoomQuickVisibility();
   };
 
   const toggleRoomQuickVisibility = (key: keyof typeof roomQuickVisibility) => {
@@ -5842,6 +5839,192 @@ productMaterials?.length
     };
   };
 
+  type SceneModuleCollisionStatusV42 = "ok" | "join" | "collision";
+  type SceneTransformV42 = { x: number; z: number; rotationYDeg: number };
+
+  const normalizeSceneTransformV42 = (transform: { x?: number; z?: number; rotationYDeg?: number }): SceneTransformV42 => ({
+    x: Number(transform.x || 0),
+    z: Number(transform.z || 0),
+    rotationYDeg: Number(transform.rotationYDeg || 0),
+  });
+
+  const getSceneModuleBoundsV42 = (
+    transform: { x?: number; z?: number; rotationYDeg?: number } = {}
+  ) => {
+    const rotationYDeg = Number(transform.rotationYDeg || 0);
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const x = Number(transform.x || 0);
+    const z = Number(transform.z || 0);
+
+    return {
+      left: x + rotatedBounds.minX,
+      right: x + rotatedBounds.maxX,
+      back: z + rotatedBounds.minZ,
+      front: z + rotatedBounds.maxZ,
+    };
+  };
+
+  const doSceneModuleBoundsIntersectV42 = (
+    a: ReturnType<typeof getSceneModuleBoundsV42>,
+    b: ReturnType<typeof getSceneModuleBoundsV42>
+  ) => {
+    const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    const overlapZ = Math.min(a.front, b.front) - Math.max(a.back, b.back);
+    return {
+      overlapX,
+      overlapZ,
+      intersects: overlapX > 0.001 && overlapZ > 0.001,
+    };
+  };
+
+  const getSceneModuleCollisionMapV42 = (
+    modules: any[] = sceneModulesV38,
+    activeTransform: { x?: number; z?: number; rotationYDeg?: number } = modelSceneOffset
+  ) => {
+    const collisionMap = new Map<string, SceneModuleCollisionStatusV42>();
+    const joinTolerance = 0.08;
+    const boxes = modules.map((module: any) => {
+      const transform = module?.id === activeSceneModuleIdV38 ? activeTransform : module?.transform || {};
+      return {
+        id: String(module.id),
+        ...getSceneModuleBoundsV42(transform),
+      };
+    });
+
+    boxes.forEach((box) => collisionMap.set(box.id, "ok"));
+
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const { overlapX, overlapZ, intersects } = doSceneModuleBoundsIntersectV42(a, b);
+        const nearlyJoined =
+          !intersects &&
+          (
+            (Math.abs(a.right - b.left) <= joinTolerance || Math.abs(b.right - a.left) <= joinTolerance) &&
+            overlapZ > -joinTolerance
+          ||
+            (Math.abs(a.front - b.back) <= joinTolerance || Math.abs(b.front - a.back) <= joinTolerance) &&
+            overlapX > -joinTolerance
+          );
+
+        if (intersects) {
+          collisionMap.set(a.id, "collision");
+          collisionMap.set(b.id, "collision");
+        } else if (nearlyJoined) {
+          if (collisionMap.get(a.id) !== "collision") collisionMap.set(a.id, "join");
+          if (collisionMap.get(b.id) !== "collision") collisionMap.set(b.id, "join");
+        }
+      }
+    }
+
+    return collisionMap;
+  };
+
+  const resolveSceneModuleCollisionV42 = (
+    candidateTransform: SceneTransformV42,
+    previousTransform: SceneTransformV42,
+    modules: any[] = sceneModulesV38
+  ) => {
+    let resolvedTransform: SceneTransformV42 = normalizeSceneTransformV42(candidateTransform);
+    const activeId = String(activeSceneModuleIdV38 || "");
+    const deltaX = Number(candidateTransform.x || 0) - Number(previousTransform.x || 0);
+    const deltaZ = Number(candidateTransform.z || 0) - Number(previousTransform.z || 0);
+
+    for (const module of modules) {
+      if (!module || String(module.id) === activeId) continue;
+
+      const otherBounds = getSceneModuleBoundsV42(module.transform || {});
+      const activeBounds = getSceneModuleBoundsV42(resolvedTransform);
+      const { overlapX, overlapZ, intersects } = doSceneModuleBoundsIntersectV42(activeBounds, otherBounds);
+      if (!intersects) continue;
+
+      if (Math.abs(deltaX) >= Math.abs(deltaZ)) {
+        if (deltaX > 0) resolvedTransform.x -= overlapX;
+        else if (deltaX < 0) resolvedTransform.x += overlapX;
+        else if (activeBounds.left < otherBounds.left) resolvedTransform.x -= overlapX;
+        else resolvedTransform.x += overlapX;
+      } else {
+        if (deltaZ > 0) resolvedTransform.z -= overlapZ;
+        else if (deltaZ < 0) resolvedTransform.z += overlapZ;
+        else if (activeBounds.back < otherBounds.back) resolvedTransform.z -= overlapZ;
+        else resolvedTransform.z += overlapZ;
+      }
+
+      resolvedTransform = clampModelSceneTransform(resolvedTransform, null);
+    }
+
+    const finalStatus = getSceneModuleCollisionMapV42(modules, resolvedTransform).get(activeId);
+    return finalStatus === "collision" ? normalizeSceneTransformV42(previousTransform) : normalizeSceneTransformV42(resolvedTransform);
+  };
+
+  const findSceneModuleDuplicateTransformV42 = (sourceTransform: SceneTransformV42): SceneTransformV42 => {
+    const sourceBounds = getSceneModuleBoundsV42(sourceTransform);
+    const moduleWidth = Math.max(0.2, sourceBounds.right - sourceBounds.left);
+    const moduleDepth = Math.max(0.2, sourceBounds.front - sourceBounds.back);
+    const joinGap = 0.06;
+    const searchStep = 0.18;
+
+    const doesCandidateCollide = (candidate: SceneTransformV42) => {
+      const candidateBounds = getSceneModuleBoundsV42(candidate);
+      return sceneModulesV38.some((module: any) => {
+        if (!module) return false;
+        const moduleBounds = getSceneModuleBoundsV42(module.transform || {});
+        return doSceneModuleBoundsIntersectV42(candidateBounds, moduleBounds).intersects;
+      });
+    };
+
+    const baseCandidates: SceneTransformV42[] = [
+      { ...sourceTransform, x: sourceTransform.x + moduleWidth + joinGap },
+      { ...sourceTransform, x: sourceTransform.x - moduleWidth - joinGap },
+      { ...sourceTransform, z: sourceTransform.z + moduleDepth + joinGap },
+      { ...sourceTransform, z: sourceTransform.z - moduleDepth - joinGap },
+      { ...sourceTransform, x: sourceTransform.x + moduleWidth + joinGap, z: sourceTransform.z + moduleDepth + joinGap },
+      { ...sourceTransform, x: sourceTransform.x - moduleWidth - joinGap, z: sourceTransform.z + moduleDepth + joinGap },
+      { ...sourceTransform, x: sourceTransform.x + moduleWidth + joinGap, z: sourceTransform.z - moduleDepth - joinGap },
+      { ...sourceTransform, x: sourceTransform.x - moduleWidth - joinGap, z: sourceTransform.z - moduleDepth - joinGap },
+    ].map((candidate) => normalizeSceneTransformV42(clampModelSceneTransform(candidate, null)));
+
+    for (const candidate of baseCandidates) {
+      if (!doesCandidateCollide(candidate)) return candidate;
+    }
+
+    const searchRadii = [1, 2, 3, 4, 5, 6];
+    for (const radius of searchRadii) {
+      const offset = radius * searchStep;
+      const fallbackCandidates = [
+        { ...sourceTransform, x: sourceTransform.x + moduleWidth + joinGap + offset },
+        { ...sourceTransform, x: sourceTransform.x - moduleWidth - joinGap - offset },
+        { ...sourceTransform, z: sourceTransform.z + moduleDepth + joinGap + offset },
+        { ...sourceTransform, z: sourceTransform.z - moduleDepth - joinGap - offset },
+      ].map((candidate) => normalizeSceneTransformV42(clampModelSceneTransform(candidate, null)));
+
+      for (const candidate of fallbackCandidates) {
+        if (!doesCandidateCollide(candidate)) return candidate;
+      }
+    }
+
+    return normalizeSceneTransformV42(clampModelSceneTransform(sourceTransform, null));
+  };
+
+  const canSceneModuleFitWallV42 = (
+    wall: "back" | "front" | "left" | "right" | "center",
+    rotationYDeg: number
+  ) => {
+    if (wall === "center") return true;
+    const bounds = getRoomInteriorBoundsMeters();
+    const footprint = getSceneModelFootprintMeters(rotationYDeg);
+    const roomWidth = Math.max(0, bounds.right - bounds.left);
+    const roomDepth = Math.max(0, bounds.front - bounds.back);
+
+    if (wall === "left" || wall === "right") {
+      return footprint.depth <= roomDepth + 0.001;
+    }
+
+    return footprint.width <= roomWidth + 0.001;
+  };
+
+
   const getActiveWallSnapDistanceCm = () => {
     if (wallSnapDistanceMode === "5") return 5;
     if (wallSnapDistanceMode === "10") return 10;
@@ -5908,17 +6091,16 @@ productMaterials?.length
       // l'eventuale eccedenza va verso fronte, mai dietro la parete di fondo.
       if (axis === "z") {
         if (snapHint === "left" || snapHint === "right") {
-          // V42.5.37 Room Hard Clamp:
-          // se il modulo e' piu' profondo della stanza, SX/DX restano comandati dal fondo.
-          // Non usiamo safeMin/safeMax perche' permetteva fuoriuscite dopo lo sgancio/spostamento.
-          return min;
+          // V42.5.17 Side Wall Slide Unblock:
+          // quando il modulo e' piu' profondo della stanza, SX/DX non devono congelarlo
+          // sul fondo e generare collisione a ogni click. Il bordo posteriore resta vincolato
+          // alla parete di fondo, ma il modulo puo' scorrere verso l'interno stanza.
+          const roomDepth = Math.max(0.4, bounds.front - bounds.back);
+          const safeSideSlideMax = min + roomDepth - 0.05;
+          return THREE.MathUtils.clamp(Number(value || min), min, Math.max(min, safeSideSlideMax));
         }
         if (snapHint === "back") return min;
         if (snapHint === "front") return max;
-        // V42.5.37 Room Hard Clamp:
-        // anche nel movimento libero, quando minZ > maxZ il modulo non puo' fisicamente stare tutto dentro.
-        // Manteniamo il bordo posteriore dentro la stanza invece di centrare o farlo scappare fuori.
-        return min;
       }
 
       if (axis === "x") {
@@ -5970,77 +6152,21 @@ productMaterials?.length
     window.setTimeout(() => setWallCollisionNotice(""), 2200);
   };
 
-  const showModuleCollisionNoticeV42 = () => {
-    setWallCollisionNotice("Collisione modulo: spostamento bloccato");
-    window.setTimeout(() => setWallCollisionNotice(""), 2200);
-  };
-
-  const openJoinAssistantDraftV42 = (sourceName: string, reason: string) => {
-    setJoinAssistantDraftV42({ sourceName, reason });
-    setWallCollisionNotice("Giunzione possibile: scegli tipo e ferramenta prima di creare il modulo");
-    window.setTimeout(() => setWallCollisionNotice(""), 2600);
-  };
-
-  const getSceneModuleCollisionBoxV42 = (transform: any, moduleId = "") => {
-    const rotationYDeg = THREE.MathUtils.euclideanModulo(Number(transform?.rotationYDeg || 0), 360);
-    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
-    const x = Number(transform?.x || 0);
-    const z = Number(transform?.z || 0);
-
-    return {
-      id: String(moduleId || ""),
-      left: x + rotatedBounds.minX,
-      right: x + rotatedBounds.maxX,
-      back: z + rotatedBounds.minZ,
-      front: z + rotatedBounds.maxZ,
-    };
-  };
-
-  const hasSceneModuleBlockingCollisionV42 = (
-    moduleId: string,
-    candidateTransform: { x: number; z: number; rotationYDeg?: number }
-  ) => {
-    if (!Array.isArray(sceneModulesV38) || sceneModulesV38.length <= 0) return false;
-
-    const collisionGap = 0.012;
-    const candidateBox = getSceneModuleCollisionBoxV42(candidateTransform, moduleId);
-
-    return sceneModulesV38.some((module: any) => {
-      const otherId = String(module?.id || "");
-      if (!otherId || otherId === String(moduleId || "")) return false;
-
-      const otherBox = getSceneModuleCollisionBoxV42(module?.transform || {}, otherId);
-      const overlapX = Math.min(candidateBox.right, otherBox.right) - Math.max(candidateBox.left, otherBox.left);
-      const overlapZ = Math.min(candidateBox.front, otherBox.front) - Math.max(candidateBox.back, otherBox.back);
-
-      return overlapX > collisionGap && overlapZ > collisionGap;
-    });
-  };
-
   const syncActiveSceneModuleV38 = (
-    nextTransform: { x: number; z: number; rotationYDeg?: number },
-    nextWallSnap: typeof activeWallSnap = activeWallSnap,
-    fallbackTransform: { x: number; z: number; rotationYDeg?: number } = modelSceneOffset
-  ) => {
-    const clampedTransform = clampModelSceneTransform(nextTransform, nextWallSnap);
+    nextTransform: SceneTransformV42,
+    nextWallSnap: typeof activeWallSnap = activeWallSnap
+  ): SceneTransformV42 => {
+    const clampedTransform = normalizeSceneTransformV42(clampModelSceneTransform(nextTransform, nextWallSnap));
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const previousTransform = normalizeSceneTransformV42(activeModule?.transform || modelSceneOffset);
+    const resolvedTransform = resolveSceneModuleCollisionV42(clampedTransform, previousTransform, sceneModulesV38);
+    const wasModuleCollision =
+      !isSameSceneTransformV42(clampedTransform, resolvedTransform) &&
+      getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform).get(activeSceneModuleIdV38) === "collision";
 
-    if (hasSceneModuleBlockingCollisionV42(activeSceneModuleIdV38, clampedTransform)) {
-      showModuleCollisionNoticeV42();
-
-      const activeModuleForJoinV42 = sceneModulesV38.find(
-        (module: any) => String(module?.id || "") === String(activeSceneModuleIdV38 || "")
-      );
-
-      openJoinAssistantDraftV42(
-        String(activeModuleForJoinV42?.name || "Modulo"),
-        "I moduli sono in contatto o sovrapposizione. Verifica se creare una giunzione valida prima di procedere."
-      );
-
-      return {
-        x: Number(fallbackTransform.x || 0),
-        z: Number(fallbackTransform.z || 0),
-        rotationYDeg: THREE.MathUtils.euclideanModulo(Number(fallbackTransform.rotationYDeg || 0), 360),
-      };
+    if (wasModuleCollision) {
+      setWallCollisionNotice("Collisione modulo: spostamento bloccato prima dell'attraversamento");
+      window.setTimeout(() => setWallCollisionNotice(""), 2200);
     }
 
     setSceneModulesV38((current) =>
@@ -6049,7 +6175,7 @@ productMaterials?.length
           ? {
               ...module,
               transform: {
-                ...clampedTransform,
+                ...resolvedTransform,
                 activeWallSnap: nextWallSnap,
                 wallSnapDistanceCm: getActiveWallSnapDistanceCm(),
                 wallSnapDistanceMode,
@@ -6060,7 +6186,7 @@ productMaterials?.length
       )
     );
 
-    return clampedTransform;
+    return normalizeSceneTransformV42(resolvedTransform);
   };
 
   const selectSceneModuleV38 = (moduleId: string) => {
@@ -6094,11 +6220,17 @@ productMaterials?.length
   };
 
   const duplicateActiveSceneModuleV42 = () => {
-    const activeModule = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0];
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0];
     if (!activeModule) return;
 
     const nextIndex = sceneModulesV38.length + 1;
     const sourceTransform = activeModule.transform || modelSceneOffset;
+    const duplicateStartTransform = normalizeSceneTransformV42({
+      x: Number(sourceTransform.x || 0),
+      z: Number(sourceTransform.z ?? -0.62),
+      rotationYDeg: Number(sourceTransform.rotationYDeg || 0),
+    });
+    const safeDuplicateTransform = findSceneModuleDuplicateTransformV42(duplicateStartTransform);
     const duplicatedModule = createSceneModuleV38({
       name: `${activeModule.name || "Modulo"} copia`,
       source: {
@@ -6108,70 +6240,21 @@ productMaterials?.length
         importedModelName: activeModule.source?.importedModelName || effectiveImportedModelName || importedModelName || "",
       },
       transform: {
-        x: Number(sourceTransform.x || 0) + 0.35,
-        z: Number(sourceTransform.z ?? -0.62) + 0.35,
-        rotationYDeg: Number(sourceTransform.rotationYDeg || 0),
+        ...safeDuplicateTransform,
         activeWallSnap: null,
       },
     });
 
     duplicatedModule.name = `Modulo ${nextIndex}`;
-
-    const sourceRotationYDeg = Number(sourceTransform.rotationYDeg || 0);
-    const sourceFootprint = getSceneModelFootprintMeters(sourceRotationYDeg);
-    const duplicateClearanceM = 0.08;
-    const stepX = Math.max(0.35, sourceFootprint.width + duplicateClearanceM);
-    const stepZ = Math.max(0.35, sourceFootprint.depth + duplicateClearanceM);
-    const duplicateOffsetsV42 = [
-      { x: stepX, z: 0 },
-      { x: -stepX, z: 0 },
-      { x: 0, z: stepZ },
-      { x: 0, z: -stepZ },
-      { x: stepX, z: stepZ },
-      { x: -stepX, z: stepZ },
-      { x: stepX, z: -stepZ },
-      { x: -stepX, z: -stepZ },
-      { x: stepX * 2, z: 0 },
-      { x: -stepX * 2, z: 0 },
-      { x: 0, z: stepZ * 2 },
-      { x: 0, z: -stepZ * 2 },
-    ];
-    const testedDuplicatePositionsV42 = new Set<string>();
-
-    const freeTransform =
-      duplicateOffsetsV42
-        .map((offset) =>
-          clampModelSceneTransform({
-            x: Number(sourceTransform.x || 0) + offset.x,
-            z: Number(sourceTransform.z ?? -0.62) + offset.z,
-            rotationYDeg: sourceRotationYDeg,
-          }, null)
-        )
-        .filter((candidate) => {
-          const key = `${candidate.x.toFixed(3)}:${candidate.z.toFixed(3)}:${Number(candidate.rotationYDeg || 0).toFixed(1)}`;
-          if (testedDuplicatePositionsV42.has(key)) return false;
-          testedDuplicatePositionsV42.add(key);
-          return true;
-        })
-        .find((candidate) => !hasSceneModuleBlockingCollisionV42(duplicatedModule.id, candidate)) || null;
-
-    if (!freeTransform) {
-      openJoinAssistantDraftV42(
-        String(activeModule.name || "Modulo"),
-        "Nessuna posizione libera trovata: il duplicato sarebbe sovrapposto o fuori dai limiti stanza."
-      );
-      return;
-    }
-
     duplicatedModule.transform = {
       ...duplicatedModule.transform,
-      ...freeTransform,
+      ...safeDuplicateTransform,
       activeWallSnap: null,
     };
 
     setSceneModulesV38((current) => [...current, duplicatedModule]);
     setActiveSceneModuleIdV38(duplicatedModule.id);
-    setModelSceneOffset(freeTransform);
+    setModelSceneOffset(safeDuplicateTransform);
     setActiveWallSnap(null);
     window.dispatchEvent(new CustomEvent("bagastudio:scene-module-duplicated-v42", { detail: duplicatedModule }));
   };
@@ -6231,21 +6314,20 @@ productMaterials?.length
     // usiamo un binario di scorrimento sicuro dalla parete di fondo verso il fronte.
     const backContactZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance;
     const strictFrontLimitZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ - contactClearance;
-    // V42.5.33b Safe Side Wall Slide:
-    // niente fallback su roomDepth: se il modulo e' troppo profondo per la stanza,
-    // lo scorrimento laterale non deve inventare spazio e farlo uscire visivamente.
-    // In quel caso il binario resta bloccato sul contatto di fondo e mostra collisione.
-    const hasRealSlideRange = Number.isFinite(strictFrontLimitZ) && strictFrontLimitZ >= backContactZ;
-    const maxZ = hasRealSlideRange ? strictFrontLimitZ : backContactZ;
+    const roomDepth = Math.max(0.4, bounds.front - bounds.back);
+    const fallbackFrontLimitZ = backContactZ + roomDepth - 0.05;
+    const maxZ = Number.isFinite(strictFrontLimitZ) && strictFrontLimitZ > backContactZ
+      ? strictFrontLimitZ
+      : fallbackFrontLimitZ;
 
     return {
       minZ: backContactZ,
-      maxZ,
+      maxZ: Math.max(backContactZ, maxZ),
     };
   };
 
   const moveModelInRoom = (deltaX = 0, deltaZ = 0) => {
-    const activeModuleV42 = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const activeModuleV42 = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
     const storedWallSnapV42 = activeModuleV42?.transform?.activeWallSnap || null;
     const sideWallLock =
       activeWallSnap === "left" || activeWallSnap === "right"
@@ -6265,7 +6347,7 @@ productMaterials?.length
       setActiveWallSnap(sideWallLock);
     }
 
-    setModelSceneOffset((current) => {
+    setModelSceneOffset((current: SceneTransformV42) => {
       const rotationYDeg = Number(current.rotationYDeg || 0);
       const movementRange = getSceneTransformRangeV42(rotationYDeg);
       let requestedX = Number(current.x || 0) + deltaX;
@@ -6304,12 +6386,13 @@ productMaterials?.length
             };
             const candidateClamped = clampModelSceneTransform(candidateTransform, null);
             const canDetachInsideRoom =
-              Math.abs(Number(candidateTransform.x || 0) - Number(candidateClamped.x || 0)) < 0.0001 &&
-              Math.abs(Number(candidateTransform.z || 0) - Number(candidateClamped.z || 0)) < 0.0001;
+              Math.abs(Number(candidateTransform.x || 0) - Number(candidateClamped.x || 0)) < 0.0001;
 
-            // V42.5.33b Safe Side Detach:
-            // lo sgancio da SX/DX e' consentito solo se il modulo completo resta dentro la stanza
-            // sia su X sia su Z. Prima validava solo X e poteva far uscire il modulo dalla parete.
+            // V42.5.27 Side Wall Inward Fix:
+            // lo sgancio dalla parete laterale deve validare l'asse X, non pretendere che il
+            // modulo entri perfettamente anche in Z. Con moduli profondi/ruotati la Z puo' avere
+            // un range impossibile, ma il movimento verso l'interno stanza e' comunque valido.
+            // Usiamo la Z gia' normalizzata dal clamp per evitare falsi avvisi di collisione.
             if (canDetachInsideRoom) {
               requestedX = candidateClamped.x;
               requestedZ = candidateClamped.z;
@@ -6343,25 +6426,37 @@ productMaterials?.length
         }
       }
 
-      const requestedTransform = {
+      const requestedTransform: SceneTransformV42 = {
         ...current,
         x: requestedX,
         z: requestedZ,
+        rotationYDeg,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove, current);
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove);
       if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
   };
 
   const rotateModelInRoom = (deltaRotationYDeg = 0) => {
-    setActiveWallSnap(null);
-    setModelSceneOffset((current) => {
-      const requestedTransform = {
+    setModelSceneOffset((current: SceneTransformV42) => {
+      const requestedRotation = Number(current.rotationYDeg || 0) + deltaRotationYDeg;
+      const sideWallLock = activeWallSnap === "left" || activeWallSnap === "right" ? activeWallSnap : null;
+
+      if (sideWallLock && !canSceneModuleFitWallV42(sideWallLock, requestedRotation)) {
+        setWallCollisionNotice("Rotazione bloccata: il modulo supera la profondità della parete laterale");
+        window.setTimeout(() => setWallCollisionNotice(""), 2600);
+        return current;
+      }
+
+      setActiveWallSnap(null);
+      const requestedTransform: SceneTransformV42 = {
         ...current,
-        rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
+        x: Number(current.x || 0),
+        z: Number(current.z || 0),
+        rotationYDeg: requestedRotation,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null, current);
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null);
       if (!isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
@@ -6391,10 +6486,7 @@ productMaterials?.length
     const clampZForSideSnap = (value: number) => {
       const minZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ;
       const maxZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ;
-      // V42.5.36 Side Snap Back-Lock Restore:
-      // se il modulo e' piu' profondo della stanza, SX/DX non devono centrarlo
-      // tra min/max invertiti: il fondo stanza resta il vincolo prioritario.
-      if (minZ > maxZ) return minZ;
+      if (minZ > maxZ) return (minZ + maxZ) / 2;
       return THREE.MathUtils.clamp(Number(value || bounds.centerZ), minZ, maxZ);
     };
     const clampXForDepthSnap = (value: number) => {
@@ -6439,15 +6531,24 @@ productMaterials?.length
   };
 
   const snapModelToWall = (wall: "back" | "front" | "left" | "right" | "center") => {
+    const wallRotationMap = { back: 0, front: 180, left: 90, right: 270, center: modelSceneOffset.rotationYDeg || 0 } as const;
+    const targetRotation = Number(wallRotationMap[wall] || 0);
+
+    if (!canSceneModuleFitWallV42(wall, targetRotation)) {
+      const wallLabel = wall === "left" || wall === "right" ? "parete laterale" : "parete selezionata";
+      setWallCollisionNotice(`Modulo troppo profondo/lungo per la ${wallLabel}: snap bloccato`);
+      window.setTimeout(() => setWallCollisionNotice(""), 2600);
+      return;
+    }
+
     setActiveWallSnap(wall);
-    setModelSceneOffset((current) => {
+    setModelSceneOffset((current: SceneTransformV42) => {
       const nextTransform = syncActiveSceneModuleV38(
         {
           ...current,
           ...getWallSnapTarget(wall, current),
         },
-        wall,
-        current
+        wall
       );
       return nextTransform;
     });
@@ -6473,7 +6574,7 @@ productMaterials?.length
     };
   }, [importCalibration]);
   useEffect(() => {
-    const activeModule = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
     const scenePackageV38 = {
       schema: "bagastudio.sceneComposer.v42",
       activeModuleId: activeSceneModuleIdV38,
@@ -6894,35 +6995,11 @@ productMaterials?.length
         </div>
       )}
 
-      {baseRoomEnvironment && (
+      {environment && (
         <div className="pointer-events-none absolute left-3 top-16 z-10 rounded-xl border border-cyan-500/25 bg-black/65 px-3 py-2 text-xs text-cyan-50 shadow-lg backdrop-blur">
-          Ambiente: {baseRoomEnvironment.roomWidthCm} × {baseRoomEnvironment.roomDepthCm} × {baseRoomEnvironment.roomHeightCm} cm
-          <span className="ml-2 text-cyan-200/70">Battiscopa {roomPanelBaseboard.heightCm}×{roomPanelBaseboard.depthCm} cm</span>
+          Ambiente: {baseRoomEnvironment?.roomWidthCm || 420} × {baseRoomEnvironment?.roomDepthCm || 360} × {baseRoomEnvironment?.roomHeightCm || 280} cm
         </div>
       )}
-
-      <div className="absolute right-3 top-[7.25rem] z-20 rounded-xl border border-cyan-500/25 bg-black/65 p-3 text-xs text-cyan-50 shadow-lg backdrop-blur">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div>
-            <div className="font-black uppercase tracking-[0.2em] text-cyan-300">Contorni</div>
-            <div className="text-[10px] text-slate-300">Diagnosi bordi modello</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setViewerModelEdgesEnabled((current) => !current)}
-            className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide transition ${
-              viewerModelEdgesEnabled
-                ? "border-cyan-300/50 bg-cyan-500/20 text-cyan-100"
-                : "border-slate-500/50 bg-slate-900/80 text-slate-300"
-            }`}
-          >
-            {viewerModelEdgesEnabled ? "ON" : "OFF"}
-          </button>
-        </div>
-        <div className="max-w-[210px] text-[10px] leading-snug text-slate-400">
-          Spegni per verificare triangoli/linee del DAE senza overlay.
-        </div>
-      </div>
 
       {activeWallSnap && activeWallSnap !== "center" && (
         <div className="pointer-events-none absolute bottom-[118px] right-[294px] z-30 hidden rounded-2xl border border-emerald-400/30 bg-black/46 px-3 py-2 text-xs font-black text-emerald-100 shadow-[0_16px_40px_rgba(0,0,0,0.38)] backdrop-blur-md md:block">
@@ -6935,63 +7012,15 @@ productMaterials?.length
       )}
 
       {sceneModulesV38.length > 1 && (() => {
-        const collisionMap = new Map<string, "ok" | "join" | "collision">();
-        const footprint = getSceneModelFootprintMeters(modelSceneOffset.rotationYDeg);
-        const joinTolerance = 0.08;
-        const boxes = sceneModulesV38.map((module: any) => {
-          const transform = module?.id === activeSceneModuleIdV38 ? modelSceneOffset : module?.transform || {};
-          const rotation = THREE.MathUtils.euclideanModulo(Number(transform.rotationYDeg || 0), 360);
-          const quarterTurn = Math.abs((rotation % 180) - 90) < 45;
-          const boxWidth = quarterTurn ? footprint.depth : footprint.width;
-          const boxDepth = quarterTurn ? footprint.width : footprint.depth;
-          const x = Number(transform.x || 0);
-          const z = Number(transform.z || 0);
-          return {
-            id: String(module.id),
-            left: x - boxWidth / 2,
-            right: x + boxWidth / 2,
-            back: z - boxDepth / 2,
-            front: z + boxDepth / 2,
-          };
-        });
-
-        boxes.forEach((box) => collisionMap.set(box.id, "ok"));
-
-        for (let i = 0; i < boxes.length; i += 1) {
-          for (let j = i + 1; j < boxes.length; j += 1) {
-            const a = boxes[i];
-            const b = boxes[j];
-            const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-            const overlapZ = Math.min(a.front, b.front) - Math.max(a.back, b.back);
-            const intersects = overlapX > 0 && overlapZ > 0;
-            const nearlyJoined =
-              !intersects &&
-              (
-                (Math.abs(a.right - b.left) <= joinTolerance || Math.abs(b.right - a.left) <= joinTolerance) &&
-                Math.min(a.front, b.front) - Math.max(a.back, b.back) > -joinTolerance
-              ||
-                (Math.abs(a.front - b.back) <= joinTolerance || Math.abs(b.front - a.back) <= joinTolerance) &&
-                Math.min(a.right, b.right) - Math.max(a.left, b.left) > -joinTolerance
-              );
-
-            if (intersects) {
-              collisionMap.set(a.id, "collision");
-              collisionMap.set(b.id, "collision");
-            } else if (nearlyJoined) {
-              if (collisionMap.get(a.id) !== "collision") collisionMap.set(a.id, "join");
-              if (collisionMap.get(b.id) !== "collision") collisionMap.set(b.id, "join");
-            }
-          }
-        }
-
+        const collisionMap = getSceneModuleCollisionMapV42(sceneModulesV38, modelSceneOffset);
         const activeStatus = collisionMap.get(activeSceneModuleIdV38);
-        if (activeStatus === "ok") return null;
+        if (!activeStatus || activeStatus === "ok") return null;
 
         return (
           <div className={`absolute right-[318px] top-[112px] z-40 rounded-2xl border px-4 py-3 text-xs font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
             activeStatus === "collision"
-              ? "pointer-events-none border-red-400/40 bg-red-950/80 text-red-50"
-              : "pointer-events-auto border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
+              ? "border-red-400/40 bg-red-950/80 text-red-50"
+              : "border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
           }`}>
             <div className="uppercase tracking-[0.18em]">
               {activeStatus === "collision" ? "Collisione modulo" : "Giunzione possibile"}
@@ -6999,17 +7028,89 @@ productMaterials?.length
             <div className="mt-1 text-[11px] font-semibold opacity-80">
               {activeStatus === "collision"
                 ? "Sposta il modulo: sta attraversando un altro ingombro."
-                : "Modulo vicino a un altro: aggancio/affiancamento valido."}
+                : "Modulo accostato a un altro: puoi aprire l'assistente giunzione."}
             </div>
             {activeStatus === "join" && (
               <button
                 type="button"
                 onClick={() => setJoinAssistantOpenV42(true)}
-                className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-400/25"
+                className="pointer-events-auto mt-3 rounded-xl border border-emerald-300/40 bg-emerald-400/16 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-400/26"
               >
-                Apri giunzione
+                Apri assistente giunzione
               </button>
             )}
+          </div>
+        );
+      })()}
+
+      {joinAssistantOpenV42 && (() => {
+        const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null;
+        const activeBounds = getSceneModuleBoundsV42(modelSceneOffset);
+        const otherModule = sceneModulesV38.find((module: any) => {
+          if (!module || module.id === activeSceneModuleIdV38) return false;
+          const otherBounds = getSceneModuleBoundsV42(module.transform || {});
+          const touchTolerance = 0.1;
+          const overlapX = Math.min(activeBounds.right, otherBounds.right) - Math.max(activeBounds.left, otherBounds.left);
+          const overlapZ = Math.min(activeBounds.front, otherBounds.front) - Math.max(activeBounds.back, otherBounds.back);
+          const touchesX =
+            (Math.abs(activeBounds.right - otherBounds.left) <= touchTolerance ||
+              Math.abs(otherBounds.right - activeBounds.left) <= touchTolerance) &&
+            overlapZ > -touchTolerance;
+          const touchesZ =
+            (Math.abs(activeBounds.front - otherBounds.back) <= touchTolerance ||
+              Math.abs(otherBounds.front - activeBounds.back) <= touchTolerance) &&
+            overlapX > -touchTolerance;
+          return touchesX || touchesZ;
+        });
+
+        return (
+          <div className="absolute right-[318px] top-[214px] z-50 w-[320px] rounded-3xl border border-emerald-300/35 bg-slate-950/92 p-4 text-xs text-emerald-50 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Scene Composer V42</div>
+                <div className="mt-1 text-lg font-black uppercase tracking-wide text-white">Assistente giunzione</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setJoinAssistantOpenV42(false)}
+                className="rounded-xl border border-white/10 bg-white/8 px-2 py-1 text-[10px] font-black uppercase text-slate-200 hover:bg-white/15"
+              >
+                Chiudi
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/8 p-3">
+              <div className="font-black uppercase tracking-[0.14em] text-emerald-200">Giunzione rilevata</div>
+              <div className="mt-2 leading-relaxed text-emerald-50/82">
+                <b>{activeModule?.name || "Modulo attivo"}</b> è accostato a <b>{otherModule?.name || "un altro modulo"}</b>.
+                Controlla la giunzione prima di confermarla: fianco condiviso, ferramenta e fattibilità produttiva andranno validati nel prossimo step.
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="rounded-2xl border border-emerald-300/25 bg-emerald-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-50 hover:bg-emerald-400/24"
+                onClick={() => setJoinAssistantOpenV42(false)}
+              >
+                Tieni separati
+              </button>
+              <button
+                type="button"
+                className="rounded-2xl border border-cyan-300/25 bg-cyan-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-50 hover:bg-cyan-400/24"
+                onClick={() => {
+                  setWallSnapNotice("Giunzione segnata come possibile: validazione tecnica da completare");
+                  window.setTimeout(() => setWallSnapNotice(""), 2400);
+                  setJoinAssistantOpenV42(false);
+                }}
+              >
+                Segna possibile
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-[11px] font-semibold leading-relaxed text-amber-100/85">
+              V42 recovery: questa scheda ripristina il workflow. La scelta reale di ferramenta/fianco condiviso resta roadmap Modular Merge Engine.
+            </div>
           </div>
         );
       })()}
@@ -7024,111 +7125,8 @@ productMaterials?.length
         </div>
       )}
 
-
-      {joinAssistantDraftV42 && (
-        <DraggablePanel
-          id="join-assistant-v42"
-          title="Assistente giunzione V1"
-          eyebrow="Giunzione possibile"
-          defaultPosition={{ x: 560, y: 230 }}
-          widthClassName="w-[360px]"
-          zIndex={80}
-          onClose={() => setJoinAssistantDraftV42(null)}
-        >
-          <div className="text-xs font-semibold leading-relaxed text-slate-300">
-            {joinAssistantDraftV42.reason}
-          </div>
-          <div className="mt-4 grid gap-2 text-xs">
-            <div className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-3">
-              <div className="font-black text-slate-100">Modulo sorgente</div>
-              <div className="mt-1 text-slate-300">{joinAssistantDraftV42.sourceName}</div>
-            </div>
-            <div className="rounded-2xl border border-emerald-400/25 bg-emerald-950/30 p-3">
-              <div className="font-black text-emerald-200">Scelte da validare</div>
-              <div className="mt-1 text-slate-300">Affiancamento · fianco condiviso · ferramenta giunzione</div>
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              className="flex-1 rounded-2xl border border-slate-600 bg-slate-900 px-3 py-2 text-xs font-black text-slate-100 hover:bg-slate-800"
-              onClick={() => setJoinAssistantDraftV42(null)}
-            >
-              Annulla
-            </button>
-            <button
-              type="button"
-              className="flex-1 rounded-2xl border border-emerald-400/45 bg-emerald-500/18 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/26"
-              onClick={() => setJoinAssistantDraftV42(null)}
-            >
-              Apri giunzione
-            </button>
-          </div>
-        </DraggablePanel>
-      )}
-
-      {joinAssistantOpenV42 && (
-        <DraggablePanel
-          id="join-assistant-v42"
-          eyebrow="Giunzione possibile"
-          title="Assistente giunzione V1"
-          defaultPosition={{ x: 560, y: 220 }}
-          widthClassName="w-[360px]"
-          zIndex={95}
-          onClose={() => setJoinAssistantOpenV42(false)}
-        >
-          <div className="space-y-4 text-xs text-slate-100">
-            <p className="leading-relaxed text-slate-300">
-              I moduli sono vicini o in contatto. Prima di applicare una giunzione, BagaStudio deve verificare
-              allineamento, ingombri, fianchi e ferramenta compatibile.
-            </p>
-
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Modulo attivo</div>
-              <div className="mt-1 font-black text-white">
-                {sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38)?.name || "Modulo selezionato"}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {["Affiancamento", "Fianco condiviso", "Angolo 90°", "Schiena contro schiena"].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-left text-[11px] font-black text-emerald-50 transition hover:bg-emerald-400/20"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-[11px] leading-relaxed text-amber-50">
-              Prossimo step: selezione ferramenta, mantenimento/eliminazione fianco, verifica producibilità e applicazione reale.
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setJoinAssistantOpenV42(false)}
-                className="rounded-xl border border-slate-600/70 bg-slate-900/80 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-200 hover:bg-slate-800"
-              >
-                Annulla
-              </button>
-              <button
-                type="button"
-                className="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 opacity-70"
-                title="Applicazione reale in V2"
-              >
-                Verifica V1
-              </button>
-            </div>
-          </div>
-        </DraggablePanel>
-      )}
-
-
       {wallSnapNotice && (
-        <div className="pointer-events-none absolute left-1/2 top-[132px] z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute bottom-10 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-lg font-black text-white">✓</span>
           <div>
             <div className="font-black">Modulo distaccato dalla parete</div>
@@ -7196,18 +7194,26 @@ productMaterials?.length
       <RoomOrientationOverlay />
 
       <RoomPanel
-        environment={baseRoomEnvironment}
+        environment={effectiveEnvironment}
         visibility={roomQuickVisibility}
+        roomVisible={roomVisible}
+        onToggleRoomVisible={() => setRoomVisible((current) => !current)}
         onToggleWall={toggleRoomQuickVisibility}
         onResetWalls={resetRoomQuickVisibility}
         onApplyRoom={applyRoomPanelSettings}
         onResetRoom={resetRoomPanelSettings}
       />
 
-      <ViewerWallQuickControls
-        visibility={roomQuickVisibility}
-        onToggle={toggleRoomQuickVisibility}
-        onReset={resetRoomQuickVisibility}
+      <ViewerToolsPanel
+        xRayEnabled={xRayEnabled}
+        xRayOpacity={xRayOpacity}
+        onToggleXRay={onToggleXRay}
+        onChangeXRayOpacity={onChangeXRayOpacity}
+        contoursEnabled={viewerModelEdgesEnabled}
+        onToggleContours={() => setViewerModelEdgesEnabled((current) => !current)}
+        onFocus={() => emitViewerCommand("bagastudio:focus-selection")}
+        onFit={() => emitViewerCommand("bagastudio:autofit-camera")}
+        onResetView={() => emitViewerCommand("bagastudio:reset-camera")}
       />
 
       <SceneComposerPanel
@@ -7333,7 +7339,7 @@ productMaterials?.length
 <CameraController activeViewId={activeViewId} views={views} />
 <ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
 
-        <PremiumRoomEnvironment environment={effectiveEnvironment} />
+        <PremiumRoomEnvironment environment={roomVisible ? effectiveEnvironment : undefined} />
 
         <ProductModel
   width={runtimeImportedModel?.dimensions?.width ?? width}

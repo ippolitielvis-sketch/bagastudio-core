@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
-import ComponentExplorer from "@/components/explorer/ComponentExplorer";
 import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
 import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
 import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
@@ -3661,39 +3660,7 @@ const availableAccessories = useMemo(() => {
     </div>
   )}
 
-  <div className="absolute right-5 top-5 z-30 w-[230px] rounded-3xl border border-cyan-400/25 bg-[#061522]/88 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.45),0_0_28px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
-    <div className="mb-2 flex items-center justify-between gap-2">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200">X-Ray</p>
-        <p className="text-[10px] text-neutral-400">Trasparenza modello</p>
-      </div>
-      <button
-        type="button"
-        onClick={() => setXRayEnabled((value) => !value)}
-        className={`rounded-xl border px-3 py-1.5 text-xs font-black ${
-          xRayEnabled
-            ? "border-cyan-300 bg-cyan-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.35)]"
-            : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-cyan-400/50"
-        }`}
-      >
-        {xRayEnabled ? "ON" : "OFF"}
-      </button>
-    </div>
-    <div className="flex items-center gap-2">
-      <input
-        type="range"
-        min={0.08}
-        max={0.9}
-        step={0.01}
-        value={xRayOpacity}
-        onChange={(event) => setXRayOpacity(Number(event.target.value))}
-        className="w-full accent-cyan-400"
-      />
-      <span className="w-10 text-right text-[11px] font-black text-cyan-100">
-        {Math.round(xRayOpacity * 100)}%
-      </span>
-    </div>
-  </div>
+  {/* X-Ray controls moved into ViewerToolsPanel inside Viewer3D. */}
 
   <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 gap-1.5 rounded-[22px] border border-white/10 bg-[#06111d]/94 p-2 shadow-[0_18px_55px_rgba(0,0,0,0.48),0_0_22px_rgba(14,165,233,0.10)] backdrop-blur-2xl">
     {[
@@ -3767,6 +3734,8 @@ const availableAccessories = useMemo(() => {
         woodDirection={woodDirection}
         xRayEnabled={xRayEnabled}
         xRayOpacity={xRayOpacity}
+        onToggleXRay={() => setXRayEnabled((value) => !value)}
+        onChangeXRayOpacity={(value) => setXRayOpacity(value)}
         environment={environmentSettings.showRoom ? {
           roomWidthCm: environmentSettings.width,
           roomDepthCm: environmentSettings.depth,
@@ -3844,37 +3813,100 @@ const availableAccessories = useMemo(() => {
 
         <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[24px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
           {/* bagastudio-sidebar-components-right-final-v1 */}
-          <ComponentExplorer
-            components={viewerRuntimeComponents}
-            selectedPartId={selectedPartId}
-            selectedPartIds={selectedPartIds}
-            rowRefs={componentRowRefs}
-            onClear={() => {
-              setSelectedPart(null);
-              setSelectedPartIds([]);
-              window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
-            }}
-            onSelectComponent={(component: any, componentId: string, wantsMultiSelect: boolean) => {
-              if (!componentId) return;
+          <section className="max-h-[300px] shrink-0 overflow-hidden rounded-[24px] border border-cyan-400/20 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
+                  Componenti modello
+                </h2>
+                <p className="text-xs font-semibold text-white">
+                  {viewerRuntimeComponents.length} pezzi rilevati
+                </p>
+              </div>
 
-              setSelectedPartIds((current) => {
-                if (!wantsMultiSelect) return [componentId];
-                return current.includes(componentId)
-                  ? current.filter((id) => id !== componentId)
-                  : [...current, componentId];
-              });
-              setSelectedPart(componentId);
-              window.dispatchEvent(
-                new CustomEvent("bagastudio:viewer-select-component", {
-                  detail: {
-                    ...component,
-                    partId: componentId,
-                    multiSelect: wantsMultiSelect,
-                  },
-                })
-              );
-            }}
-          />
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
+                onClick={() => {
+                  setSelectedPart(null);
+                  setSelectedPartIds([]);
+                  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+                }}
+              >
+                Pulisci
+              </button>
+            </div>
+
+            {viewerRuntimeComponents.length > 0 ? (
+              <div className="max-h-[200px] space-y-1.5 overflow-auto pr-1">
+                {viewerRuntimeComponents.map((component: any) => {
+                  const componentId = component.id || component.partId || component.meshName;
+                  const componentAliases = [component.id, component.partId, component.meshName]
+                    .map((value: any) => String(value || ""))
+                    .filter(Boolean);
+                  const isSelected = componentAliases.some((alias: string) =>
+                    selectedPartIds.includes(alias) || selectedPartId === alias
+                  );
+
+                  return (
+                    <button
+                      key={`${componentId}-${component.index}`}
+                      ref={(node) => {
+                        if (!componentId) return;
+                        componentRowRefs.current[componentId] = node;
+                        if (component.id) componentRowRefs.current[component.id] = node;
+                        if (component.partId) componentRowRefs.current[component.partId] = node;
+                        if (component.meshName) componentRowRefs.current[component.meshName] = node;
+                      }}
+                      type="button"
+                      className={`w-full rounded-2xl border px-3 py-2.5 text-left transition ${
+                        isSelected
+                          ? "border-sky-400 bg-sky-500/20 text-white"
+                          : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
+                      }`}
+                      onClick={(event) => {
+                        if (!componentId) return;
+
+                        const wantsMultiSelect = event.ctrlKey || event.metaKey || event.shiftKey;
+                        setSelectedPartIds((current) => {
+                          if (!wantsMultiSelect) return [componentId];
+                          return current.includes(componentId)
+                            ? current.filter((id) => id !== componentId)
+                            : [...current, componentId];
+                        });
+                        setSelectedPart(componentId);
+                        window.dispatchEvent(
+                          new CustomEvent("bagastudio:viewer-select-component", {
+                            detail: {
+                              ...component,
+                              partId: componentId,
+                              multiSelect: wantsMultiSelect,
+                            },
+                          })
+                        );
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-semibold">
+                          {component.displayName || component.name || componentId}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-neutral-300">
+                          #{component.index}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-[11px] text-neutral-400">
+                        {component.meshName || component.partId || component.id}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-neutral-400">
+                Nessun componente runtime rilevato.
+              </div>
+            )}
+          </section>
 
           {effectiveSelectedPartIds.length > 0 && (
             <section className="shrink-0 rounded-[22px] border border-sky-400/25 bg-sky-500/[0.08] p-3 shadow-[0_0_30px_rgba(14,165,233,0.08)]">

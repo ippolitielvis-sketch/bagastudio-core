@@ -22,6 +22,8 @@ type RoomPanelDraft = {
 type RoomPanelProps = {
   environment?: RoomEnvironmentSettings;
   visibility: RoomQuickVisibility;
+  roomVisible: boolean;
+  onToggleRoomVisible: () => void;
   onToggleWall: (key: keyof RoomQuickVisibility) => void;
   onResetWalls: () => void;
   onApplyRoom: (settings: RoomPanelDraft) => void;
@@ -51,12 +53,14 @@ const WALL_ITEMS: Array<{ key: keyof RoomQuickVisibility; label: string; note: s
 export default function RoomPanel({
   environment,
   visibility,
+  roomVisible,
+  onToggleRoomVisible,
   onToggleWall,
   onResetWalls,
   onApplyRoom,
   onResetRoom,
 }: RoomPanelProps) {
-  const [activeTab, setActiveTab] = useState<"room" | "walls" | "baseboard" | "orientation">("room");
+  const [activeTab, setActiveTab] = useState<"room" | "walls" | "baseboard">("room");
   const [draft, setDraft] = useState<RoomPanelDraft>(() => buildDraftFromEnvironment(environment));
 
   useEffect(() => {
@@ -112,12 +116,11 @@ export default function RoomPanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-1 rounded-2xl border border-white/10 bg-slate-900/60 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-slate-900/60 p-1">
           {[
             ["room", "Stanza"],
             ["walls", "Pareti"],
             ["baseboard", "Battiscopa"],
-            ["orientation", "Assi"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -136,6 +139,31 @@ export default function RoomPanel({
 
         {activeTab === "room" && (
           <div className="space-y-3">
+            <button
+              type="button"
+              onClick={onToggleRoomVisible}
+              className={`w-full rounded-2xl border p-3 text-left transition ${
+                roomVisible
+                  ? "border-emerald-300/35 bg-emerald-400/12 text-emerald-50 hover:bg-emerald-400/20"
+                  : "border-red-300/30 bg-red-950/42 text-red-100 hover:bg-red-900/55"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="block text-[9px] font-black uppercase tracking-[0.14em] opacity-70">
+                    {roomVisible ? "ON" : "OFF"}
+                  </span>
+                  <span className="block text-sm font-black uppercase tracking-wide">Stanza visibile</span>
+                  <span className="mt-1 block text-[9px] leading-snug text-slate-400">
+                    Spegne/accende pavimento, pareti, soffitto e battiscopa nel Viewer.
+                  </span>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-wide">
+                  {roomVisible ? "Accesa" : "Spenta"}
+                </span>
+              </div>
+            </button>
+
             <div className="grid grid-cols-3 gap-2">
               {[
                 ["roomWidthCm", "Larghezza", 10],
@@ -236,25 +264,7 @@ export default function RoomPanel({
           </div>
         )}
 
-        {activeTab === "orientation" && (
-          <div className="rounded-3xl border border-cyan-300/18 bg-slate-900/70 p-5 text-center">
-            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Orientamento stanza</div>
-            <div className="mx-auto grid w-[180px] grid-cols-3 grid-rows-3 items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em]">
-              <div />
-              <div className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 py-2 text-cyan-100">Fondo ↑</div>
-              <div />
-              <div className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 py-2 text-cyan-100">← SX</div>
-              <div className="rounded-full border border-white/15 bg-white/10 px-2 py-3 text-white">X/Z</div>
-              <div className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 py-2 text-cyan-100">DX →</div>
-              <div />
-              <div className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-2 py-2 text-cyan-100">Fronte ↓</div>
-              <div />
-            </div>
-            <div className="mt-3 text-[10px] leading-snug text-slate-400">
-              I pulsanti movimento seguono la stanza, non la camera orbitale.
-            </div>
-          </div>
-        )}
+
       </div>
     </DraggablePanel>
   );

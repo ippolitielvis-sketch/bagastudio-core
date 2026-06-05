@@ -44,6 +44,49 @@ export type AiTechnicalSuggestionsV45Report = {
   nextActions: string[];
 };
 
+type AiTechnicalSuggestionsV45ClassificationItem = {
+  wallId: string;
+  wallLabel: string;
+  status: "CLASSIFICATION_READY" | "CLASSIFICATION_REVIEW_REQUIRED" | "CLASSIFICATION_BLOCKED" | string;
+  reviewRequired?: boolean;
+  finalConfidence: number;
+  declaredWallType?: string;
+  classifiedWallType?: string;
+};
+
+type AiTechnicalSuggestionsV45FusionConflict = {
+  severity: AiTechnicalSuggestionV45Severity | string;
+};
+
+type AiTechnicalSuggestionsV45FusionItem = {
+  wallId: string;
+  conflicts?: AiTechnicalSuggestionsV45FusionConflict[];
+};
+
+type AiTechnicalSuggestionsV45PhotoEvidenceItem = {
+  linkedWallId: string;
+  status: "PHOTO_READY" | "PHOTO_MISSING" | "PHOTO_BLOCKED" | string;
+};
+
+type AiTechnicalSuggestionsV45DrawingEvidenceItem = {
+  linkedWallId: string;
+  status: "DWG_READY" | "DWG_MISSING" | "DWG_BLOCKED" | string;
+};
+
+type AiTechnicalSuggestionsV45BuildParams = {
+  classificationV44: { items: AiTechnicalSuggestionsV45ClassificationItem[] };
+  fusionV43: { items: AiTechnicalSuggestionsV45FusionItem[] };
+  photoEvidenceV41: { items: AiTechnicalSuggestionsV45PhotoEvidenceItem[] };
+  drawingEvidenceV42: { items: AiTechnicalSuggestionsV45DrawingEvidenceItem[] };
+  technicalApprovalV39: {
+    approvalStatus?: string;
+    installAllowed?: boolean;
+  };
+  installerChecklistV38: {
+    installChecklistStatus?: string;
+  };
+};
+
 export function pushAiTechnicalSuggestionV45(
   suggestions: AiTechnicalSuggestionV45Item[],
   item: Omit<AiTechnicalSuggestionV45Item, "id">
@@ -58,20 +101,19 @@ export function resolveAiTechnicalSuggestionsV45Status(suggestions: AiTechnicalS
   return "SUGGESTIONS_READY" as const;
 }
 
-export function buildAiTechnicalSuggestionsV45Report(params: {
-  classificationV44: any;
-  fusionV43: any;
-  photoEvidenceV41: any;
-  drawingEvidenceV42: any;
-  technicalApprovalV39: any;
-  installerChecklistV38: any;
-}): AiTechnicalSuggestionsV45Report {
+export function buildAiTechnicalSuggestionsV45Report(params: AiTechnicalSuggestionsV45BuildParams): AiTechnicalSuggestionsV45Report {
   const suggestions: AiTechnicalSuggestionV45Item[] = [];
-  const fusionByWall = new Map(params.fusionV43.items.map((item) => [item.wallId, item]));
-  const photoByWall = new Map(params.photoEvidenceV41.items.map((item) => [item.linkedWallId, item]));
-  const drawingByWall = new Map(params.drawingEvidenceV42.items.map((item) => [item.linkedWallId, item]));
+  const fusionByWall = new Map<string, AiTechnicalSuggestionsV45FusionItem>(
+    params.fusionV43.items.map((item: AiTechnicalSuggestionsV45FusionItem) => [item.wallId, item])
+  );
+  const photoByWall = new Map<string, AiTechnicalSuggestionsV45PhotoEvidenceItem>(
+    params.photoEvidenceV41.items.map((item: AiTechnicalSuggestionsV45PhotoEvidenceItem) => [item.linkedWallId, item])
+  );
+  const drawingByWall = new Map<string, AiTechnicalSuggestionsV45DrawingEvidenceItem>(
+    params.drawingEvidenceV42.items.map((item: AiTechnicalSuggestionsV45DrawingEvidenceItem) => [item.linkedWallId, item])
+  );
 
-  params.classificationV44.items.forEach((classification) => {
+  params.classificationV44.items.forEach((classification: AiTechnicalSuggestionsV45ClassificationItem) => {
     const fusion = fusionByWall.get(classification.wallId) || null;
     const photo = photoByWall.get(classification.wallId) || null;
     const drawing = drawingByWall.get(classification.wallId) || null;
@@ -169,13 +211,13 @@ export function buildAiTechnicalSuggestionsV45Report(params: {
     if (fusion?.conflicts?.length) {
       pushAiTechnicalSuggestionV45(suggestions, {
         category: "evidence",
-        severity: fusion.conflicts.some((conflict) => conflict.severity === "critical") ? "critical" : "warning",
+        severity: fusion.conflicts.some((conflict: AiTechnicalSuggestionsV45FusionConflict) => conflict.severity === "critical") ? "critical" : "warning",
         wallId: classification.wallId,
         wallLabel: classification.wallLabel,
         title: "Conflitto tra evidenze rilevato",
         reason: "Evidence Fusion V4.3 ha rilevato incoerenze tra descrizione cliente, foto, DWG/DXF o approvazione tecnica.",
         suggestedAction: "Aprire review tecnica e risolvere il conflitto prima di generare PDF finale o approvazione installazione.",
-        blocksApproval: fusion.conflicts.some((conflict) => conflict.severity === "critical"),
+        blocksApproval: fusion.conflicts.some((conflict: AiTechnicalSuggestionsV45FusionConflict) => conflict.severity === "critical"),
         exportTargets: ["Evidence Fusion V4.3", "Technical Approval Workflow V3.9"],
       });
     }
@@ -209,11 +251,11 @@ export function buildAiTechnicalSuggestionsV45Report(params: {
     });
   }
 
-  const critical = suggestions.filter((item) => item.severity === "critical").length;
-  const warning = suggestions.filter((item) => item.severity === "warning").length;
-  const info = suggestions.filter((item) => item.severity === "info").length;
-  const blockedWalls = new Set(suggestions.filter((item) => item.blocksApproval).map((item) => item.wallId)).size;
-  const renderArReadyWalls = params.classificationV44.items.filter((item) => {
+  const critical = suggestions.filter((item: AiTechnicalSuggestionV45Item) => item.severity === "critical").length;
+  const warning = suggestions.filter((item: AiTechnicalSuggestionV45Item) => item.severity === "warning").length;
+  const info = suggestions.filter((item: AiTechnicalSuggestionV45Item) => item.severity === "info").length;
+  const blockedWalls = new Set(suggestions.filter((item: AiTechnicalSuggestionV45Item) => item.blocksApproval).map((item: AiTechnicalSuggestionV45Item) => item.wallId)).size;
+  const renderArReadyWalls = params.classificationV44.items.filter((item: AiTechnicalSuggestionsV45ClassificationItem) => {
     const photo = photoByWall.get(item.wallId);
     return item.status === "CLASSIFICATION_READY" && Boolean(photo && photo.status === "PHOTO_READY");
   }).length;

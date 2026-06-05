@@ -12,6 +12,7 @@ export type RoomEnvironmentSettings = {
   showBackWall?: boolean;
   showLeftWall?: boolean;
   showRightWall?: boolean;
+  showCeiling?: boolean;
 };
 
 let bagastudioRendererMaxAnisotropy = 8;
@@ -26,21 +27,21 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
 
   if (kind === "floor") {
     const baseGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    baseGradient.addColorStop(0, "#f3eadc");
-    baseGradient.addColorStop(0.42, "#e8dcc9");
-    baseGradient.addColorStop(1, "#f8f1e6");
+    baseGradient.addColorStop(0, "#8b5a32");
+    baseGradient.addColorStop(0.42, "#70401f");
+    baseGradient.addColorStop(1, "#9b6a3d");
     ctx.fillStyle = baseGradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const plankHeight = 168;
-    const plankColors = ["#efe2cf", "#e6d7c2", "#f4eadb", "#dccbb4", "#eadbc6", "#f7efe3"];
+    const plankColors = ["#86532d", "#74431f", "#98633a", "#6d3b1c", "#8f5b34", "#7d4a26"];
 
     for (let y = 0; y < canvas.height + plankHeight; y += plankHeight) {
       const colorIndex = Math.floor(y / plankHeight) % plankColors.length;
       const shade = plankColors[colorIndex];
       const plankGradient = ctx.createLinearGradient(0, y, canvas.width, y + plankHeight);
       plankGradient.addColorStop(0, shade);
-      plankGradient.addColorStop(0.48, colorIndex % 2 ? "#e2d1ba" : "#f6ead9");
+      plankGradient.addColorStop(0.48, colorIndex % 2 ? "#7a4724" : "#955f36");
       plankGradient.addColorStop(1, shade);
 
       ctx.fillStyle = plankGradient;
@@ -53,7 +54,7 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
       ctx.lineTo(canvas.width, y + 2);
       ctx.stroke();
 
-      ctx.strokeStyle = "rgba(135,104,72,0.18)";
+      ctx.strokeStyle = "rgba(38,19,8,0.34)";
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(0, y + plankHeight - 5);
@@ -62,7 +63,7 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
 
       const seamOffset = (Math.floor(y / plankHeight) % 3) * 330;
       for (let x = seamOffset; x < canvas.width; x += 620) {
-        ctx.strokeStyle = "rgba(120,92,66,0.14)";
+        ctx.strokeStyle = "rgba(28,14,8,0.22)";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x, y + 16);
@@ -80,7 +81,7 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
       for (let grain = 0; grain < 18; grain += 1) {
         const gy = y + 20 + grain * 7.2 + Math.sin(grain + y * 0.018) * 4;
         const alpha = grain % 3 === 0 ? 0.11 : 0.06;
-        ctx.strokeStyle = grain % 2 ? `rgba(255,248,236,${alpha})` : `rgba(132,101,72,${alpha})`;
+        ctx.strokeStyle = grain % 2 ? `rgba(255,228,190,${alpha})` : `rgba(42,21,10,${alpha})`;
         ctx.lineWidth = grain % 4 === 0 ? 1.4 : 0.8;
         ctx.beginPath();
         ctx.moveTo(-40, gy);
@@ -94,8 +95,8 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
         const kx = ((knot * 397 + y * 1.7) % canvas.width);
         const ky = y + 42 + ((knot * 51) % Math.max(1, plankHeight - 88));
         const knotGradient = ctx.createRadialGradient(kx, ky, 2, kx, ky, 42);
-        knotGradient.addColorStop(0, "rgba(128,92,62,0.12)");
-        knotGradient.addColorStop(0.42, "rgba(168,132,96,0.08)");
+        knotGradient.addColorStop(0, "rgba(43,22,12,0.24)");
+        knotGradient.addColorStop(0.42, "rgba(80,42,20,0.13)");
         knotGradient.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = knotGradient;
         ctx.beginPath();
@@ -106,7 +107,7 @@ function createPremiumRoomCanvasTexture(kind: "floor" | "wall") {
 
     const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 220, canvas.width / 2, canvas.height / 2, canvas.width * 0.78);
     vignette.addColorStop(0, "rgba(255,255,255,0.05)");
-    vignette.addColorStop(1, "rgba(120,90,60,0.08)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.20)");
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
@@ -361,15 +362,19 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         </mesh>
       )}
 
-      <mesh receiveShadow position={[0, roomHeight + ceilingThickness / 2, backZ + roomDepth * 0.34]}>
-        <boxGeometry args={[roomWidth + wallThickness * 2, ceilingThickness, roomDepth * 0.68]} />
-        <meshStandardMaterial color={ceilingColor} roughness={0.72} metalness={0} />
-      </mesh>
+      {environment.showCeiling !== false && (
+        <>
+          <mesh receiveShadow position={[0, roomHeight + ceilingThickness / 2, backZ + roomDepth * 0.34]}>
+            <boxGeometry args={[roomWidth + wallThickness * 2, ceilingThickness, roomDepth * 0.68]} />
+            <meshStandardMaterial color={ceilingColor} roughness={0.72} metalness={0} />
+          </mesh>
 
-      <mesh position={[0, roomHeight - 0.035, backZ + roomDepth * 0.68]}>
-        <boxGeometry args={[roomWidth + wallThickness * 2, 0.055, 0.08]} />
-        <meshStandardMaterial color={ceilingColor} roughness={0.68} metalness={0} />
-      </mesh>
+          <mesh position={[0, roomHeight - 0.035, backZ + roomDepth * 0.68]}>
+            <boxGeometry args={[roomWidth + wallThickness * 2, 0.055, 0.08]} />
+            <meshStandardMaterial color={ceilingColor} roughness={0.68} metalness={0} />
+          </mesh>
+        </>
+      )}
 
       {environment.showBackWall !== false && (
         <>
@@ -413,7 +418,7 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
       {/* V41.5: rimosse le finte ombre rettangolari/ellittiche.
           Le ombre ambiente devono arrivare da luci reali e materiali, non da plane scuri visibili. */}
 
-      {[0.2, 0.4, 0.6, 0.8].map((ratio, index) => {
+      {environment.showCeiling !== false && [0.2, 0.4, 0.6, 0.8].map((ratio, index) => {
         const x = -roomWidth / 2 + roomWidth * ratio;
         const z = backZ + roomDepth * 0.22;
         return (
@@ -441,16 +446,18 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         );
       })}
 
-      <spotLight
-        castShadow
-        position={[0, roomHeight - 0.16, backZ + roomDepth * 0.52]}
-        intensity={1.18}
-        angle={0.82}
-        penumbra={0.72}
-        distance={6.5}
-        decay={2}
-        color="#fff4dc"
-      />
+      {environment.showCeiling !== false && (
+        <spotLight
+          castShadow
+          position={[0, roomHeight - 0.16, backZ + roomDepth * 0.52]}
+          intensity={1.18}
+          angle={0.82}
+          penumbra={0.72}
+          distance={6.5}
+          decay={2}
+          color="#fff4dc"
+        />
+      )}
 
       <hemisphereLight
         color="#fff8ec"
