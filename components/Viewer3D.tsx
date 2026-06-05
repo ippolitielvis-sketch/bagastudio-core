@@ -5613,7 +5613,6 @@ productMaterials?.length
   const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
   const [wallSnapNotice, setWallSnapNotice] = useState("");
   const [wallCollisionNotice, setWallCollisionNotice] = useState("");
-  const [moduleCollisionNotice, setModuleCollisionNotice] = useState("");
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
@@ -5864,17 +5863,17 @@ productMaterials?.length
       // l'eventuale eccedenza va verso fronte, mai dietro la parete di fondo.
       if (axis === "z") {
         if (snapHint === "left" || snapHint === "right") {
-          // V42.5.31 Side Wall Slide Clamp:
-          // su SX/DX lo scorrimento lungo parete deve rispettare sempre min/max reali del modulo.
-          // Rimosso il bypass su roomDepth che permetteva fuoriuscite dopo piu' click.
-          return THREE.MathUtils.clamp(
-            Number(value || 0),
-            Math.min(min, max),
-            Math.max(min, max)
-          );
+          // V42.5.37 Room Hard Clamp:
+          // se il modulo e' piu' profondo della stanza, SX/DX restano comandati dal fondo.
+          // Non usiamo safeMin/safeMax perche' permetteva fuoriuscite dopo lo sgancio/spostamento.
+          return min;
         }
         if (snapHint === "back") return min;
         if (snapHint === "front") return max;
+        // V42.5.37 Room Hard Clamp:
+        // anche nel movimento libero, quando minZ > maxZ il modulo non puo' fisicamente stare tutto dentro.
+        // Manteniamo il bordo posteriore dentro la stanza invece di centrare o farlo scappare fuori.
+        return min;
       }
 
       if (axis === "x") {
@@ -5926,103 +5925,11 @@ productMaterials?.length
     window.setTimeout(() => setWallCollisionNotice(""), 2200);
   };
 
-
-  const showModuleCollisionNoticeV42 = (message = "Modulo bloccato: collisione con un altro modulo") => {
-    setModuleCollisionNotice(message);
-    window.setTimeout(() => setModuleCollisionNotice(""), 2200);
-  };
-
-  const getSceneModuleWorldBoxV42 = (transform: any = {}) => {
-    const rotationYDeg = THREE.MathUtils.euclideanModulo(Number(transform.rotationYDeg || 0), 360);
-    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
-    const calibrationOffsetX = Number(importCalibration?.offsetX || 0);
-    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
-    const x = Number(transform.x || 0) + calibrationOffsetX;
-    const z = Number(transform.z || 0) + calibrationOffsetZ;
-
-    return {
-      left: x + rotatedBounds.minX,
-      right: x + rotatedBounds.maxX,
-      back: z + rotatedBounds.minZ,
-      front: z + rotatedBounds.maxZ,
-    };
-  };
-
-  const sceneModuleBoxesOverlapV42 = (boxA: any, boxB: any, tolerance = 0.015) => {
-    const overlapX = Math.min(boxA.right, boxB.right) - Math.max(boxA.left, boxB.left);
-    const overlapZ = Math.min(boxA.front, boxB.front) - Math.max(boxA.back, boxB.back);
-
-    return overlapX > tolerance && overlapZ > tolerance;
-  };
-
-  const hasSceneModuleCollisionV42 = (
-    candidateTransform: any,
-    candidateModuleId = activeSceneModuleIdV38,
-    modules: any[] = sceneModulesV38
-  ) => {
-    const candidateBox = getSceneModuleWorldBoxV42(candidateTransform);
-
-    return modules.some((module) => {
-      const moduleId = String(module?.id || "");
-      if (!moduleId || moduleId === String(candidateModuleId || "")) return false;
-
-      return sceneModuleBoxesOverlapV42(
-        candidateBox,
-        getSceneModuleWorldBoxV42(module?.transform || {})
-      );
-    });
-  };
-
-  const findFreeDuplicateTransformV42 = (sourceTransform: any, candidateModuleId: string) => {
-    const baseTransform = {
-      x: Number(sourceTransform?.x || 0),
-      z: Number(sourceTransform?.z ?? -0.62),
-      rotationYDeg: Number(sourceTransform?.rotationYDeg || 0),
-    };
-    const step = 0.35;
-    const candidates = [
-      { x: step, z: 0 },
-      { x: -step, z: 0 },
-      { x: 0, z: step },
-      { x: 0, z: -step },
-      { x: step, z: step },
-      { x: -step, z: step },
-      { x: step, z: -step },
-      { x: -step, z: -step },
-      { x: step * 2, z: 0 },
-      { x: -step * 2, z: 0 },
-      { x: 0, z: step * 2 },
-      { x: 0, z: -step * 2 },
-    ];
-
-    for (const offset of candidates) {
-      const candidate = clampModelSceneTransform(
-        {
-          ...baseTransform,
-          x: baseTransform.x + offset.x,
-          z: baseTransform.z + offset.z,
-        },
-        null
-      );
-
-      if (!hasSceneModuleCollisionV42(candidate, candidateModuleId)) return candidate;
-    }
-
-    return null;
-  };
-
   const syncActiveSceneModuleV38 = (
     nextTransform: { x: number; z: number; rotationYDeg?: number },
-    nextWallSnap: typeof activeWallSnap = activeWallSnap,
-    options: { blockModuleCollision?: boolean; fallbackTransform?: any } = {}
+    nextWallSnap: typeof activeWallSnap = activeWallSnap
   ) => {
     const clampedTransform = clampModelSceneTransform(nextTransform, nextWallSnap);
-
-    if (options.blockModuleCollision && hasSceneModuleCollisionV42(clampedTransform, activeSceneModuleIdV38)) {
-      showModuleCollisionNoticeV42();
-      const safeFallback = clampModelSceneTransform(options.fallbackTransform || modelSceneOffset, activeWallSnap);
-      return safeFallback;
-    }
 
     setSceneModulesV38((current) =>
       current.map((module) =>
@@ -6080,17 +5987,8 @@ productMaterials?.length
 
     const nextIndex = sceneModulesV38.length + 1;
     const sourceTransform = activeModule.transform || modelSceneOffset;
-    const duplicatedModuleId = `scene-module-${Date.now()}-copy`;
-    const freeTransform = findFreeDuplicateTransformV42(sourceTransform, duplicatedModuleId);
-
-    if (!freeTransform) {
-      showModuleCollisionNoticeV42("Duplicazione bloccata: nessuno spazio libero nella stanza");
-      return;
-    }
-
     const duplicatedModule = createSceneModuleV38({
-      id: duplicatedModuleId,
-      name: `Modulo ${nextIndex}`,
+      name: `${activeModule.name || "Modulo"} copia`,
       source: {
         ...(activeModule.source || {}),
         modelUrl: activeModule.source?.modelUrl || effectiveProductModel,
@@ -6098,14 +5996,24 @@ productMaterials?.length
         importedModelName: activeModule.source?.importedModelName || effectiveImportedModelName || importedModelName || "",
       },
       transform: {
-        ...freeTransform,
+        x: Number(sourceTransform.x || 0) + 0.35,
+        z: Number(sourceTransform.z ?? -0.62) + 0.35,
+        rotationYDeg: Number(sourceTransform.rotationYDeg || 0),
         activeWallSnap: null,
       },
     });
 
+    duplicatedModule.name = `Modulo ${nextIndex}`;
+    const clampedTransform = clampModelSceneTransform(duplicatedModule.transform);
+    duplicatedModule.transform = {
+      ...duplicatedModule.transform,
+      ...clampedTransform,
+      activeWallSnap: null,
+    };
+
     setSceneModulesV38((current) => [...current, duplicatedModule]);
     setActiveSceneModuleIdV38(duplicatedModule.id);
-    setModelSceneOffset(freeTransform);
+    setModelSceneOffset(clampedTransform);
     setActiveWallSnap(null);
     window.dispatchEvent(new CustomEvent("bagastudio:scene-module-duplicated-v42", { detail: duplicatedModule }));
   };
@@ -6165,15 +6073,16 @@ productMaterials?.length
     // usiamo un binario di scorrimento sicuro dalla parete di fondo verso il fronte.
     const backContactZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance;
     const strictFrontLimitZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ - contactClearance;
-    const roomDepth = Math.max(0.4, bounds.front - bounds.back);
-    const fallbackFrontLimitZ = backContactZ + roomDepth - 0.05;
-    const maxZ = Number.isFinite(strictFrontLimitZ) && strictFrontLimitZ > backContactZ
-      ? strictFrontLimitZ
-      : fallbackFrontLimitZ;
+    // V42.5.33b Safe Side Wall Slide:
+    // niente fallback su roomDepth: se il modulo e' troppo profondo per la stanza,
+    // lo scorrimento laterale non deve inventare spazio e farlo uscire visivamente.
+    // In quel caso il binario resta bloccato sul contatto di fondo e mostra collisione.
+    const hasRealSlideRange = Number.isFinite(strictFrontLimitZ) && strictFrontLimitZ >= backContactZ;
+    const maxZ = hasRealSlideRange ? strictFrontLimitZ : backContactZ;
 
     return {
       minZ: backContactZ,
-      maxZ: Math.max(backContactZ, maxZ),
+      maxZ,
     };
   };
 
@@ -6237,13 +6146,12 @@ productMaterials?.length
             };
             const candidateClamped = clampModelSceneTransform(candidateTransform, null);
             const canDetachInsideRoom =
-              Math.abs(Number(candidateTransform.x || 0) - Number(candidateClamped.x || 0)) < 0.0001;
+              Math.abs(Number(candidateTransform.x || 0) - Number(candidateClamped.x || 0)) < 0.0001 &&
+              Math.abs(Number(candidateTransform.z || 0) - Number(candidateClamped.z || 0)) < 0.0001;
 
-            // V42.5.27 Side Wall Inward Fix:
-            // lo sgancio dalla parete laterale deve validare l'asse X, non pretendere che il
-            // modulo entri perfettamente anche in Z. Con moduli profondi/ruotati la Z puo' avere
-            // un range impossibile, ma il movimento verso l'interno stanza e' comunque valido.
-            // Usiamo la Z gia' normalizzata dal clamp per evitare falsi avvisi di collisione.
+            // V42.5.33b Safe Side Detach:
+            // lo sgancio da SX/DX e' consentito solo se il modulo completo resta dentro la stanza
+            // sia su X sia su Z. Prima validava solo X e poteva far uscire il modulo dalla parete.
             if (canDetachInsideRoom) {
               requestedX = candidateClamped.x;
               requestedZ = candidateClamped.z;
@@ -6282,10 +6190,7 @@ productMaterials?.length
         x: requestedX,
         z: requestedZ,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove, {
-        blockModuleCollision: true,
-        fallbackTransform: current,
-      });
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove);
       if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
@@ -6298,10 +6203,7 @@ productMaterials?.length
         ...current,
         rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null, {
-        blockModuleCollision: true,
-        fallbackTransform: current,
-      });
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null);
       if (!isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
@@ -6331,7 +6233,10 @@ productMaterials?.length
     const clampZForSideSnap = (value: number) => {
       const minZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ;
       const maxZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ;
-      if (minZ > maxZ) return (minZ + maxZ) / 2;
+      // V42.5.36 Side Snap Back-Lock Restore:
+      // se il modulo e' piu' profondo della stanza, SX/DX non devono centrarlo
+      // tra min/max invertiti: il fondo stanza resta il vincolo prioritario.
+      if (minZ > maxZ) return minZ;
       return THREE.MathUtils.clamp(Number(value || bounds.centerZ), minZ, maxZ);
     };
     const clampXForDepthSnap = (value: number) => {
@@ -6383,11 +6288,7 @@ productMaterials?.length
           ...current,
           ...getWallSnapTarget(wall, current),
         },
-        wall,
-        {
-          blockModuleCollision: true,
-          fallbackTransform: current,
-        }
+        wall
       );
       return nextTransform;
     });
@@ -6943,16 +6844,6 @@ productMaterials?.length
           </div>
         );
       })()}
-
-      {moduleCollisionNotice && (
-        <div className="pointer-events-none absolute bottom-[164px] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-lg font-black text-white">!</span>
-          <div>
-            <div className="font-black">Collisione modulo</div>
-            <div className="text-xs font-semibold text-red-100/90">{moduleCollisionNotice}</div>
-          </div>
-        </div>
-      )}
 
       {wallCollisionNotice && (
         <div className="pointer-events-none absolute bottom-[164px] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
