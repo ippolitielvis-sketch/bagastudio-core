@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
+import ComponentExplorer from "@/components/explorer/ComponentExplorer";
 import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
 import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
 import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
@@ -3843,100 +3844,37 @@ const availableAccessories = useMemo(() => {
 
         <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[24px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
           {/* bagastudio-sidebar-components-right-final-v1 */}
-          <section className="max-h-[300px] shrink-0 overflow-hidden rounded-[24px] border border-cyan-400/20 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
-                  Componenti modello
-                </h2>
-                <p className="text-xs font-semibold text-white">
-                  {viewerRuntimeComponents.length} pezzi rilevati
-                </p>
-              </div>
+          <ComponentExplorer
+            components={viewerRuntimeComponents}
+            selectedPartId={selectedPartId}
+            selectedPartIds={selectedPartIds}
+            rowRefs={componentRowRefs}
+            onClear={() => {
+              setSelectedPart(null);
+              setSelectedPartIds([]);
+              window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+            }}
+            onSelectComponent={(component: any, componentId: string, wantsMultiSelect: boolean) => {
+              if (!componentId) return;
 
-              <button
-                type="button"
-                className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-neutral-200 hover:border-sky-400 hover:text-white"
-                onClick={() => {
-                  setSelectedPart(null);
-                  setSelectedPartIds([]);
-                  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
-                }}
-              >
-                Pulisci
-              </button>
-            </div>
-
-            {viewerRuntimeComponents.length > 0 ? (
-              <div className="max-h-[200px] space-y-1.5 overflow-auto pr-1">
-                {viewerRuntimeComponents.map((component: any) => {
-                  const componentId = component.id || component.partId || component.meshName;
-                  const componentAliases = [component.id, component.partId, component.meshName]
-                    .map((value: any) => String(value || ""))
-                    .filter(Boolean);
-                  const isSelected = componentAliases.some((alias: string) =>
-                    selectedPartIds.includes(alias) || selectedPartId === alias
-                  );
-
-                  return (
-                    <button
-                      key={`${componentId}-${component.index}`}
-                      ref={(node) => {
-                        if (!componentId) return;
-                        componentRowRefs.current[componentId] = node;
-                        if (component.id) componentRowRefs.current[component.id] = node;
-                        if (component.partId) componentRowRefs.current[component.partId] = node;
-                        if (component.meshName) componentRowRefs.current[component.meshName] = node;
-                      }}
-                      type="button"
-                      className={`w-full rounded-2xl border px-3 py-2.5 text-left transition ${
-                        isSelected
-                          ? "border-sky-400 bg-sky-500/20 text-white"
-                          : "border-white/10 bg-white/5 text-neutral-300 hover:border-sky-500/50 hover:bg-sky-500/10"
-                      }`}
-                      onClick={(event) => {
-                        if (!componentId) return;
-
-                        const wantsMultiSelect = event.ctrlKey || event.metaKey || event.shiftKey;
-                        setSelectedPartIds((current) => {
-                          if (!wantsMultiSelect) return [componentId];
-                          return current.includes(componentId)
-                            ? current.filter((id) => id !== componentId)
-                            : [...current, componentId];
-                        });
-                        setSelectedPart(componentId);
-                        window.dispatchEvent(
-                          new CustomEvent("bagastudio:viewer-select-component", {
-                            detail: {
-                              ...component,
-                              partId: componentId,
-                              multiSelect: wantsMultiSelect,
-                            },
-                          })
-                        );
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-semibold">
-                          {component.displayName || component.name || componentId}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-neutral-300">
-                          #{component.index}
-                        </span>
-                      </div>
-                      <div className="mt-1 truncate text-[11px] text-neutral-400">
-                        {component.meshName || component.partId || component.id}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-neutral-400">
-                Nessun componente runtime rilevato.
-              </div>
-            )}
-          </section>
+              setSelectedPartIds((current) => {
+                if (!wantsMultiSelect) return [componentId];
+                return current.includes(componentId)
+                  ? current.filter((id) => id !== componentId)
+                  : [...current, componentId];
+              });
+              setSelectedPart(componentId);
+              window.dispatchEvent(
+                new CustomEvent("bagastudio:viewer-select-component", {
+                  detail: {
+                    ...component,
+                    partId: componentId,
+                    multiSelect: wantsMultiSelect,
+                  },
+                })
+              );
+            }}
+          />
 
           {effectiveSelectedPartIds.length > 0 && (
             <section className="shrink-0 rounded-[22px] border border-sky-400/25 bg-sky-500/[0.08] p-3 shadow-[0_0_30px_rgba(14,165,233,0.08)]">

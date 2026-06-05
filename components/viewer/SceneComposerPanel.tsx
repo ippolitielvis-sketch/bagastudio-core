@@ -1,6 +1,7 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import type { Dispatch, MouseEvent, PointerEvent, SetStateAction } from "react";
 
 type WallSnapTarget = "back" | "front" | "left" | "right" | "center";
 type WallSnapDistanceMode = "touch" | "5" | "10" | "custom";
@@ -44,6 +45,45 @@ export default function SceneComposerPanel({
   duplicateActiveSceneModuleV42,
   deleteActiveSceneModuleV42,
 }: SceneComposerPanelProps) {
+  const holdMoveTimerRef = useRef<number | null>(null);
+  const stopHoldMove = useCallback(() => {
+    if (holdMoveTimerRef.current !== null) {
+      window.clearInterval(holdMoveTimerRef.current);
+      holdMoveTimerRef.current = null;
+    }
+  }, []);
+
+  const startHoldMove = useCallback((deltaX = 0, deltaZ = 0) => {
+    stopHoldMove();
+    moveModelInRoom(deltaX, deltaZ);
+    holdMoveTimerRef.current = window.setInterval(() => {
+      moveModelInRoom(deltaX, deltaZ);
+    }, 130);
+  }, [moveModelInRoom, stopHoldMove]);
+
+  useEffect(() => {
+    window.addEventListener("mouseup", stopHoldMove);
+    window.addEventListener("pointerup", stopHoldMove);
+    window.addEventListener("blur", stopHoldMove);
+    return () => {
+      window.removeEventListener("mouseup", stopHoldMove);
+      window.removeEventListener("pointerup", stopHoldMove);
+      window.removeEventListener("blur", stopHoldMove);
+      stopHoldMove();
+    };
+  }, [stopHoldMove]);
+
+  const getHoldMoveButtonProps = (deltaX = 0, deltaZ = 0) => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      startHoldMove(deltaX, deltaZ);
+    },
+    onPointerUp: stopHoldMove,
+    onPointerLeave: stopHoldMove,
+    onPointerCancel: stopHoldMove,
+    onClick: (event: MouseEvent<HTMLButtonElement>) => event.preventDefault(),
+  });
+
   return (
 <div className="absolute bottom-24 right-4 z-30 w-[260px] rounded-[24px] border border-emerald-400/20 bg-slate-950/78 p-3 text-[10px] font-black text-slate-100 shadow-2xl shadow-emerald-950/25 backdrop-blur-xl">
   <div className="mb-2 flex items-center justify-between gap-2">
@@ -65,7 +105,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      onClick={() => moveModelInRoom(0, -0.16)}
+      {...getHoldMoveButtonProps(0, -0.16)}
       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Avvicina alla parete"
     >
@@ -74,7 +114,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      onClick={() => moveModelInRoom(-0.16, 0)}
+      {...getHoldMoveButtonProps(-0.16, 0)}
       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Sposta a sinistra"
     >
@@ -85,7 +125,7 @@ export default function SceneComposerPanel({
     </div>
     <button
       type="button"
-      onClick={() => moveModelInRoom(0.16, 0)}
+      {...getHoldMoveButtonProps(0.16, 0)}
       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Sposta a destra"
     >
@@ -94,7 +134,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      onClick={() => moveModelInRoom(0, 0.16)}
+      {...getHoldMoveButtonProps(0, 0.16)}
       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Allontana dalla parete"
     >

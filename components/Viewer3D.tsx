@@ -29,6 +29,7 @@ import {
 import { getDefaultInsertConfig } from "@/core/engines/insertEngine";
 import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/RoomEnvironment";
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
+import ViewerWallQuickControls from "./viewer-ui/ViewerWallQuickControls";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -5612,6 +5613,7 @@ productMaterials?.length
   const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
   const [wallSnapNotice, setWallSnapNotice] = useState("");
   const [wallCollisionNotice, setWallCollisionNotice] = useState("");
+  const [moduleCollisionNotice, setModuleCollisionNotice] = useState("");
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
@@ -5633,6 +5635,40 @@ productMaterials?.length
   } | null>(null);
   const [importCalibration, setImportCalibration] = useState<ImportCalibrationSettings>(DEFAULT_IMPORT_CALIBRATION);
   const [scaleDiagnosticsV8, setScaleDiagnosticsV8] = useState<any | null>(null);
+  const [roomQuickVisibility, setRoomQuickVisibility] = useState({
+    backWall: true,
+    leftWall: true,
+    rightWall: true,
+    ceiling: true,
+  });
+
+  const effectiveEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
+    if (!environment) return environment;
+
+    return {
+      ...environment,
+      showBackWall: environment.showBackWall !== false && roomQuickVisibility.backWall,
+      showLeftWall: environment.showLeftWall !== false && roomQuickVisibility.leftWall,
+      showRightWall: environment.showRightWall !== false && roomQuickVisibility.rightWall,
+      showCeiling: roomQuickVisibility.ceiling,
+    };
+  }, [environment, roomQuickVisibility]);
+
+  const toggleRoomQuickVisibility = (key: keyof typeof roomQuickVisibility) => {
+    setRoomQuickVisibility((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  };
+
+  const resetRoomQuickVisibility = () => {
+    setRoomQuickVisibility({
+      backWall: true,
+      leftWall: true,
+      rightWall: true,
+      ceiling: true,
+    });
+  };
 
   const updateImportCalibration = (key: keyof ImportCalibrationSettings, value: string) => {
     const parsedValue = Number(value);
@@ -5828,13 +5864,14 @@ productMaterials?.length
       // l'eventuale eccedenza va verso fronte, mai dietro la parete di fondo.
       if (axis === "z") {
         if (snapHint === "left" || snapHint === "right") {
-          // V42.5.17 Side Wall Slide Unblock:
-          // quando il modulo e' piu' profondo della stanza, SX/DX non devono congelarlo
-          // sul fondo e generare collisione a ogni click. Il bordo posteriore resta vincolato
-          // alla parete di fondo, ma il modulo puo' scorrere verso l'interno stanza.
-          const roomDepth = Math.max(0.4, bounds.front - bounds.back);
-          const safeSideSlideMax = min + roomDepth - 0.05;
-          return THREE.MathUtils.clamp(Number(value || min), min, Math.max(min, safeSideSlideMax));
+          // V42.5.31 Side Wall Slide Clamp:
+          // su SX/DX lo scorrimento lungo parete deve rispettare sempre min/max reali del modulo.
+          // Rimosso il bypass su roomDepth che permetteva fuoriuscite dopo piu' click.
+          return THREE.MathUtils.clamp(
+            Number(value || 0),
+            Math.min(min, max),
+            Math.max(min, max)
+          );
         }
         if (snapHint === "back") return min;
         if (snapHint === "front") return max;
@@ -5889,11 +5926,103 @@ productMaterials?.length
     window.setTimeout(() => setWallCollisionNotice(""), 2200);
   };
 
+
+  const showModuleCollisionNoticeV42 = (message = "Modulo bloccato: collisione con un altro modulo") => {
+    setModuleCollisionNotice(message);
+    window.setTimeout(() => setModuleCollisionNotice(""), 2200);
+  };
+
+  const getSceneModuleWorldBoxV42 = (transform: any = {}) => {
+    const rotationYDeg = THREE.MathUtils.euclideanModulo(Number(transform.rotationYDeg || 0), 360);
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const calibrationOffsetX = Number(importCalibration?.offsetX || 0);
+    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
+    const x = Number(transform.x || 0) + calibrationOffsetX;
+    const z = Number(transform.z || 0) + calibrationOffsetZ;
+
+    return {
+      left: x + rotatedBounds.minX,
+      right: x + rotatedBounds.maxX,
+      back: z + rotatedBounds.minZ,
+      front: z + rotatedBounds.maxZ,
+    };
+  };
+
+  const sceneModuleBoxesOverlapV42 = (boxA: any, boxB: any, tolerance = 0.015) => {
+    const overlapX = Math.min(boxA.right, boxB.right) - Math.max(boxA.left, boxB.left);
+    const overlapZ = Math.min(boxA.front, boxB.front) - Math.max(boxA.back, boxB.back);
+
+    return overlapX > tolerance && overlapZ > tolerance;
+  };
+
+  const hasSceneModuleCollisionV42 = (
+    candidateTransform: any,
+    candidateModuleId = activeSceneModuleIdV38,
+    modules: any[] = sceneModulesV38
+  ) => {
+    const candidateBox = getSceneModuleWorldBoxV42(candidateTransform);
+
+    return modules.some((module) => {
+      const moduleId = String(module?.id || "");
+      if (!moduleId || moduleId === String(candidateModuleId || "")) return false;
+
+      return sceneModuleBoxesOverlapV42(
+        candidateBox,
+        getSceneModuleWorldBoxV42(module?.transform || {})
+      );
+    });
+  };
+
+  const findFreeDuplicateTransformV42 = (sourceTransform: any, candidateModuleId: string) => {
+    const baseTransform = {
+      x: Number(sourceTransform?.x || 0),
+      z: Number(sourceTransform?.z ?? -0.62),
+      rotationYDeg: Number(sourceTransform?.rotationYDeg || 0),
+    };
+    const step = 0.35;
+    const candidates = [
+      { x: step, z: 0 },
+      { x: -step, z: 0 },
+      { x: 0, z: step },
+      { x: 0, z: -step },
+      { x: step, z: step },
+      { x: -step, z: step },
+      { x: step, z: -step },
+      { x: -step, z: -step },
+      { x: step * 2, z: 0 },
+      { x: -step * 2, z: 0 },
+      { x: 0, z: step * 2 },
+      { x: 0, z: -step * 2 },
+    ];
+
+    for (const offset of candidates) {
+      const candidate = clampModelSceneTransform(
+        {
+          ...baseTransform,
+          x: baseTransform.x + offset.x,
+          z: baseTransform.z + offset.z,
+        },
+        null
+      );
+
+      if (!hasSceneModuleCollisionV42(candidate, candidateModuleId)) return candidate;
+    }
+
+    return null;
+  };
+
   const syncActiveSceneModuleV38 = (
     nextTransform: { x: number; z: number; rotationYDeg?: number },
-    nextWallSnap: typeof activeWallSnap = activeWallSnap
+    nextWallSnap: typeof activeWallSnap = activeWallSnap,
+    options: { blockModuleCollision?: boolean; fallbackTransform?: any } = {}
   ) => {
     const clampedTransform = clampModelSceneTransform(nextTransform, nextWallSnap);
+
+    if (options.blockModuleCollision && hasSceneModuleCollisionV42(clampedTransform, activeSceneModuleIdV38)) {
+      showModuleCollisionNoticeV42();
+      const safeFallback = clampModelSceneTransform(options.fallbackTransform || modelSceneOffset, activeWallSnap);
+      return safeFallback;
+    }
 
     setSceneModulesV38((current) =>
       current.map((module) =>
@@ -5951,8 +6080,17 @@ productMaterials?.length
 
     const nextIndex = sceneModulesV38.length + 1;
     const sourceTransform = activeModule.transform || modelSceneOffset;
+    const duplicatedModuleId = `scene-module-${Date.now()}-copy`;
+    const freeTransform = findFreeDuplicateTransformV42(sourceTransform, duplicatedModuleId);
+
+    if (!freeTransform) {
+      showModuleCollisionNoticeV42("Duplicazione bloccata: nessuno spazio libero nella stanza");
+      return;
+    }
+
     const duplicatedModule = createSceneModuleV38({
-      name: `${activeModule.name || "Modulo"} copia`,
+      id: duplicatedModuleId,
+      name: `Modulo ${nextIndex}`,
       source: {
         ...(activeModule.source || {}),
         modelUrl: activeModule.source?.modelUrl || effectiveProductModel,
@@ -5960,24 +6098,14 @@ productMaterials?.length
         importedModelName: activeModule.source?.importedModelName || effectiveImportedModelName || importedModelName || "",
       },
       transform: {
-        x: Number(sourceTransform.x || 0) + 0.35,
-        z: Number(sourceTransform.z ?? -0.62) + 0.35,
-        rotationYDeg: Number(sourceTransform.rotationYDeg || 0),
+        ...freeTransform,
         activeWallSnap: null,
       },
     });
 
-    duplicatedModule.name = `Modulo ${nextIndex}`;
-    const clampedTransform = clampModelSceneTransform(duplicatedModule.transform);
-    duplicatedModule.transform = {
-      ...duplicatedModule.transform,
-      ...clampedTransform,
-      activeWallSnap: null,
-    };
-
     setSceneModulesV38((current) => [...current, duplicatedModule]);
     setActiveSceneModuleIdV38(duplicatedModule.id);
-    setModelSceneOffset(clampedTransform);
+    setModelSceneOffset(freeTransform);
     setActiveWallSnap(null);
     window.dispatchEvent(new CustomEvent("bagastudio:scene-module-duplicated-v42", { detail: duplicatedModule }));
   };
@@ -6154,7 +6282,10 @@ productMaterials?.length
         x: requestedX,
         z: requestedZ,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove);
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove, {
+        blockModuleCollision: true,
+        fallbackTransform: current,
+      });
       if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
@@ -6167,7 +6298,10 @@ productMaterials?.length
         ...current,
         rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null);
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null, {
+        blockModuleCollision: true,
+        fallbackTransform: current,
+      });
       if (!isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
@@ -6249,7 +6383,11 @@ productMaterials?.length
           ...current,
           ...getWallSnapTarget(wall, current),
         },
-        wall
+        wall,
+        {
+          blockModuleCollision: true,
+          fallbackTransform: current,
+        }
       );
       return nextTransform;
     });
@@ -6806,6 +6944,16 @@ productMaterials?.length
         );
       })()}
 
+      {moduleCollisionNotice && (
+        <div className="pointer-events-none absolute bottom-[164px] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-lg font-black text-white">!</span>
+          <div>
+            <div className="font-black">Collisione modulo</div>
+            <div className="text-xs font-semibold text-red-100/90">{moduleCollisionNotice}</div>
+          </div>
+        </div>
+      )}
+
       {wallCollisionNotice && (
         <div className="pointer-events-none absolute bottom-[164px] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-lg font-black text-white">!</span>
@@ -6881,6 +7029,12 @@ productMaterials?.length
       )}
 
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
+
+      <ViewerWallQuickControls
+        visibility={roomQuickVisibility}
+        onToggle={toggleRoomQuickVisibility}
+        onReset={resetRoomQuickVisibility}
+      />
 
       <SceneComposerPanel
         modelSceneOffset={modelSceneOffset}
@@ -7005,7 +7159,7 @@ productMaterials?.length
 <CameraController activeViewId={activeViewId} views={views} />
 <ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
 
-        <PremiumRoomEnvironment environment={environment} />
+        <PremiumRoomEnvironment environment={effectiveEnvironment} />
 
         <ProductModel
   width={runtimeImportedModel?.dimensions?.width ?? width}
@@ -7025,7 +7179,7 @@ productMaterials?.length
   productModelFormat={effectiveProductModelFormat}
   productParts={productParts}
   woodDirection={woodDirection}
-  environment={environment}
+  environment={effectiveEnvironment}
   importCalibration={importCalibration}
   modelSceneOffset={modelSceneOffset}
   sceneModules={sceneModulesV38}

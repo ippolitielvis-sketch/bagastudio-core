@@ -12,6 +12,7 @@ export type RoomEnvironmentSettings = {
   showBackWall?: boolean;
   showLeftWall?: boolean;
   showRightWall?: boolean;
+  showCeiling?: boolean;
 };
 
 let bagastudioRendererMaxAnisotropy = 8;
@@ -361,15 +362,19 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         </mesh>
       )}
 
-      <mesh receiveShadow position={[0, roomHeight + ceilingThickness / 2, backZ + roomDepth * 0.34]}>
-        <boxGeometry args={[roomWidth + wallThickness * 2, ceilingThickness, roomDepth * 0.68]} />
-        <meshStandardMaterial color={ceilingColor} roughness={0.72} metalness={0} />
-      </mesh>
+      {environment.showCeiling !== false && (
+        <>
+          <mesh receiveShadow position={[0, roomHeight + ceilingThickness / 2, backZ + roomDepth * 0.34]}>
+            <boxGeometry args={[roomWidth + wallThickness * 2, ceilingThickness, roomDepth * 0.68]} />
+            <meshStandardMaterial color={ceilingColor} roughness={0.72} metalness={0} />
+          </mesh>
 
-      <mesh position={[0, roomHeight - 0.035, backZ + roomDepth * 0.68]}>
-        <boxGeometry args={[roomWidth + wallThickness * 2, 0.055, 0.08]} />
-        <meshStandardMaterial color={ceilingColor} roughness={0.68} metalness={0} />
-      </mesh>
+          <mesh position={[0, roomHeight - 0.035, backZ + roomDepth * 0.68]}>
+            <boxGeometry args={[roomWidth + wallThickness * 2, 0.055, 0.08]} />
+            <meshStandardMaterial color={ceilingColor} roughness={0.68} metalness={0} />
+          </mesh>
+        </>
+      )}
 
       {environment.showBackWall !== false && (
         <>
@@ -413,7 +418,7 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
       {/* V41.5: rimosse le finte ombre rettangolari/ellittiche.
           Le ombre ambiente devono arrivare da luci reali e materiali, non da plane scuri visibili. */}
 
-      {[0.2, 0.4, 0.6, 0.8].map((ratio, index) => {
+      {environment.showCeiling !== false && [0.2, 0.4, 0.6, 0.8].map((ratio, index) => {
         const x = -roomWidth / 2 + roomWidth * ratio;
         const z = backZ + roomDepth * 0.22;
         return (
@@ -441,6 +446,7 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         );
       })}
 
+      {environment.showCeiling !== false && (
       <spotLight
         castShadow
         position={[0, roomHeight - 0.16, backZ + roomDepth * 0.52]}
@@ -451,6 +457,7 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         decay={2}
         color="#fff4dc"
       />
+      )}
 
       <hemisphereLight
         color="#fff8ec"
