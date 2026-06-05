@@ -3459,6 +3459,7 @@ function ProductModel({
 (state) => state.selectedPartId
 );
 const lastSelectionWasMultiRef = useRef(false);
+const multiSelectedPartIdsRef = useRef<Set<string>>(new Set());
 const highlightedRef = useRef<{
   mesh: THREE.Mesh;
   material: THREE.Material | THREE.Material[];
@@ -3537,6 +3538,26 @@ const restoreHighlightedMesh = (targetKey?: string) => {
   }
 
   highlightedRef.current = null;
+};
+
+const getLastHighlightedPartKeyV4252 = () => {
+  const keys = Array.from(highlightedMeshMapRef.current.keys());
+  return keys.length ? keys[keys.length - 1] : null;
+};
+
+const clearSelectedPartHighlightsV4252 = () => {
+  multiSelectedPartIdsRef.current.clear();
+  restoreHighlightedMesh();
+};
+
+const removeSelectedPartHighlightV4252 = (partKey: string) => {
+  const safePartKey = String(partKey || "");
+  if (!safePartKey) return null;
+
+  multiSelectedPartIdsRef.current.delete(safePartKey);
+  restoreHighlightedMesh(safePartKey);
+
+  return getLastHighlightedPartKeyV4252();
 };
 
 const createSelectedPartHighlightMaterial = (
@@ -4408,7 +4429,7 @@ if (position === "top") {
     lastSelectionWasMultiRef.current = false;
 
     if (!keepExistingHighlights) {
-      restoreHighlightedMesh();
+      clearSelectedPartHighlightsV4252();
     }
 
     if (!selectedPartId) return;
@@ -4436,7 +4457,14 @@ if (position === "top") {
     if (!targetMesh) return;
 const mesh = targetMesh as THREE.Mesh;
 
-applySelectedPartLightUpV42(mesh, String(selectedPartId));
+const selectedKey = String(selectedPartId);
+if (keepExistingHighlights) {
+  multiSelectedPartIdsRef.current.add(selectedKey);
+} else {
+  multiSelectedPartIdsRef.current = new Set([selectedKey]);
+}
+
+applySelectedPartLightUpV42(mesh, selectedKey);
   }, [scene, selectedPartId]);
 
   const importedModelOffsetDiagnostics = useMemo(() => {
@@ -4479,6 +4507,31 @@ applySelectedPartLightUpV42(mesh, String(selectedPartId));
     const calibrationScale = Math.max(0.01, Number(importCalibration.scale || 1));
     const totalVisualScale = viewerScale * calibrationScale;
 
+    // V42.5.4 Snap Parete reale:
+    // misura l'ingombro visivo dopo la correzione assi DAE/GLB, perché lo snap deve usare
+    // il box che l'utente vede nel Viewer e non solo width/depth dichiarati dal prodotto.
+    const axisProbe = scene.clone(true);
+    axisProbe.rotation.set(
+      importedModelAxisCorrection[0] || 0,
+      importedModelAxisCorrection[1] || 0,
+      importedModelAxisCorrection[2] || 0
+    );
+    axisProbe.updateMatrixWorld(true);
+
+    const axisBox = new THREE.Box3().setFromObject(axisProbe);
+    const axisSize = axisBox.getSize(new THREE.Vector3());
+    const axisCorrectedViewerUnits = {
+      width: Math.max(0, axisSize.x * totalVisualScale),
+      height: Math.max(0, axisSize.y * totalVisualScale),
+      depth: Math.max(0, axisSize.z * totalVisualScale),
+    };
+    const axisCorrectedViewerBounds = {
+      minX: axisBox.min.x * totalVisualScale,
+      maxX: axisBox.max.x * totalVisualScale,
+      minZ: axisBox.min.z * totalVisualScale,
+      maxZ: axisBox.max.z * totalVisualScale,
+    };
+
     // BagaStudio internal room unit: room cm / 100, quindi 1 unità viewer = 1000 mm.
     const viewerUnitToMm = 1000;
     const rawMax = Math.max(rawWidth, rawHeight, rawDepth);
@@ -4510,6 +4563,8 @@ applySelectedPartLightUpV42(mesh, String(selectedPartId));
         height: rawHeight * totalVisualScale,
         depth: rawDepth * totalVisualScale,
       },
+      axisCorrectedViewerUnits,
+      axisCorrectedViewerBounds,
       finalEstimatedCm: {
         width: rawWidth * totalVisualScale * 100,
         height: rawHeight * totalVisualScale * 100,
@@ -4551,6 +4606,7 @@ applySelectedPartLightUpV42(mesh, String(selectedPartId));
     importedModelDisplayScale,
     importCalibration.scale,
     importedModelOffsetDiagnostics,
+    importedModelAxisCorrection,
     width,
     height,
     depth,
@@ -4750,7 +4806,7 @@ applySelectedPartLightUpV42(mesh, String(selectedPartId));
   rotation={importedModelAxisCorrection}
   position={[0, importedModelGroundOffsetY, 0]}
   onPointerMissed={() => {
-    restoreHighlightedMesh();
+    clearSelectedPartHighlightsV4252();
 
     setSelectedPartId(null);
   }}
@@ -4823,8 +4879,36 @@ const realPartKey =
       const isMultiSelectionClick = Boolean(e?.nativeEvent?.ctrlKey || e?.nativeEvent?.metaKey || e?.nativeEvent?.shiftKey);
       lastSelectionWasMultiRef.current = isMultiSelectionClick;
 
+      if (isMultiSelectionClick && highlightedMeshMapRef.current.has(realPartKey)) {
+        const fallbackSelectedPartId = removeSelectedPartHighlightV4252(realPartKey);
+        setSelectedPartId(fallbackSelectedPartId);
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("bagastudio:viewer-component-selected", {
+              detail: {
+                partId: fallbackSelectedPartId || "",
+                id: fallbackSelectedPartId || "",
+                toggledOffPartId: realPartKey,
+                meshName: clickedMesh.name || clickedName,
+                displayName: String(clickedMesh.userData?.bagastudioDisplayName || clickedMesh.name || clickedName),
+                originalName: String(clickedMesh.userData?.bagastudioOriginalName || clickedName),
+                multiSelect: true,
+                additive: Boolean(e?.nativeEvent?.ctrlKey || e?.nativeEvent?.metaKey),
+                range: Boolean(e?.nativeEvent?.shiftKey),
+                deselected: true,
+              },
+            })
+          );
+        }
+
+        return;
+      }
+
       if (!isMultiSelectionClick) {
-        restoreHighlightedMesh();
+        clearSelectedPartHighlightsV4252();
+      } else {
+        multiSelectedPartIdsRef.current.add(realPartKey);
       }
 
       applySelectedPartLightUpV42(clickedMesh, realPartKey);
@@ -5527,6 +5611,7 @@ productMaterials?.length
   const [wallSnapDistanceMode, setWallSnapDistanceMode] = useState<"touch" | "5" | "10" | "custom">("touch");
   const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
   const [wallSnapNotice, setWallSnapNotice] = useState("");
+  const [wallCollisionNotice, setWallCollisionNotice] = useState("");
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
@@ -5572,30 +5657,108 @@ productMaterials?.length
   const getRoomInteriorBoundsMeters = () => {
     const roomWidth = Math.max(2.8, Number(environment?.roomWidthCm || 420) / 100);
     const roomDepth = Math.max(2.8, Number(environment?.roomDepthCm || 360) / 100);
-    // V42.4 Close Fit:
-    // inset ridotto: il limite stanza deve bloccare il modulo dentro la stanza
-    // senza allontanarlo visivamente troppo dalle pareti quando usa Snap Parete.
-    const wallSafetyInset = 0.035;
 
+    // V42.5.4 Snap Parete reale:
+    // il limite interno della stanza deve coincidere con la faccia visibile della parete.
+    // Nessun cuscinetto nascosto: se l'utente sceglie Appoggiato, il modulo deve toccare la parete.
     return {
-      left: -roomWidth / 2 + wallSafetyInset,
-      right: roomWidth / 2 - wallSafetyInset,
-      back: -roomDepth / 2 + wallSafetyInset,
-      front: roomDepth / 2 - wallSafetyInset,
+      left: -roomWidth / 2,
+      right: roomWidth / 2,
+      back: -roomDepth / 2,
+      front: roomDepth / 2,
       centerZ: -0.18,
     };
   };
 
-  const getSceneModelFootprintMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
+  const getSceneModelLocalBoundsMeters = () => {
+    // V42.5.12 Wall Collision Foundation:
+    // lo snap/clamp deve usare lo stesso ingombro che vede il Viewer, non solo le dimensioni dichiarate.
+    // Il modello viene renderizzato dentro <Center disableY>, con axis correction e importedModelDisplayScale:
+    // qui ricostruiamo quel box reale e lo recentriamo in X/Z come fa Center.
+    // V42.5.13 Hotfix:
+    // non usiamo variabili locali del renderer 3D (scene/importedModelDisplayScale) fuori scope.
+    // L’ingombro viene letto dai diagnostics già esistenti, così compila e resta coerente col Viewer.
+
+    const axisCorrectedViewerBounds = scaleDiagnosticsV8?.axisCorrectedViewerBounds || null;
+    const axisCorrectedViewerUnits = scaleDiagnosticsV8?.axisCorrectedViewerUnits || {};
+    const finalViewerUnits = scaleDiagnosticsV8?.finalViewerUnits || {};
     const finalEstimatedCm = scaleDiagnosticsV8?.finalEstimatedCm || {};
-    const rawWidthM = Math.max(0.18, Number(finalEstimatedCm.width || width || 180) / 100);
-    const rawDepthM = Math.max(0.18, Number(finalEstimatedCm.depth || depth || 60) / 100);
-    const normalizedRotation = THREE.MathUtils.euclideanModulo(Number(rotationYDeg || 0), 360);
-    const isQuarterTurn = Math.abs((normalizedRotation % 180) - 90) < 45;
+
+    const hasRealVisualBounds =
+      axisCorrectedViewerBounds &&
+      Number.isFinite(Number(axisCorrectedViewerBounds.minX)) &&
+      Number.isFinite(Number(axisCorrectedViewerBounds.maxX)) &&
+      Number.isFinite(Number(axisCorrectedViewerBounds.minZ)) &&
+      Number.isFinite(Number(axisCorrectedViewerBounds.maxZ));
+
+    if (hasRealVisualBounds) {
+      const visualWidthM = Math.max(
+        0.18,
+        Number(axisCorrectedViewerBounds.maxX) - Number(axisCorrectedViewerBounds.minX)
+      );
+      const visualDepthM = Math.max(
+        0.18,
+        Number(axisCorrectedViewerBounds.maxZ) - Number(axisCorrectedViewerBounds.minZ)
+      );
+
+      return {
+        minX: -visualWidthM / 2,
+        maxX: visualWidthM / 2,
+        minZ: -visualDepthM / 2,
+        maxZ: visualDepthM / 2,
+      };
+    }
+
+    const baseWidthM = Math.max(
+      0.18,
+      Number(axisCorrectedViewerUnits.width || finalViewerUnits.width || 0) ||
+        Number(finalEstimatedCm.width || width || 180) / 100
+    );
+    const baseDepthM = Math.max(
+      0.18,
+      Number(axisCorrectedViewerUnits.depth || finalViewerUnits.depth || 0) ||
+        Number(finalEstimatedCm.depth || depth || 60) / 100
+    );
 
     return {
-      width: isQuarterTurn ? rawDepthM : rawWidthM,
-      depth: isQuarterTurn ? rawWidthM : rawDepthM,
+      minX: -baseWidthM / 2,
+      maxX: baseWidthM / 2,
+      minZ: -baseDepthM / 2,
+      maxZ: baseDepthM / 2,
+    };
+  };
+
+  const getSceneModelRotatedBoundsMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
+    const localBounds = getSceneModelLocalBoundsMeters();
+    const calibrationScale = Math.max(0.01, Number(importCalibration?.scale || 1));
+    const totalRotationYDeg = Number(importCalibration?.rotationYDeg || 0) + Number(rotationYDeg || 0);
+    const radians = THREE.MathUtils.degToRad(THREE.MathUtils.euclideanModulo(totalRotationYDeg, 360));
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const corners = [
+      { x: localBounds.minX * calibrationScale, z: localBounds.minZ * calibrationScale },
+      { x: localBounds.minX * calibrationScale, z: localBounds.maxZ * calibrationScale },
+      { x: localBounds.maxX * calibrationScale, z: localBounds.minZ * calibrationScale },
+      { x: localBounds.maxX * calibrationScale, z: localBounds.maxZ * calibrationScale },
+    ].map((corner) => ({
+      x: corner.x * cos - corner.z * sin,
+      z: corner.x * sin + corner.z * cos,
+    }));
+
+    return {
+      minX: Math.min(...corners.map((corner) => corner.x)),
+      maxX: Math.max(...corners.map((corner) => corner.x)),
+      minZ: Math.min(...corners.map((corner) => corner.z)),
+      maxZ: Math.max(...corners.map((corner) => corner.z)),
+    };
+  };
+
+  const getSceneModelFootprintMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+
+    return {
+      width: Math.max(0.18, rotatedBounds.maxX - rotatedBounds.minX),
+      depth: Math.max(0.18, rotatedBounds.maxZ - rotatedBounds.minZ),
     };
   };
 
@@ -5606,24 +5769,21 @@ productMaterials?.length
       return Math.max(0, Math.min(100, Number(customWallSnapDistanceCm || 0)));
     }
 
-    // V40 Snap Parete:
-    // "Appoggiato" non deve entrare nella parete. Mantiene un distacco tecnico minimo
-    // per non far sparire specchi, cornici e parti sottili del modello.
-    return 0.5;
+    // V42.5.4 Snap Parete reale:
+    // Appoggiato = 0 cm. Il contatto visivo viene gestito dall'ingombro reale del modulo,
+    // non da margini nascosti.
+    return 0;
   };
 
   const getWallSnapSceneInsetMeters = (distanceCm = getActiveWallSnapDistanceCm()) => {
-    // V42.5 Close Fit reale:
-    // lo snap parete deve usare una distanza fisica cliente-friendly.
-    // Appoggiato = 0.5 cm circa, senza aggiungere offset grafici che staccano troppo il mobile.
-    return 0.002 + Math.max(0, Number(distanceCm || 0)) / 100;
+    return Math.max(0, Number(distanceCm || 0)) / 100;
   };
 
   const getWallSnapModeLabel = () => {
     if (wallSnapDistanceMode === "5") return "5 cm";
     if (wallSnapDistanceMode === "10") return "10 cm";
     if (wallSnapDistanceMode === "custom") return `${getActiveWallSnapDistanceCm().toFixed(1)} cm`;
-    return "0.5 cm";
+    return "0 cm";
   };
 
   const showWallSnapConfirmation = (wall: "back" | "front" | "left" | "right" | "center") => {
@@ -5647,41 +5807,93 @@ productMaterials?.length
     window.setTimeout(() => setWallSnapNotice(""), 2600);
   };
 
-  const clampModelSceneTransform = (next: { x: number; z: number; rotationYDeg?: number }) => {
+  const clampModelSceneTransform = (
+    next: { x: number; z: number; rotationYDeg?: number },
+    snapHint: typeof activeWallSnap = activeWallSnap
+  ) => {
     const bounds = getRoomInteriorBoundsMeters();
     const rotationYDeg = THREE.MathUtils.euclideanModulo(Number(next.rotationYDeg || 0), 360);
-    const footprint = getSceneModelFootprintMeters(rotationYDeg);
-    // V42.4 Close Fit:
-    // safety minima per evitare compenetrazione, ma non abbastanza grande
-    // da staccare il modulo dalla parete quando lo snap è "Appoggiato".
-    const boundarySafety = 0.004;
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const calibrationOffsetX = Number(importCalibration?.offsetX || 0);
+    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
+    const boundarySafety = 0;
 
-    const clampInsideRange = (value: number, min: number, max: number) => {
+    const clampInsideRange = (value: number, min: number, max: number, axis: "x" | "z") => {
       if (!Number.isFinite(min) || !Number.isFinite(max)) return Number(value || 0);
-      if (min > max) return (min + max) / 2;
-      return THREE.MathUtils.clamp(Number(value || 0), min, max);
+      if (min <= max) return THREE.MathUtils.clamp(Number(value || 0), min, max);
+
+      // V42.5.8 Snap Parete anti-uscita:
+      // se il modulo e' piu grande dello spazio disponibile, non va centrato nella stanza.
+      // Per SX/DX deve comandare la parete di fondo: il bordo posteriore resta interno/attaccato,
+      // l'eventuale eccedenza va verso fronte, mai dietro la parete di fondo.
+      if (axis === "z") {
+        if (snapHint === "left" || snapHint === "right") {
+          // V42.5.17 Side Wall Slide Unblock:
+          // quando il modulo e' piu' profondo della stanza, SX/DX non devono congelarlo
+          // sul fondo e generare collisione a ogni click. Il bordo posteriore resta vincolato
+          // alla parete di fondo, ma il modulo puo' scorrere verso l'interno stanza.
+          const roomDepth = Math.max(0.4, bounds.front - bounds.back);
+          const safeSideSlideMax = min + roomDepth - 0.05;
+          return THREE.MathUtils.clamp(Number(value || min), min, Math.max(min, safeSideSlideMax));
+        }
+        if (snapHint === "back") return min;
+        if (snapHint === "front") return max;
+      }
+
+      if (axis === "x") {
+        if (snapHint === "left") return min;
+        if (snapHint === "right") return max;
+      }
+
+      // V42.5.26 Clamp Range Hotfix:
+      // quando min > max il modulo e' piu' grande dello spazio disponibile.
+      // Non va ricentrato artificialmente, altrimenti i pulsanti lo teletrasportano fuori stanza.
+      const safeMin = Math.min(min, max);
+      const safeMax = Math.max(min, max);
+      return THREE.MathUtils.clamp(Number(value || 0), safeMin, safeMax);
     };
 
-    // Scene Composer V42.3:
-    // il modulo deve restare dentro i limiti reali della stanza/piantina.
-    // Il clamp usa l'ingombro X/Z del modulo e impedisce attraversamento pareti.
-    const minX = bounds.left + footprint.width / 2 + boundarySafety;
-    const maxX = bounds.right - footprint.width / 2 - boundarySafety;
-    const minZ = bounds.back + footprint.depth / 2 + boundarySafety;
-    const maxZ = bounds.front - footprint.depth / 2 - boundarySafety;
+    // Scene Composer V42.5.8:
+    // clamp su min/max visivi reali del modulo. Quando il modulo e' sovradimensionato
+    // rispetto alla stanza, la parete scelta resta il vincolo prioritario invece di centrare
+    // il modello e farlo uscire dietro.
+    // V42.5.9 Wall Constraint Engine:
+    // il gruppo renderizzato usa importCalibration.offsetX/Z + modelSceneOffset.
+    // Il clamp deve quindi compensare gli offset di calibrazione, altrimenti il modulo
+    // sembra corretto nei numeri ma puo' uscire visivamente dalle pareti perimetrali.
+    const minX = bounds.left - rotatedBounds.minX - calibrationOffsetX + boundarySafety;
+    const maxX = bounds.right - rotatedBounds.maxX - calibrationOffsetX - boundarySafety;
+    const minZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + boundarySafety;
+    const maxZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ - boundarySafety;
 
     return {
-      x: clampInsideRange(Number(next.x || 0), minX, maxX),
-      z: clampInsideRange(Number(next.z || 0), minZ, maxZ),
+      x: clampInsideRange(Number(next.x || 0), minX, maxX, "x"),
+      z: clampInsideRange(Number(next.z || 0), minZ, maxZ, "z"),
       rotationYDeg,
     };
+  };
+
+  const isSameSceneTransformV42 = (
+    a: { x: number; z: number; rotationYDeg?: number },
+    b: { x: number; z: number; rotationYDeg?: number }
+  ) => {
+    return (
+      Math.abs(Number(a.x || 0) - Number(b.x || 0)) < 0.0001 &&
+      Math.abs(Number(a.z || 0) - Number(b.z || 0)) < 0.0001 &&
+      Math.abs(Number(a.rotationYDeg || 0) - Number(b.rotationYDeg || 0)) < 0.0001
+    );
+  };
+
+  const showWallCollisionNoticeV42 = () => {
+    setWallCollisionNotice("Modulo bloccato dalle pareti perimetrali");
+    window.setTimeout(() => setWallCollisionNotice(""), 2200);
   };
 
   const syncActiveSceneModuleV38 = (
     nextTransform: { x: number; z: number; rotationYDeg?: number },
     nextWallSnap: typeof activeWallSnap = activeWallSnap
   ) => {
-    const clampedTransform = clampModelSceneTransform(nextTransform);
+    const clampedTransform = clampModelSceneTransform(nextTransform, nextWallSnap);
 
     setSceneModulesV38((current) =>
       current.map((module) =>
@@ -5794,17 +6006,156 @@ productMaterials?.length
     );
   };
 
+  const getSceneTransformRangeV42 = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
+    const bounds = getRoomInteriorBoundsMeters();
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const calibrationOffsetX = Number(importCalibration?.offsetX || 0);
+    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
+
+    return {
+      minX: bounds.left - rotatedBounds.minX - calibrationOffsetX,
+      maxX: bounds.right - rotatedBounds.maxX - calibrationOffsetX,
+      minZ: bounds.back - rotatedBounds.minZ - calibrationOffsetZ,
+      maxZ: bounds.front - rotatedBounds.maxZ - calibrationOffsetZ,
+    };
+  };
+
+  const getSideWallSlideRangeV42 = (
+    wall: "left" | "right",
+    rotationYDeg = modelSceneOffset.rotationYDeg || 0
+  ) => {
+    const bounds = getRoomInteriorBoundsMeters();
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
+    const contactClearance = getWallSnapSceneInsetMeters();
+
+    // V42.5.16 Side Wall Slide Guard:
+    // quando il modulo è agganciato a SX/DX, il movimento lungo parete deve restare
+    // comandato dalla parete di fondo. La X rimane bloccata sulla parete laterale,
+    // mentre la Z può avanzare verso l'interno stanza senza uscire dietro.
+    // Se l'ingombro visivo è più profondo della stanza, non congeliamo il movimento:
+    // usiamo un binario di scorrimento sicuro dalla parete di fondo verso il fronte.
+    const backContactZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance;
+    const strictFrontLimitZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ - contactClearance;
+    const roomDepth = Math.max(0.4, bounds.front - bounds.back);
+    const fallbackFrontLimitZ = backContactZ + roomDepth - 0.05;
+    const maxZ = Number.isFinite(strictFrontLimitZ) && strictFrontLimitZ > backContactZ
+      ? strictFrontLimitZ
+      : fallbackFrontLimitZ;
+
+    return {
+      minZ: backContactZ,
+      maxZ: Math.max(backContactZ, maxZ),
+    };
+  };
+
   const moveModelInRoom = (deltaX = 0, deltaZ = 0) => {
-    setActiveWallSnap(null);
+    const activeModuleV42 = sceneModulesV38.find((module) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const storedWallSnapV42 = activeModuleV42?.transform?.activeWallSnap || null;
+    const sideWallLock =
+      activeWallSnap === "left" || activeWallSnap === "right"
+        ? activeWallSnap
+        : storedWallSnapV42 === "left" || storedWallSnapV42 === "right"
+          ? storedWallSnapV42
+          : null;
+
+    // V42.5.15 Side Wall Persistent Lock:
+    // se il modulo è agganciato a SX/DX, i pulsanti movimento non devono mai sganciare
+    // la parete laterale. Prima il deltaX sganciava lo snap al secondo click e il modulo
+    // usciva dietro/fuori stanza. Lo snap laterale resta attivo finché l'utente sceglie
+    // reset, centro, altra parete o rotazione.
+    if (!sideWallLock) {
+      setActiveWallSnap(null);
+    } else if (activeWallSnap !== sideWallLock) {
+      setActiveWallSnap(sideWallLock);
+    }
+
     setModelSceneOffset((current) => {
-      const nextTransform = syncActiveSceneModuleV38(
-        {
-          ...current,
-          x: Number(current.x || 0) + deltaX,
-          z: Number(current.z || 0) + deltaZ,
-        },
-        null
-      );
+      const rotationYDeg = Number(current.rotationYDeg || 0);
+      const movementRange = getSceneTransformRangeV42(rotationYDeg);
+      let requestedX = Number(current.x || 0) + deltaX;
+      let requestedZ = Number(current.z || 0) + deltaZ;
+      let wallCollisionAlreadyHandledV42 = false;
+
+      let nextWallSnapForMove: typeof activeWallSnap = sideWallLock;
+
+      if (sideWallLock) {
+        const sideTarget = getWallSnapTarget(sideWallLock, current);
+        const sideSlideRange = getSideWallSlideRangeV42(sideWallLock, rotationYDeg);
+        const rawDeltaX = Number(deltaX || 0);
+        const rawDeltaZ = Number(deltaZ || 0);
+
+        // V42.5.19 Side Wall XY Move Fix:
+        // quando il modulo è agganciato a SX/DX:
+        // - frecce SU/GIU scorrono lungo la parete, quindi X resta attaccata;
+        // - frecce DX/SX muovono davvero il modulo dentro/fuori dalla parete, quindi X cambia.
+        // Prima anche DX/SX venivano convertite in Z e il mobile andava solo fronte/retro.
+        if (Math.abs(rawDeltaX) > 0.0001) {
+          // V42.5.23 Side Wall Inward Detach:
+          // su parete SX/DX il pulsante verso l'interno stanza deve funzionare.
+          // Blocchiamo solo il verso che spingerebbe fuori dalla parete perimetrale.
+          const isInwardFromSideWall =
+            (sideWallLock === "left" && rawDeltaX > 0) ||
+            (sideWallLock === "right" && rawDeltaX < 0);
+
+          if (isInwardFromSideWall) {
+            const candidateX = Number(current.x || 0) + rawDeltaX;
+            const candidateZ = THREE.MathUtils.clamp(Number(current.z || 0), sideSlideRange.minZ, sideSlideRange.maxZ);
+            const candidateTransform = {
+              ...current,
+              x: candidateX,
+              z: candidateZ,
+              rotationYDeg,
+            };
+            const candidateClamped = clampModelSceneTransform(candidateTransform, null);
+            const canDetachInsideRoom =
+              Math.abs(Number(candidateTransform.x || 0) - Number(candidateClamped.x || 0)) < 0.0001;
+
+            // V42.5.27 Side Wall Inward Fix:
+            // lo sgancio dalla parete laterale deve validare l'asse X, non pretendere che il
+            // modulo entri perfettamente anche in Z. Con moduli profondi/ruotati la Z puo' avere
+            // un range impossibile, ma il movimento verso l'interno stanza e' comunque valido.
+            // Usiamo la Z gia' normalizzata dal clamp per evitare falsi avvisi di collisione.
+            if (canDetachInsideRoom) {
+              requestedX = candidateClamped.x;
+              requestedZ = candidateClamped.z;
+              nextWallSnapForMove = null;
+              setActiveWallSnap(null);
+            } else {
+              requestedX = sideTarget.x;
+              requestedZ = Number(current.z || 0);
+              nextWallSnapForMove = sideWallLock;
+              showWallCollisionNoticeV42();
+            }
+          } else {
+            requestedX = sideTarget.x;
+            requestedZ = Number(current.z || 0);
+            nextWallSnapForMove = sideWallLock;
+            showWallCollisionNoticeV42();
+          }
+        } else {
+          // V42.5.28 Side Wall Vertical Slide Fix:
+          // SU/GIU su parete laterale devono scorrere SOLO lungo Z, mantenendo X agganciata.
+          // Non usiamo il confronto globale requested/nextTransform per mostrare collisione,
+          // perche' il clamp della stanza normalizza X/Z e generava falsi avvisi anche quando
+          // il movimento lungo parete era valido.
+          const candidateZ = Number(current.z || 0) + rawDeltaZ;
+          requestedX = sideTarget.x;
+          requestedZ = THREE.MathUtils.clamp(candidateZ, sideSlideRange.minZ, sideSlideRange.maxZ);
+          wallCollisionAlreadyHandledV42 = true;
+          if (Math.abs(candidateZ - requestedZ) > 0.0001 && Math.abs(rawDeltaZ) > 0.0001) {
+            showWallCollisionNoticeV42();
+          }
+        }
+      }
+
+      const requestedTransform = {
+        ...current,
+        x: requestedX,
+        z: requestedZ,
+      };
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove);
+      if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
   };
@@ -5812,13 +6163,12 @@ productMaterials?.length
   const rotateModelInRoom = (deltaRotationYDeg = 0) => {
     setActiveWallSnap(null);
     setModelSceneOffset((current) => {
-      const nextTransform = syncActiveSceneModuleV38(
-        {
-          ...current,
-          rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
-        },
-        null
-      );
+      const requestedTransform = {
+        ...current,
+        rotationYDeg: Number(current.rotationYDeg || 0) + deltaRotationYDeg,
+      };
+      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null);
+      if (!isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
       return nextTransform;
     });
   };
@@ -5828,6 +6178,8 @@ productMaterials?.length
     current: { x: number; z: number; rotationYDeg?: number }
   ) => {
     const bounds = getRoomInteriorBoundsMeters();
+    const calibrationOffsetX = Number(importCalibration?.offsetX || 0);
+    const calibrationOffsetZ = Number(importCalibration?.offsetZ || 0);
     const wallRotations = {
       back: 0,
       front: 180,
@@ -5837,26 +6189,53 @@ productMaterials?.length
     } as const;
     const rotationYDeg = wallRotations[wall];
 
-    // Scene Composer V42.3:
-    // lo snap usa l'ingombro del modulo, non il suo centro.
-    // Distanza 0.5 cm = leggero distacco tecnico senza entrare nella parete.
-    const footprint = getSceneModelFootprintMeters(rotationYDeg);
-    const contactClearance = Math.max(0.003, getActiveWallSnapDistanceCm() / 100);
+    // V42.5.4 Snap Parete reale:
+    // usa l'ingombro visivo già corretto per assi/import, così il bordo del modulo
+    // coincide con la faccia della parete selezionata.
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const contactClearance = getWallSnapSceneInsetMeters();
+    const clampZForSideSnap = (value: number) => {
+      const minZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ;
+      const maxZ = bounds.front - rotatedBounds.maxZ - calibrationOffsetZ;
+      if (minZ > maxZ) return (minZ + maxZ) / 2;
+      return THREE.MathUtils.clamp(Number(value || bounds.centerZ), minZ, maxZ);
+    };
+    const clampXForDepthSnap = (value: number) => {
+      const minX = bounds.left - rotatedBounds.minX - calibrationOffsetX;
+      const maxX = bounds.right - rotatedBounds.maxX - calibrationOffsetX;
+      if (minX > maxX) return (minX + maxX) / 2;
+      return THREE.MathUtils.clamp(Number(value || 0), minX, maxX);
+    };
 
     if (wall === "back") {
-      return { x: 0, z: bounds.back + footprint.depth / 2 + contactClearance, rotationYDeg };
+      return { x: clampXForDepthSnap(current.x), z: bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance, rotationYDeg };
     }
 
     if (wall === "front") {
-      return { x: 0, z: bounds.front - footprint.depth / 2 - contactClearance, rotationYDeg };
+      return { x: clampXForDepthSnap(current.x), z: bounds.front - rotatedBounds.maxZ - calibrationOffsetZ - contactClearance, rotationYDeg };
     }
 
     if (wall === "left") {
-      return { x: bounds.left + footprint.width / 2 + contactClearance, z: bounds.centerZ, rotationYDeg };
+      // V42.5.7 Snap Parete laterale:
+      // quando il modulo viene appoggiato a SX/DX, la parete di fondo comanda anche la profondità.
+      // Non manteniamo current.z, perché con modelli DAE centrati può lasciare il mobile oltre il fondo stanza.
+      const backLockedZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance;
+      return {
+        x: bounds.left - rotatedBounds.minX - calibrationOffsetX + contactClearance,
+        z: clampZForSideSnap(backLockedZ),
+        rotationYDeg,
+      };
     }
 
     if (wall === "right") {
-      return { x: bounds.right - footprint.width / 2 - contactClearance, z: bounds.centerZ, rotationYDeg };
+      // V42.5.7 Snap Parete laterale:
+      // SX/DX devono appoggiare visivamente alla parete laterale e restare agganciati al fondo stanza.
+      const backLockedZ = bounds.back - rotatedBounds.minZ - calibrationOffsetZ + contactClearance;
+      return {
+        x: bounds.right - rotatedBounds.maxX - calibrationOffsetX - contactClearance,
+        z: clampZForSideSnap(backLockedZ),
+        rotationYDeg,
+      };
     }
 
     return { x: 0, z: bounds.centerZ, rotationYDeg };
@@ -6426,6 +6805,16 @@ productMaterials?.length
           </div>
         );
       })()}
+
+      {wallCollisionNotice && (
+        <div className="pointer-events-none absolute bottom-[164px] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-lg font-black text-white">!</span>
+          <div>
+            <div className="font-black">Collisione parete</div>
+            <div className="text-xs font-semibold text-red-100/90">{wallCollisionNotice}</div>
+          </div>
+        </div>
+      )}
 
       {wallSnapNotice && (
         <div className="pointer-events-none absolute bottom-10 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
