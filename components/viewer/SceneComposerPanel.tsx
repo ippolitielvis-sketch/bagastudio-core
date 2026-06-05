@@ -101,44 +101,59 @@ export default function SceneComposerPanel({
     </button>
   </div>
 
+  <div className="mb-2 rounded-2xl border border-cyan-300/15 bg-cyan-950/15 px-3 py-2 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100">
+    <div className="flex items-center justify-between gap-2">
+      <span>Orientamento stanza</span>
+      <span className="text-emerald-200">Fondo ↑ · Fronte ↓</span>
+    </div>
+    <div className="mt-1 text-[8px] font-bold normal-case tracking-normal text-slate-400">
+      I comandi seguono gli assi della stanza, non la camera. Anche se ruoti la vista, Fondo/Fronte/SX/DX restano coerenti.
+    </div>
+  </div>
+
   <div className="grid grid-cols-3 gap-1">
     <span />
     <button
       type="button"
       {...getHoldMoveButtonProps(0, -0.16)}
-      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
-      title="Avvicina alla parete"
+      className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+      title="Verso parete di fondo"
     >
-      ↑
+      <span className="block text-base leading-none">↑</span>
+      <span className="mt-1 block text-[8px] uppercase tracking-[0.12em] text-slate-300">Fondo</span>
     </button>
     <span />
     <button
       type="button"
       {...getHoldMoveButtonProps(-0.16, 0)}
-      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
-      title="Sposta a sinistra"
+      className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+      title="Verso lato sinistro stanza"
     >
-      ←
+      <span className="block text-base leading-none">←</span>
+      <span className="mt-1 block text-[8px] uppercase tracking-[0.12em] text-slate-300">SX stanza</span>
     </button>
-    <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-2 py-1.5 text-center text-[9px] text-emerald-100">
+    <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-2 py-2 text-center text-[9px] text-emerald-100">
+      <span className="block text-[8px] uppercase tracking-[0.12em] text-emerald-200">Modulo</span>
       X {modelSceneOffset.x.toFixed(1)}<br />Z {modelSceneOffset.z.toFixed(1)}
     </div>
     <button
       type="button"
       {...getHoldMoveButtonProps(0.16, 0)}
-      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
-      title="Sposta a destra"
+      className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+      title="Verso lato destro stanza"
     >
-      →
+      <span className="block text-base leading-none">→</span>
+      <span className="mt-1 block text-[8px] uppercase tracking-[0.12em] text-slate-300">DX stanza</span>
     </button>
     <span />
     <button
       type="button"
       {...getHoldMoveButtonProps(0, 0.16)}
-      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
-      title="Allontana dalla parete"
+      className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
+      title="Verso fronte / ingresso stanza"
     >
-      ↓
+      <span className="block text-base leading-none">↓</span>
+      <span className="mt-1 block text-[8px] uppercase tracking-[0.12em] text-slate-300">Fronte</span>
     </button>
     <span />
   </div>
