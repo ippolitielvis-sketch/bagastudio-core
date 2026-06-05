@@ -31,6 +31,8 @@ import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/R
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import ViewerWallQuickControls from "./viewer-ui/ViewerWallQuickControls";
 import DraggablePanel from "./viewer-ui/DraggablePanel";
+import RoomPanel from "./viewer-ui/RoomPanel";
+import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
@@ -5622,6 +5624,7 @@ productMaterials?.length
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
   const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState("primary-module");
+  const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
   const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [runtimeImportedModel, setRuntimeImportedModel] = useState<{
     url: string;
@@ -5645,18 +5648,55 @@ productMaterials?.length
     rightWall: true,
     ceiling: true,
   });
+  const [roomPanelEnvironmentOverride, setRoomPanelEnvironmentOverride] = useState<RoomEnvironmentSettings | null>(null);
+  const [roomPanelBaseboard, setRoomPanelBaseboard] = useState({
+    heightCm: 10,
+    depthCm: 2,
+  });
 
-  const effectiveEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
-    if (!environment) return environment;
+  const baseRoomEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
+    if (!environment && !roomPanelEnvironmentOverride) return environment;
 
     return {
-      ...environment,
-      showBackWall: environment.showBackWall !== false && roomQuickVisibility.backWall,
-      showLeftWall: environment.showLeftWall !== false && roomQuickVisibility.leftWall,
-      showRightWall: environment.showRightWall !== false && roomQuickVisibility.rightWall,
+      ...(environment || {}),
+      ...(roomPanelEnvironmentOverride || {}),
+    };
+  }, [environment, roomPanelEnvironmentOverride]);
+
+  const effectiveEnvironment = useMemo<RoomEnvironmentSettings | undefined>(() => {
+    if (!baseRoomEnvironment) return baseRoomEnvironment;
+
+    return {
+      ...baseRoomEnvironment,
+      showBackWall: baseRoomEnvironment.showBackWall !== false && roomQuickVisibility.backWall,
+      showLeftWall: baseRoomEnvironment.showLeftWall !== false && roomQuickVisibility.leftWall,
+      showRightWall: baseRoomEnvironment.showRightWall !== false && roomQuickVisibility.rightWall,
       showCeiling: roomQuickVisibility.ceiling,
     };
-  }, [environment, roomQuickVisibility]);
+  }, [baseRoomEnvironment, roomQuickVisibility]);
+
+  const applyRoomPanelSettings = (settings: {
+    roomWidthCm: number;
+    roomDepthCm: number;
+    roomHeightCm: number;
+    baseboardHeightCm: number;
+    baseboardDepthCm: number;
+  }) => {
+    setRoomPanelEnvironmentOverride({
+      roomWidthCm: settings.roomWidthCm,
+      roomDepthCm: settings.roomDepthCm,
+      roomHeightCm: settings.roomHeightCm,
+    });
+    setRoomPanelBaseboard({
+      heightCm: settings.baseboardHeightCm,
+      depthCm: settings.baseboardDepthCm,
+    });
+  };
+
+  const resetRoomPanelSettings = () => {
+    setRoomPanelEnvironmentOverride(null);
+    setRoomPanelBaseboard({ heightCm: 10, depthCm: 2 });
+  };
 
   const toggleRoomQuickVisibility = (key: keyof typeof roomQuickVisibility) => {
     setRoomQuickVisibility((current) => ({
@@ -5695,8 +5735,8 @@ productMaterials?.length
   };
 
   const getRoomInteriorBoundsMeters = () => {
-    const roomWidth = Math.max(2.8, Number(environment?.roomWidthCm || 420) / 100);
-    const roomDepth = Math.max(2.8, Number(environment?.roomDepthCm || 360) / 100);
+    const roomWidth = Math.max(2.8, Number(baseRoomEnvironment?.roomWidthCm || 420) / 100);
+    const roomDepth = Math.max(2.8, Number(baseRoomEnvironment?.roomDepthCm || 360) / 100);
 
     // V42.5.4 Snap Parete reale:
     // il limite interno della stanza deve coincidere con la faccia visibile della parete.
@@ -6854,9 +6894,10 @@ productMaterials?.length
         </div>
       )}
 
-      {environment && (
+      {baseRoomEnvironment && (
         <div className="pointer-events-none absolute left-3 top-16 z-10 rounded-xl border border-cyan-500/25 bg-black/65 px-3 py-2 text-xs text-cyan-50 shadow-lg backdrop-blur">
-          Ambiente: {environment.roomWidthCm} × {environment.roomDepthCm} × {environment.roomHeightCm} cm
+          Ambiente: {baseRoomEnvironment.roomWidthCm} × {baseRoomEnvironment.roomDepthCm} × {baseRoomEnvironment.roomHeightCm} cm
+          <span className="ml-2 text-cyan-200/70">Battiscopa {roomPanelBaseboard.heightCm}×{roomPanelBaseboard.depthCm} cm</span>
         </div>
       )}
 
@@ -6947,10 +6988,10 @@ productMaterials?.length
         if (activeStatus === "ok") return null;
 
         return (
-          <div className={`pointer-events-none absolute right-[318px] top-[112px] z-40 rounded-2xl border px-4 py-3 text-xs font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
+          <div className={`absolute right-[318px] top-[112px] z-40 rounded-2xl border px-4 py-3 text-xs font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
             activeStatus === "collision"
-              ? "border-red-400/40 bg-red-950/80 text-red-50"
-              : "border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
+              ? "pointer-events-none border-red-400/40 bg-red-950/80 text-red-50"
+              : "pointer-events-auto border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
           }`}>
             <div className="uppercase tracking-[0.18em]">
               {activeStatus === "collision" ? "Collisione modulo" : "Giunzione possibile"}
@@ -6960,6 +7001,15 @@ productMaterials?.length
                 ? "Sposta il modulo: sta attraversando un altro ingombro."
                 : "Modulo vicino a un altro: aggancio/affiancamento valido."}
             </div>
+            {activeStatus === "join" && (
+              <button
+                type="button"
+                onClick={() => setJoinAssistantOpenV42(true)}
+                className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-400/25"
+              >
+                Apri giunzione
+              </button>
+            )}
           </div>
         );
       })()}
@@ -7016,6 +7066,66 @@ productMaterials?.length
           </div>
         </DraggablePanel>
       )}
+
+      {joinAssistantOpenV42 && (
+        <DraggablePanel
+          id="join-assistant-v42"
+          eyebrow="Giunzione possibile"
+          title="Assistente giunzione V1"
+          defaultPosition={{ x: 560, y: 220 }}
+          widthClassName="w-[360px]"
+          zIndex={95}
+          onClose={() => setJoinAssistantOpenV42(false)}
+        >
+          <div className="space-y-4 text-xs text-slate-100">
+            <p className="leading-relaxed text-slate-300">
+              I moduli sono vicini o in contatto. Prima di applicare una giunzione, BagaStudio deve verificare
+              allineamento, ingombri, fianchi e ferramenta compatibile.
+            </p>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Modulo attivo</div>
+              <div className="mt-1 font-black text-white">
+                {sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38)?.name || "Modulo selezionato"}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {["Affiancamento", "Fianco condiviso", "Angolo 90°", "Schiena contro schiena"].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-left text-[11px] font-black text-emerald-50 transition hover:bg-emerald-400/20"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 p-3 text-[11px] leading-relaxed text-amber-50">
+              Prossimo step: selezione ferramenta, mantenimento/eliminazione fianco, verifica producibilità e applicazione reale.
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setJoinAssistantOpenV42(false)}
+                className="rounded-xl border border-slate-600/70 bg-slate-900/80 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-200 hover:bg-slate-800"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50 opacity-70"
+                title="Applicazione reale in V2"
+              >
+                Verifica V1
+              </button>
+            </div>
+          </div>
+        </DraggablePanel>
+      )}
+
 
       {wallSnapNotice && (
         <div className="pointer-events-none absolute left-1/2 top-[132px] z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
@@ -7082,6 +7192,17 @@ productMaterials?.length
       )}
 
       {/* Component list moved to right sidebar in app/page.tsx. Canvas kept clean. */}
+
+      <RoomOrientationOverlay />
+
+      <RoomPanel
+        environment={baseRoomEnvironment}
+        visibility={roomQuickVisibility}
+        onToggleWall={toggleRoomQuickVisibility}
+        onResetWalls={resetRoomQuickVisibility}
+        onApplyRoom={applyRoomPanelSettings}
+        onResetRoom={resetRoomPanelSettings}
+      />
 
       <ViewerWallQuickControls
         visibility={roomQuickVisibility}
