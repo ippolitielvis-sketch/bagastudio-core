@@ -253,6 +253,76 @@ function ViewerQuoteOverlayV5({
   );
 }
 
+
+type ParametricSceneModuleV1Props = {
+  module: any;
+  active: boolean;
+  onSelect?: (moduleId: string | null) => void;
+};
+
+function ParametricSceneModuleV1({ module, active, onSelect }: ParametricSceneModuleV1Props) {
+  const dimensions = module?.dimensions || {};
+  const widthM = Math.max(0.05, Number(dimensions.width || 180) / 100);
+  const depthM = Math.max(0.05, Number(dimensions.depth || 60) / 100);
+  const heightM = Math.max(0.05, Number(dimensions.height || 100) / 100);
+  const thicknessM = Math.max(0.006, Number(dimensions.thickness || 1.8) / 100);
+  const transform = module?.transform || {};
+  const moduleId = String(module?.id || "");
+  const yCenter = heightM / 2;
+  const panelMaterial = active ? "#dbeafe" : "#cbd5e1";
+  const edgeColor = active ? "#22d3ee" : "#64748b";
+
+  const panelCommon = {
+    castShadow: true,
+    receiveShadow: true,
+    onClick: (event: any) => {
+      event.stopPropagation();
+      if (moduleId) onSelect?.(moduleId);
+    },
+  };
+
+  return (
+    <group
+      name={`bagastudio-parametric-module-v1-${moduleId}`}
+      position={[Number(transform.x || 0), 0, Number(transform.z || 0)]}
+      rotation={[0, THREE.MathUtils.degToRad(Number(transform.rotationYDeg || 0)), 0]}
+      userData={{ bagastudioParametricModuleV1: true, bagastudioSceneModuleId: moduleId }}
+    >
+      <mesh {...panelCommon} name={`${moduleId}_fianco_sx`} position={[-widthM / 2 + thicknessM / 2, yCenter, 0]}>
+        <boxGeometry args={[thicknessM, heightM, depthM]} />
+        <meshStandardMaterial color={panelMaterial} roughness={0.68} metalness={0.02} transparent opacity={0.96} />
+        <Edges color={edgeColor} threshold={18} />
+      </mesh>
+      <mesh {...panelCommon} name={`${moduleId}_fianco_dx`} position={[widthM / 2 - thicknessM / 2, yCenter, 0]}>
+        <boxGeometry args={[thicknessM, heightM, depthM]} />
+        <meshStandardMaterial color={panelMaterial} roughness={0.68} metalness={0.02} transparent opacity={0.96} />
+        <Edges color={edgeColor} threshold={18} />
+      </mesh>
+      <mesh {...panelCommon} name={`${moduleId}_cielo`} position={[0, heightM - thicknessM / 2, 0]}>
+        <boxGeometry args={[widthM, thicknessM, depthM]} />
+        <meshStandardMaterial color={panelMaterial} roughness={0.68} metalness={0.02} transparent opacity={0.96} />
+        <Edges color={edgeColor} threshold={18} />
+      </mesh>
+      <mesh {...panelCommon} name={`${moduleId}_fondo`} position={[0, thicknessM / 2, 0]}>
+        <boxGeometry args={[widthM, thicknessM, depthM]} />
+        <meshStandardMaterial color={panelMaterial} roughness={0.68} metalness={0.02} transparent opacity={0.96} />
+        <Edges color={edgeColor} threshold={18} />
+      </mesh>
+      <mesh {...panelCommon} name={`${moduleId}_schiena`} position={[0, yCenter, -depthM / 2 + thicknessM / 2]}>
+        <boxGeometry args={[widthM, heightM, thicknessM]} />
+        <meshStandardMaterial color={active ? "#e0f2fe" : "#e2e8f0"} roughness={0.72} metalness={0.01} transparent opacity={0.88} />
+        <Edges color={edgeColor} threshold={18} />
+      </mesh>
+      {active && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.018, 0]} renderOrder={9}>
+          <planeGeometry args={[widthM, depthM]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0.12} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
 const textureWaiters = new Map<string, Array<(texture: THREE.Texture) => void>>();
@@ -365,7 +435,7 @@ type Viewer3DProps = {
  modelSceneOffset?: { x: number; z: number; rotationYDeg?: number };
  sceneModules?: any[];
  activeSceneModuleId?: string;
-  onSelectSceneModule?: (moduleId: string) => void;
+  onSelectSceneModule?: (moduleId: string | null) => void;
   views?: {
   id: string;
   name: string;
@@ -4854,6 +4924,19 @@ applySelectedPartLightUpV42(mesh, selectedKey);
   }, [importedModelScaleDiagnostics]);
 
 
+  const getParametricModuleScaleV1 = (dimensions?: { width?: number; height?: number; depth?: number }) => {
+    const estimatedCm = (importedModelScaleDiagnostics?.finalEstimatedCm || {}) as { width?: number; height?: number; depth?: number };
+    const estimatedWidth = Math.max(1, Number(estimatedCm.width || width || 180));
+    const estimatedHeight = Math.max(1, Number(estimatedCm.height || height || 100));
+    const estimatedDepth = Math.max(1, Number(estimatedCm.depth || depth || 60));
+
+    return {
+      x: THREE.MathUtils.clamp(Number(dimensions?.width || width || 180) / estimatedWidth, 0.05, 20),
+      y: THREE.MathUtils.clamp(Number(dimensions?.height || height || 100) / estimatedHeight, 0.05, 20),
+      z: THREE.MathUtils.clamp(Number(dimensions?.depth || depth || 60) / estimatedDepth, 0.05, 20),
+    };
+  };
+
   const sceneModulePreviewClonesV39 = useMemo(() => {
     if (!scene || !Array.isArray(sceneModules) || sceneModules.length <= 1) return [];
 
@@ -4887,6 +4970,7 @@ applySelectedPartLightUpV42(mesh, selectedKey);
             z: Number(transform.z || 0),
             rotationYDeg: Number(transform.rotationYDeg || 0),
           },
+          dimensions: module?.dimensions || { width, height, depth },
         };
       });
   }, [scene, sceneModules, activeSceneModuleId]);
@@ -4995,7 +5079,12 @@ applySelectedPartLightUpV42(mesh, selectedKey);
           )}
           <Center disableY>
             <group rotation={importedModelAxisCorrection} position={[0, importedModelGroundOffsetY, 0]}>
-              <primitive object={module.object} scale={importedModelDisplayScale} castShadow receiveShadow />
+              <primitive
+                object={module.object}
+                scale={importedModelDisplayScale}
+                castShadow
+                receiveShadow
+              />
             </group>
           </Center>
         </group>
@@ -5821,10 +5910,27 @@ productMaterials?.length
   // Scene Composer Foundation V38:
   // mantiene il controllo singolo validato in V37, ma introduce la struttura dati
   // per gestire più moduli/prodotti nella stessa stanza senza toccare import/scaling.
+  const normalizeModuleDimensionCmV1 = (value: any, fallback: number, min = 5, max = 1200) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.round(THREE.MathUtils.clamp(parsed, min, max));
+  };
+
+  const getDefaultSceneModuleDimensionsV1 = () => ({
+    width: normalizeModuleDimensionCmV1(width, 180),
+    height: normalizeModuleDimensionCmV1(height, 100),
+    depth: normalizeModuleDimensionCmV1(depth, 60),
+  });
+
   const createSceneModuleV38 = (overrides: any = {}) => ({
     id: overrides.id || `scene-module-${Date.now()}`,
     name: overrides.name || "Modulo 1",
     source: overrides.source || {},
+    dimensions: {
+      ...getDefaultSceneModuleDimensionsV1(),
+      ...(overrides.dimensions || {}),
+    },
+    shape: overrides.shape || "box",
     transform: {
       x: Number(overrides.transform?.x ?? 0),
       z: Number(overrides.transform?.z ?? -0.62),
@@ -5844,7 +5950,7 @@ productMaterials?.length
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => [
     createSceneModuleV38({ id: "primary-module", name: "Modulo 1" }),
   ]);
-  const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState("primary-module");
+  const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState<string | null>("primary-module");
   const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
   const [viewerMiniTabsOpenV5, setViewerMiniTabsOpenV5] = useState<Record<ViewerMiniTabId, boolean>>({
     room: false,
@@ -5854,11 +5960,125 @@ productMaterials?.length
     quotes: false,
     help: false,
   });
+  const closeAllViewerMiniTabsV5 = () => ({
+    room: false,
+    module: false,
+    view: false,
+    join: false,
+    quotes: false,
+    help: false,
+  });
+
   const toggleViewerMiniTabV5 = (id: ViewerMiniTabId) => {
     setViewerMiniTabsOpenV5((current) => ({
-      ...current,
+      ...closeAllViewerMiniTabsV5(),
       [id]: !current[id],
     }));
+  };
+
+  const activeSceneModuleV1 = useMemo(
+    () => sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null,
+    [sceneModulesV38, activeSceneModuleIdV38]
+  );
+
+  const activeSceneModuleDimensionsV1 = useMemo(() => {
+    const fallback = getDefaultSceneModuleDimensionsV1();
+    const dimensions = activeSceneModuleV1?.dimensions || {};
+    return {
+      width: normalizeModuleDimensionCmV1(dimensions.width, fallback.width),
+      height: normalizeModuleDimensionCmV1(dimensions.height, fallback.height),
+      depth: normalizeModuleDimensionCmV1(dimensions.depth, fallback.depth),
+      thickness: normalizeModuleDimensionCmV1(dimensions.thickness, 1.8, 0.6, 6),
+    };
+  }, [activeSceneModuleV1, width, height, depth]);
+
+  const isParametricSceneModuleV1 = (module: any) => module?.source?.kind === "parametric-module-v1";
+  const activeSceneModuleIsParametricV1 = isParametricSceneModuleV1(activeSceneModuleV1);
+  const importedSceneModulesV1 = useMemo(
+    () => sceneModulesV38.filter((module: any) => !isParametricSceneModuleV1(module)),
+    [sceneModulesV38]
+  );
+  const parametricSceneModulesV1 = useMemo(
+    () => sceneModulesV38.filter((module: any) => isParametricSceneModuleV1(module)),
+    [sceneModulesV38]
+  );
+  const activeImportedSceneModuleForRenderV1 = useMemo(
+    () =>
+      importedSceneModulesV1.find((module: any) => module.id === activeSceneModuleIdV38) ||
+      importedSceneModulesV1[0] ||
+      null,
+    [importedSceneModulesV1, activeSceneModuleIdV38]
+  );
+
+  const updateActiveSceneModuleDimensionV1 = (key: "width" | "height" | "depth", value: any) => {
+    const fallback = activeSceneModuleDimensionsV1[key];
+    const nextValue = normalizeModuleDimensionCmV1(value, fallback);
+    const nextDimensions = {
+      ...activeSceneModuleDimensionsV1,
+      [key]: nextValue,
+    };
+
+    setSceneModulesV38((current) =>
+      current.map((module: any) =>
+        module.id === activeSceneModuleIdV38
+          ? {
+              ...module,
+              dimensions: nextDimensions,
+              updatedAt: new Date().toISOString(),
+            }
+          : module
+      )
+    );
+
+    if (!activeSceneModuleIsParametricV1) {
+      const clampedTransform = normalizeSceneTransformV42(
+        clampModelSceneTransform(modelSceneOffset, activeWallSnap)
+      );
+      setModelSceneOffset(clampedTransform);
+    }
+  };
+
+  const [moduleDraftDimensionsV2, setModuleDraftDimensionsV2] = useState(() => getDefaultSceneModuleDimensionsV1());
+
+  const updateModuleDraftDimensionV2 = (key: "width" | "height" | "depth", value: any) => {
+    setModuleDraftDimensionsV2((current) => ({
+      ...current,
+      [key]: normalizeModuleDimensionCmV1(value, current[key] || getDefaultSceneModuleDimensionsV1()[key]),
+    }));
+  };
+
+  const copyActiveModuleToDraftV2 = () => {
+    setModuleDraftDimensionsV2({
+      width: activeSceneModuleDimensionsV1.width,
+      depth: activeSceneModuleDimensionsV1.depth,
+      height: activeSceneModuleDimensionsV1.height,
+    });
+  };
+
+  const applyDraftDimensionsToActiveModuleV2 = () => {
+    const nextDimensions = {
+      ...activeSceneModuleDimensionsV1,
+      ...moduleDraftDimensionsV2,
+    };
+
+    setSceneModulesV38((current) =>
+      current.map((module: any) =>
+        module.id === activeSceneModuleIdV38
+          ? {
+              ...module,
+              dimensions: nextDimensions,
+              updatedAt: new Date().toISOString(),
+            }
+          : module
+      )
+    );
+
+    if (!activeSceneModuleIsParametricV1) {
+      const clampedTransform = normalizeSceneTransformV42(
+        clampModelSceneTransform(modelSceneOffset, activeWallSnap)
+      );
+      setModelSceneOffset(clampedTransform);
+    }
   };
 
   const componentRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -5982,7 +6202,7 @@ productMaterials?.length
     };
   };
 
-  const getSceneModelLocalBoundsMeters = () => {
+  const getSceneModelLocalBoundsMeters = (dimensionsOverride?: any) => {
     // V42.5.12 Wall Collision Foundation:
     // lo snap/clamp deve usare lo stesso ingombro che vede il Viewer, non solo le dimensioni dichiarate.
     // Il modello viene renderizzato dentro <Center disableY>, con axis correction e importedModelDisplayScale:
@@ -6002,6 +6222,22 @@ productMaterials?.length
       Number.isFinite(Number(axisCorrectedViewerBounds.maxX)) &&
       Number.isFinite(Number(axisCorrectedViewerBounds.minZ)) &&
       Number.isFinite(Number(axisCorrectedViewerBounds.maxZ));
+
+    const sceneDimensions = dimensionsOverride || activeSceneModuleDimensionsV1;
+    const parametricWidthM = Math.max(0.18, Number(sceneDimensions.width || width || 180) / 100);
+    const parametricDepthM = Math.max(0.18, Number(sceneDimensions.depth || depth || 60) / 100);
+
+    // Modulo Parametrico V1:
+    // quando la scheda MODULO cambia larghezza/profondità, collisioni, snap e limiti stanza
+    // devono usare l'ingombro parametrico scelto dall'utente, non solo la bbox del DAE.
+    if (activeSceneModuleDimensionsV1) {
+      return {
+        minX: -parametricWidthM / 2,
+        maxX: parametricWidthM / 2,
+        minZ: -parametricDepthM / 2,
+        maxZ: parametricDepthM / 2,
+      };
+    }
 
     if (hasRealVisualBounds) {
       const visualWidthM = Math.max(
@@ -6040,8 +6276,8 @@ productMaterials?.length
     };
   };
 
-  const getSceneModelRotatedBoundsMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0) => {
-    const localBounds = getSceneModelLocalBoundsMeters();
+  const getSceneModelRotatedBoundsMeters = (rotationYDeg = modelSceneOffset.rotationYDeg || 0, dimensionsOverride?: any) => {
+    const localBounds = getSceneModelLocalBoundsMeters(dimensionsOverride);
     const calibrationScale = Math.max(0.01, Number(importCalibration?.scale || 1));
     const totalRotationYDeg = Number(importCalibration?.rotationYDeg || 0) + Number(rotationYDeg || 0);
     const radians = THREE.MathUtils.degToRad(THREE.MathUtils.euclideanModulo(totalRotationYDeg, 360));
@@ -6084,10 +6320,11 @@ productMaterials?.length
   });
 
   const getSceneModuleBoundsV42 = (
-    transform: { x?: number; z?: number; rotationYDeg?: number } = {}
+    transform: { x?: number; z?: number; rotationYDeg?: number } = {},
+    dimensionsOverride?: any
   ) => {
     const rotationYDeg = Number(transform.rotationYDeg || 0);
-    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg);
+    const rotatedBounds = getSceneModelRotatedBoundsMeters(rotationYDeg, dimensionsOverride);
     const x = Number(transform.x || 0);
     const z = Number(transform.z || 0);
 
@@ -6120,9 +6357,10 @@ productMaterials?.length
     const joinTolerance = 0.08;
     const boxes = modules.map((module: any) => {
       const transform = module?.id === activeSceneModuleIdV38 ? activeTransform : module?.transform || {};
+      const dimensions = module?.id === activeSceneModuleIdV38 ? activeSceneModuleDimensionsV1 : module?.dimensions;
       return {
         id: String(module.id),
-        ...getSceneModuleBoundsV42(transform),
+        ...getSceneModuleBoundsV42(transform, dimensions),
       };
     });
 
@@ -6169,8 +6407,8 @@ productMaterials?.length
     for (const module of modules) {
       if (!module || String(module.id) === activeId) continue;
 
-      const otherBounds = getSceneModuleBoundsV42(module.transform || {});
-      const activeBounds = getSceneModuleBoundsV42(resolvedTransform);
+      const otherBounds = getSceneModuleBoundsV42(module.transform || {}, module.dimensions);
+      const activeBounds = getSceneModuleBoundsV42(resolvedTransform, activeSceneModuleDimensionsV1);
       const { overlapX, overlapZ, intersects } = doSceneModuleBoundsIntersectV42(activeBounds, otherBounds);
       if (!intersects) continue;
 
@@ -6201,10 +6439,10 @@ productMaterials?.length
     const searchStep = 0.18;
 
     const doesCandidateCollide = (candidate: SceneTransformV42) => {
-      const candidateBounds = getSceneModuleBoundsV42(candidate);
+      const candidateBounds = getSceneModuleBoundsV42(candidate, activeSceneModuleDimensionsV1);
       return sceneModulesV38.some((module: any) => {
         if (!module) return false;
-        const moduleBounds = getSceneModuleBoundsV42(module.transform || {});
+        const moduleBounds = getSceneModuleBoundsV42(module.transform || {}, module.dimensions);
         return doSceneModuleBoundsIntersectV42(candidateBounds, moduleBounds).intersects;
       });
     };
@@ -6397,7 +6635,7 @@ productMaterials?.length
     const resolvedTransform = resolveSceneModuleCollisionV42(clampedTransform, previousTransform, sceneModulesV38);
     const wasModuleCollision =
       !isSameSceneTransformV42(clampedTransform, resolvedTransform) &&
-      getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform).get(activeSceneModuleIdV38) === "collision";
+      getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform).get(activeSceneModuleIdV38 || "__no_active_module__") === "collision";
 
     if (wasModuleCollision) {
       setWallCollisionNotice("Collisione modulo: spostamento bloccato prima dell'attraversamento");
@@ -6424,14 +6662,56 @@ productMaterials?.length
     return normalizeSceneTransformV42(resolvedTransform);
   };
 
-  const selectSceneModuleV38 = (moduleId: string) => {
+  const getActiveSceneTransformV25 = (): SceneTransformV42 => {
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    return normalizeSceneTransformV42(activeModule?.transform || modelSceneOffset);
+  };
+
+  const commitActiveSceneTransformV25 = (
+    nextTransform: SceneTransformV42,
+    nextWallSnap: typeof activeWallSnap = activeWallSnap
+  ) => {
+    const committedTransform = syncActiveSceneModuleV38(nextTransform, nextWallSnap);
+
+    // Module UX V2.5: i moduli parametrici vivono in sceneModules[].
+    // Non aggiornare modelSceneOffset quando il modulo attivo e' parametrico,
+    // perche' modelSceneOffset governa il DAE/import principale.
+    if (!activeSceneModuleIsParametricV1) {
+      setModelSceneOffset(committedTransform);
+    }
+
+    return committedTransform;
+  };
+
+  const deselectSceneModuleV21 = () => {
+    setActiveSceneModuleIdV38(null);
+    setActiveWallSnap(null);
+  };
+
+  const selectSceneModuleV38 = (moduleId: string | null) => {
+    if (!moduleId) {
+      deselectSceneModuleV21();
+      return;
+    }
+
     const target = sceneModulesV38.find((module) => module.id === moduleId);
     if (!target) return;
 
-    const nextTransform = clampModelSceneTransform(target.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
+    if (activeSceneModuleIdV38 === moduleId) {
+      deselectSceneModuleV21();
+      return;
+    }
+
     setActiveSceneModuleIdV38(moduleId);
-    setModelSceneOffset(nextTransform);
     setActiveWallSnap(target.transform?.activeWallSnap || null);
+
+    // Module UX V2.3: i moduli parametrici hanno trasformazione propria.
+    // Non devono mai scrivere dentro modelSceneOffset, altrimenti il DAE importato
+    // viene teletrasportato sulla posizione del modulo selezionato/deselezionato.
+    if (isParametricSceneModuleV1(target)) return;
+
+    const nextTransform = clampModelSceneTransform(target.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
+    setModelSceneOffset(nextTransform);
   };
 
   const addSceneModuleSnapshotV38 = () => {
@@ -6443,6 +6723,7 @@ productMaterials?.length
         format: effectiveProductModelFormat,
         importedModelName: effectiveImportedModelName || importedModelName || "",
       },
+      dimensions: activeSceneModuleDimensionsV1,
       transform: {
         ...modelSceneOffset,
         activeWallSnap,
@@ -6454,8 +6735,45 @@ productMaterials?.length
     window.dispatchEvent(new CustomEvent("bagastudio:scene-module-created-v42", { detail: nextModule }));
   };
 
+  const addParametricSceneModuleV1 = () => {
+    const nextIndex = sceneModulesV38.length + 1;
+    const startTransform = normalizeSceneTransformV42({
+      x: Number(modelSceneOffset.x || 0),
+      z: Number(modelSceneOffset.z ?? -0.62),
+      rotationYDeg: Number(modelSceneOffset.rotationYDeg || 0),
+    });
+    const safeTransform = findSceneModuleDuplicateTransformV42(startTransform);
+    const draftDimensions = {
+      width: normalizeModuleDimensionCmV1(moduleDraftDimensionsV2.width, activeSceneModuleDimensionsV1.width),
+      depth: normalizeModuleDimensionCmV1(moduleDraftDimensionsV2.depth, activeSceneModuleDimensionsV1.depth),
+      height: normalizeModuleDimensionCmV1(moduleDraftDimensionsV2.height, activeSceneModuleDimensionsV1.height),
+    };
+    const nextModule = createSceneModuleV38({
+      name: `Modulo parametrico ${nextIndex}`,
+      source: {
+        kind: "parametric-module-v1",
+        engine: "BagaStudio Parametric Module Engine V1",
+      },
+      dimensions: draftDimensions,
+      shape: "box-panels-v1",
+      transform: {
+        ...safeTransform,
+        activeWallSnap: null,
+      },
+    });
+
+    setSceneModulesV38((current) => [...current, nextModule]);
+    setActiveSceneModuleIdV38(nextModule.id);
+    setActiveWallSnap(null);
+    setViewerMiniTabsOpenV5({ ...closeAllViewerMiniTabsV5(), module: true });
+    setWallSnapNotice("Nuovo modulo creato: le misure restano nel pad, non modificano il selezionato");
+    window.setTimeout(() => setWallSnapNotice(""), 2400);
+    window.dispatchEvent(new CustomEvent("bagastudio:parametric-module-created-v1", { detail: nextModule }));
+  };
+
   const duplicateActiveSceneModuleV42 = () => {
-    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0];
+    if (!activeSceneModuleIdV38) return;
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38);
     if (!activeModule) return;
 
     const nextIndex = sceneModulesV38.length + 1;
@@ -6474,6 +6792,7 @@ productMaterials?.length
         format: activeModule.source?.format || effectiveProductModelFormat,
         importedModelName: activeModule.source?.importedModelName || effectiveImportedModelName || importedModelName || "",
       },
+      dimensions: activeModule.dimensions || activeSceneModuleDimensionsV1,
       transform: {
         ...safeDuplicateTransform,
         activeWallSnap: null,
@@ -6489,13 +6808,15 @@ productMaterials?.length
 
     setSceneModulesV38((current) => [...current, duplicatedModule]);
     setActiveSceneModuleIdV38(duplicatedModule.id);
-    setModelSceneOffset(safeDuplicateTransform);
+    if (!isParametricSceneModuleV1(duplicatedModule)) {
+      setModelSceneOffset(safeDuplicateTransform);
+    }
     setActiveWallSnap(null);
     window.dispatchEvent(new CustomEvent("bagastudio:scene-module-duplicated-v42", { detail: duplicatedModule }));
   };
 
   const deleteActiveSceneModuleV42 = () => {
-    if (sceneModulesV38.length <= 1) return;
+    if (!activeSceneModuleIdV38 || sceneModulesV38.length <= 1) return;
 
     const currentIndex = sceneModulesV38.findIndex((module) => module.id === activeSceneModuleIdV38);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -6507,7 +6828,9 @@ productMaterials?.length
     if (nextActiveModule) {
       const nextTransform = clampModelSceneTransform(nextActiveModule.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
       setActiveSceneModuleIdV38(nextActiveModule.id);
-      setModelSceneOffset(nextTransform);
+      if (!isParametricSceneModuleV1(nextActiveModule)) {
+        setModelSceneOffset(nextTransform);
+      }
       setActiveWallSnap(nextActiveModule.transform?.activeWallSnap || null);
     }
 
@@ -6582,7 +6905,8 @@ productMaterials?.length
       setActiveWallSnap(sideWallLock);
     }
 
-    setModelSceneOffset((current: SceneTransformV42) => {
+    const current = getActiveSceneTransformV25();
+    {
       const rotationYDeg = Number(current.rotationYDeg || 0);
       const movementRange = getSceneTransformRangeV42(rotationYDeg);
       let requestedX = Number(current.x || 0) + deltaX;
@@ -6667,21 +6991,21 @@ productMaterials?.length
         z: requestedZ,
         rotationYDeg,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, nextWallSnapForMove);
+      const nextTransform = commitActiveSceneTransformV25(requestedTransform, nextWallSnapForMove);
       if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
-      return nextTransform;
-    });
+    }
   };
 
   const rotateModelInRoom = (deltaRotationYDeg = 0) => {
-    setModelSceneOffset((current: SceneTransformV42) => {
+    const current = getActiveSceneTransformV25();
+    {
       const requestedRotation = Number(current.rotationYDeg || 0) + deltaRotationYDeg;
       const sideWallLock = activeWallSnap === "left" || activeWallSnap === "right" ? activeWallSnap : null;
 
       if (sideWallLock && !canSceneModuleFitWallV42(sideWallLock, requestedRotation)) {
         setWallCollisionNotice("Rotazione bloccata: il modulo supera la profondità della parete laterale");
         window.setTimeout(() => setWallCollisionNotice(""), 2600);
-        return current;
+        return;
       }
 
       setActiveWallSnap(null);
@@ -6691,10 +7015,9 @@ productMaterials?.length
         z: Number(current.z || 0),
         rotationYDeg: requestedRotation,
       };
-      const nextTransform = syncActiveSceneModuleV38(requestedTransform, null);
+      const nextTransform = commitActiveSceneTransformV25(requestedTransform, null);
       if (!isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
-      return nextTransform;
-    });
+    }
   };
 
   const getWallSnapTarget = (
@@ -6777,25 +7100,22 @@ productMaterials?.length
     }
 
     setActiveWallSnap(wall);
-    setModelSceneOffset((current: SceneTransformV42) => {
-      const nextTransform = syncActiveSceneModuleV38(
-        {
-          ...current,
-          ...getWallSnapTarget(wall, current),
-        },
-        wall
-      );
-      return nextTransform;
-    });
+    const current = getActiveSceneTransformV25();
+    commitActiveSceneTransformV25(
+      {
+        ...current,
+        ...getWallSnapTarget(wall, current),
+      },
+      wall
+    );
     showWallSnapConfirmation(wall);
   };
 
   const snapModelToBackWall = () => snapModelToWall("back");
 
   const resetModelRoomPosition = () => {
-    const nextTransform = syncActiveSceneModuleV38({ x: 0, z: -0.62, rotationYDeg: 0 }, null);
+    commitActiveSceneTransformV25({ x: 0, z: -0.62, rotationYDeg: 0 }, null);
     setActiveWallSnap(null);
-    setModelSceneOffset(nextTransform);
   };
 
   useEffect(() => {
@@ -7248,7 +7568,7 @@ productMaterials?.length
 
       {sceneModulesV38.length > 1 && (() => {
         const collisionMap = getSceneModuleCollisionMapV42(sceneModulesV38, modelSceneOffset);
-        const activeStatus = collisionMap.get(activeSceneModuleIdV38);
+        const activeStatus = collisionMap.get(activeSceneModuleIdV38 || "__no_active_module__");
         if (!activeStatus || activeStatus === "ok") return null;
 
         // UX V5.1: se l'assistente giunzione è già aperto nella mini-tab,
@@ -7348,7 +7668,7 @@ productMaterials?.length
               </button>
               <button
                 type="button"
-                className="rounded-2xl border border-cyan-300/25 bg-cyan-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-50 hover:bg-cyan-400/24"
+                className="rounded-2xl border border-cyan-300/25 bg-cyan-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-50 hover:bg-cyan-400/24 disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => {
                   setWallSnapNotice("Giunzione segnata come possibile: validazione tecnica da completare");
                   window.setTimeout(() => setWallSnapNotice(""), 2400);
@@ -7378,10 +7698,10 @@ productMaterials?.length
       )}
 
       {wallSnapNotice && (
-        <div className="pointer-events-none absolute bottom-10 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-lg font-black text-white">✓</span>
+        <div className="pointer-events-none absolute bottom-[104px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-emerald-400/25 bg-slate-950/86 px-4 py-2 text-xs text-white shadow-[0_18px_55px_rgba(0,0,0,0.48)] backdrop-blur-xl">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-base font-black text-white">✓</span>
           <div>
-            <div className="font-black">Modulo distaccato dalla parete</div>
+            <div className="font-black">Snap parete</div>
             <div className="text-xs font-semibold text-slate-300">{getWallSnapModeLabel()} ({wallSnapDistanceMode === "touch" ? "appoggiato" : "snap"})</div>
           </div>
         </div>
@@ -7489,11 +7809,105 @@ productMaterials?.length
       <ViewerMiniTab
         id="module"
         label="Modulo"
-        eyebrow="Crea / Muovi"
+        eyebrow="Modulo V1"
         defaultPosition={{ left: 1180, top: 118 }}
         open={viewerMiniTabsOpenV5.module}
         onToggle={toggleViewerMiniTabV5}
       >
+        <div className="w-[390px] rounded-3xl border border-cyan-300/22 bg-slate-950/92 p-4 text-xs text-cyan-50 shadow-[0_22px_70px_rgba(0,0,0,0.50)] backdrop-blur-xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300">Modulo Parametrico V1</div>
+              <div className="mt-1 text-lg font-black uppercase tracking-wide text-white">Crea e misura</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2 text-right text-[10px] font-black uppercase tracking-[0.12em] text-slate-200">
+              {activeSceneModuleV1?.name || "Modulo"}
+              <div className="mt-1 text-cyan-200">{activeSceneModuleDimensionsV1.width}×{activeSceneModuleDimensionsV1.depth}×{activeSceneModuleDimensionsV1.height}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-3xl border border-emerald-300/18 bg-emerald-400/8 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200">Pad nuovo modulo</div>
+                <div className="mt-1 text-[10px] font-semibold leading-relaxed text-slate-300">
+                  Questi campi preparano il prossimo modulo. Non modificano il modulo selezionato finché non premi Applica.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={copyActiveModuleToDraftV2}
+                className="shrink-0 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 text-[9px] font-black uppercase tracking-[0.12em] text-slate-100 hover:bg-white/14"
+              >
+                Usa selez.
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {([
+                ["width", "Larghezza", moduleDraftDimensionsV2.width],
+                ["depth", "Profondità", moduleDraftDimensionsV2.depth],
+                ["height", "Altezza", moduleDraftDimensionsV2.height],
+              ] as const).map(([key, label, value]) => (
+                <label key={key} className="rounded-2xl border border-white/10 bg-slate-950/52 p-2 text-[9px] font-black uppercase tracking-[0.12em] text-slate-300">
+                  {label}
+                  <input
+                    type="number"
+                    min={5}
+                    max={1200}
+                    step={1}
+                    value={value}
+                    onChange={(event) => updateModuleDraftDimensionV2(key, event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-emerald-300/18 bg-slate-950/90 px-2 py-1.5 text-sm font-black text-white outline-none focus:border-emerald-300/55"
+                  />
+                  <span className="mt-1 block text-[8px] text-slate-500">cm</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={addParametricSceneModuleV1}
+              className="rounded-2xl border border-emerald-300/25 bg-emerald-400/16 px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-50 hover:bg-emerald-400/28"
+            >
+              + Crea nuovo
+            </button>
+            <button
+              type="button"
+              onClick={duplicateActiveSceneModuleV42}
+              disabled={!activeSceneModuleIdV38}
+              className="rounded-2xl border border-cyan-300/25 bg-cyan-400/14 px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-50 hover:bg-cyan-400/24"
+            >
+              Duplica selez.
+            </button>
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={applyDraftDimensionsToActiveModuleV2}
+              disabled={!activeSceneModuleIdV38}
+              className="rounded-2xl border border-amber-300/25 bg-amber-400/12 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-amber-50 hover:bg-amber-400/22 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Applica al selez.
+            </button>
+            <button
+              type="button"
+              onClick={deleteActiveSceneModuleV42}
+              disabled={!activeSceneModuleIdV38 || sceneModulesV38.length <= 1}
+              className="rounded-2xl border border-rose-300/25 bg-rose-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-rose-50 hover:bg-rose-400/24 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Elimina selez.
+            </button>
+          </div>
+
+          <div className="mt-3 rounded-2xl border border-amber-300/18 bg-amber-400/10 p-3 text-[10px] font-semibold leading-relaxed text-amber-100/90">
+            Module UX V2: creazione e modifica sono separate. Puoi preparare misure, creare moduli in sequenza e usare Duplica/Elimina senza scendere nel pannello movimento.
+          </div>
+        </div>
+
         <SceneComposerPanel
           modelSceneOffset={modelSceneOffset}
           resetModelRoomPosition={resetModelRoomPosition}
@@ -7507,7 +7921,7 @@ productMaterials?.length
           getWallSnapModeLabel={getWallSnapModeLabel}
           snapModelToWall={snapModelToWall}
           sceneModulesV38={sceneModulesV38}
-          activeSceneModuleIdV38={activeSceneModuleIdV38}
+          activeSceneModuleIdV38={activeSceneModuleIdV38 || ""}
           selectSceneModuleV38={selectSceneModuleV38}
           addSceneModuleSnapshotV38={addSceneModuleSnapshotV38}
           duplicateActiveSceneModuleV42={duplicateActiveSceneModuleV42}
@@ -7531,7 +7945,7 @@ productMaterials?.length
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-[0.12em]">
             <div className="rounded-2xl border border-white/10 bg-white/6 p-2 text-slate-200">Stanza<br />{effectiveEnvironment?.roomWidthCm ?? baseRoomEnvironment?.roomWidthCm ?? 420}×{effectiveEnvironment?.roomDepthCm ?? baseRoomEnvironment?.roomDepthCm ?? 360}×{effectiveEnvironment?.roomHeightCm ?? baseRoomEnvironment?.roomHeightCm ?? 280}</div>
-            <div className="rounded-2xl border border-white/10 bg-white/6 p-2 text-slate-200">Modulo<br />{width}×{depth}×{height}</div>
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-2 text-slate-200">Modulo<br />{activeSceneModuleDimensionsV1.width}×{activeSceneModuleDimensionsV1.depth}×{activeSceneModuleDimensionsV1.height}</div>
           </div>
           <div className="mt-3 rounded-2xl border border-amber-300/18 bg-amber-400/10 p-3 text-[10px] font-semibold leading-relaxed text-amber-100/90">
             Prossimo livello: distanza da pareti, distanza tra moduli, battiscopa, snap e quote selezionabili per schede tecniche/PDF.
@@ -7626,6 +8040,9 @@ productMaterials?.length
           preserveDrawingBuffer: true,
         }}
         onContextMenu={(event) => event.preventDefault()}
+        onPointerMissed={() => {
+          selectSceneModuleV38(null);
+        }}
         style={{ touchAction: "none" }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -7663,10 +8080,20 @@ productMaterials?.length
 
         <PremiumRoomEnvironment environment={roomVisible ? effectiveEnvironment : undefined} />
 
+        {parametricSceneModulesV1.map((module: any) => (
+          <ParametricSceneModuleV1
+            key={`parametric-module-v1-${module.id}`}
+            module={module}
+            active={module.id === activeSceneModuleIdV38}
+            onSelect={selectSceneModuleV38}
+          />
+        ))}
+
+        {importedSceneModulesV1.length > 0 && (
         <ProductModel
-  width={runtimeImportedModel?.dimensions?.width ?? width}
-  height={runtimeImportedModel?.dimensions?.height ?? height}
-  depth={runtimeImportedModel?.dimensions?.depth ?? depth}
+  width={activeSceneModuleIsParametricV1 ? normalizeModuleDimensionCmV1(activeImportedSceneModuleForRenderV1?.dimensions?.width, Number(width || 180)) : activeSceneModuleDimensionsV1.width}
+  height={activeSceneModuleIsParametricV1 ? normalizeModuleDimensionCmV1(activeImportedSceneModuleForRenderV1?.dimensions?.height, Number(height || 100)) : activeSceneModuleDimensionsV1.height}
+  depth={activeSceneModuleIsParametricV1 ? normalizeModuleDimensionCmV1(activeImportedSceneModuleForRenderV1?.dimensions?.depth, Number(depth || 60)) : activeSceneModuleDimensionsV1.depth}
   importedModelName={effectiveImportedModelName}
   materials={materials}
   productMaterials={productMaterials}
@@ -7683,23 +8110,24 @@ productMaterials?.length
   woodDirection={woodDirection}
   environment={effectiveEnvironment}
   importCalibration={importCalibration}
-  modelSceneOffset={modelSceneOffset}
-  sceneModules={sceneModulesV38}
-  activeSceneModuleId={activeSceneModuleIdV38}
+  modelSceneOffset={activeSceneModuleIsParametricV1 ? normalizeSceneTransformV42(activeImportedSceneModuleForRenderV1?.transform || { x: 0, z: -0.62, rotationYDeg: 0 }) : modelSceneOffset}
+  sceneModules={importedSceneModulesV1}
+  activeSceneModuleId={activeSceneModuleIsParametricV1 ? String(activeImportedSceneModuleForRenderV1?.id || "") : activeSceneModuleIdV38 || ""}
   onSelectSceneModule={selectSceneModuleV38}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}
 />
+        )}
 
         <ViewerQuoteOverlayV5
           enabled={viewerMiniTabsOpenV5.quotes}
           environment={effectiveEnvironment || baseRoomEnvironment}
           sceneModules={sceneModulesV38}
-          activeSceneModuleId={activeSceneModuleIdV38}
-          productWidthCm={Number(runtimeImportedModel?.dimensions?.width ?? width ?? 180)}
-          productDepthCm={Number(runtimeImportedModel?.dimensions?.depth ?? depth ?? 60)}
-          productHeightCm={Number(runtimeImportedModel?.dimensions?.height ?? height ?? 100)}
+          activeSceneModuleId={activeSceneModuleIdV38 ?? undefined}
+          productWidthCm={activeSceneModuleDimensionsV1.width}
+          productDepthCm={activeSceneModuleDimensionsV1.depth}
+          productHeightCm={activeSceneModuleDimensionsV1.height}
         />
 
       <OrbitControls

@@ -781,6 +781,12 @@ const [autosaveLabel, setAutosaveLabel] = useState("");
 const [activePanel, setActivePanel] = useState<
   "config" | "materials" | "accessories" | "views" | "save" | "produce" | "help" | "admin"
 >("config");
+const [leftSidebarOpenV52, setLeftSidebarOpenV52] = useState(true);
+const [rightSidebarOpenV52, setRightSidebarOpenV52] = useState(true);
+const [leftSidebarPinnedV52, setLeftSidebarPinnedV52] = useState(true);
+const [rightSidebarPinnedV52, setRightSidebarPinnedV52] = useState(true);
+const leftSidebarExpandedV52 = leftSidebarPinnedV52 || leftSidebarOpenV52;
+const rightSidebarExpandedV52 = rightSidebarPinnedV52 || rightSidebarOpenV52;
 const [activeViewerTool, setActiveViewerTool] = useState<"select" | "pan" | "orbit" | null>("select");
 const [xRayEnabled, setXRayEnabled] = useState(false);
 const [xRayOpacity, setXRayOpacity] = useState(0.35);
@@ -2322,8 +2328,48 @@ const availableAccessories = useMemo(() => {
       selectedCount={effectiveSelectedPartIds.length}
     />
 
-    <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_360px] gap-2 bg-[#030911] p-2">
-  <aside className="overflow-y-auto rounded-[22px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+    <div
+      className="grid min-h-0 flex-1 gap-2 bg-[#030911] p-2 transition-[grid-template-columns] duration-300 ease-out"
+      style={{
+        gridTemplateColumns: `${leftSidebarExpandedV52 ? "300px" : "46px"} minmax(0,1fr) ${rightSidebarExpandedV52 ? "360px" : "46px"}`,
+      }}
+    >
+  <aside
+    onMouseEnter={() => setLeftSidebarOpenV52(true)}
+    onMouseLeave={() => { if (!leftSidebarPinnedV52) setLeftSidebarOpenV52(false); }}
+    className={`relative overflow-y-auto rounded-[22px] border border-sky-400/15 bg-[#07111c]/92 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)] transition-all duration-300 ${leftSidebarExpandedV52 ? "p-3" : "overflow-hidden p-1"}`}
+    aria-label="Sidebar sinistra BagaStudio"
+  >
+  {!leftSidebarExpandedV52 ? (
+    <button
+      type="button"
+      onClick={() => setLeftSidebarPinnedV52(true)}
+      className="flex h-full min-h-[180px] w-full flex-col items-center justify-start gap-3 rounded-2xl border border-sky-300/15 bg-slate-950/80 px-1.5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-sky-200 shadow-inner hover:border-sky-300/35 hover:bg-sky-500/10"
+      title="Apri barra sinistra"
+    >
+      <span className="rounded-full border border-sky-300/20 px-2 py-1">SX</span>
+      <span className="[writing-mode:vertical-rl]">Pannelli</span>
+    </button>
+  ) : (
+  <>
+    <div className="sticky top-0 z-20 mb-2 flex items-center justify-end gap-2 bg-gradient-to-b from-[#07111c] via-[#07111c]/95 to-transparent pb-2">
+      <button
+        type="button"
+        onClick={() => setLeftSidebarPinnedV52((value) => !value)}
+        className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] transition ${leftSidebarPinnedV52 ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/5 text-slate-300 hover:border-sky-300/30"}`}
+        title={leftSidebarPinnedV52 ? "Sblocca auto-hide" : "Blocca aperta"}
+      >
+        {leftSidebarPinnedV52 ? "PIN" : "AUTO"}
+      </button>
+      <button
+        type="button"
+        onClick={() => { setLeftSidebarPinnedV52(false); setLeftSidebarOpenV52(false); }}
+        className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 hover:border-sky-300/30 hover:text-sky-100"
+        title="Chiudi barra sinistra"
+      >
+        ◀
+      </button>
+    </div>
   <section className="hidden">
     <div className="flex items-center gap-4">
       <button
@@ -3557,6 +3603,8 @@ const availableAccessories = useMemo(() => {
     </section>
   </>
 )}
+  </>
+  )}
         </aside>
 
 <section
@@ -3811,7 +3859,45 @@ const availableAccessories = useMemo(() => {
   )}
 </section>
 
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[24px] border border-sky-400/15 bg-[#07111c]/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)]">
+        <aside
+          onMouseEnter={() => setRightSidebarOpenV52(true)}
+          onMouseLeave={() => { if (!rightSidebarPinnedV52) setRightSidebarOpenV52(false); }}
+          className={`relative flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[24px] border border-sky-400/15 bg-[#07111c]/92 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_70px_rgba(0,0,0,0.28)] transition-all duration-300 ${rightSidebarExpandedV52 ? "p-3" : "overflow-hidden p-1"}`}
+          aria-label="Sidebar destra BagaStudio"
+        >
+          {!rightSidebarExpandedV52 ? (
+            <button
+              type="button"
+              onClick={() => setRightSidebarPinnedV52(true)}
+              className="flex h-full min-h-[180px] w-full flex-col items-center justify-start gap-3 rounded-2xl border border-cyan-300/15 bg-slate-950/80 px-1.5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200 shadow-inner hover:border-cyan-300/35 hover:bg-cyan-500/10"
+              title="Apri barra destra"
+            >
+              <span className="rounded-full border border-cyan-300/20 px-2 py-1">DX</span>
+              <span className="[writing-mode:vertical-rl]">Componenti</span>
+            </button>
+          ) : (
+          <>
+            <div className="sticky top-0 z-20 mb-2 flex items-center justify-between gap-2 bg-gradient-to-b from-[#07111c] via-[#07111c]/95 to-transparent pb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200/80">Pannello DX</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRightSidebarPinnedV52((value) => !value)}
+                  className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] transition ${rightSidebarPinnedV52 ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/5 text-slate-300 hover:border-cyan-300/30"}`}
+                  title={rightSidebarPinnedV52 ? "Sblocca auto-hide" : "Blocca aperta"}
+                >
+                  {rightSidebarPinnedV52 ? "PIN" : "AUTO"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRightSidebarPinnedV52(false); setRightSidebarOpenV52(false); }}
+                  className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 hover:border-cyan-300/30 hover:text-cyan-100"
+                  title="Chiudi barra destra"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
           {/* bagastudio-sidebar-components-right-final-v1 */}
           <section className="max-h-[300px] shrink-0 overflow-hidden rounded-[24px] border border-cyan-400/20 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -4029,6 +4115,8 @@ const availableAccessories = useMemo(() => {
               {t.addToQuote}
             </button>
           </div>
+          </>
+          )}
         </aside>
     </div>
   </div>
