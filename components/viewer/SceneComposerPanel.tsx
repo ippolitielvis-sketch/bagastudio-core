@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { Dispatch, MouseEvent, PointerEvent, SetStateAction } from "react";
+import type { Dispatch, MouseEvent, PointerEvent, SetStateAction, TouchEvent } from "react";
 
 type WallSnapTarget = "back" | "front" | "left" | "right" | "center";
 type WallSnapDistanceMode = "touch" | "5" | "10" | "custom";
@@ -46,6 +46,7 @@ export default function SceneComposerPanel({
   deleteActiveSceneModuleV42,
 }: SceneComposerPanelProps) {
   const holdMoveTimerRef = useRef<number | null>(null);
+  const holdMoveLastStartRef = useRef<number>(0);
   const stopHoldMove = useCallback(() => {
     if (holdMoveTimerRef.current !== null) {
       window.clearInterval(holdMoveTimerRef.current);
@@ -55,10 +56,11 @@ export default function SceneComposerPanel({
 
   const startHoldMove = useCallback((deltaX = 0, deltaZ = 0) => {
     stopHoldMove();
+    holdMoveLastStartRef.current = Date.now();
     moveModelInRoom(deltaX, deltaZ);
     holdMoveTimerRef.current = window.setInterval(() => {
       moveModelInRoom(deltaX, deltaZ);
-    }, 130);
+    }, 80);
   }, [moveModelInRoom, stopHoldMove]);
 
   useEffect(() => {
@@ -76,12 +78,30 @@ export default function SceneComposerPanel({
   const getHoldMoveButtonProps = (deltaX = 0, deltaZ = 0) => ({
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      startHoldMove(deltaX, deltaZ);
+    },
+    onMouseDown: (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      startHoldMove(deltaX, deltaZ);
+    },
+    onTouchStart: (event: TouchEvent<HTMLButtonElement>) => {
+      event.preventDefault();
       startHoldMove(deltaX, deltaZ);
     },
     onPointerUp: stopHoldMove,
     onPointerLeave: stopHoldMove,
     onPointerCancel: stopHoldMove,
-    onClick: (event: MouseEvent<HTMLButtonElement>) => event.preventDefault(),
+    onMouseUp: stopHoldMove,
+    onMouseLeave: stopHoldMove,
+    onTouchEnd: stopHoldMove,
+    onTouchCancel: stopHoldMove,
+    onClick: (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      if (Date.now() - holdMoveLastStartRef.current > 180) {
+        moveModelInRoom(deltaX, deltaZ);
+      }
+    },
   });
 
   return (

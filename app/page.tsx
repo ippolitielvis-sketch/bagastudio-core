@@ -1343,6 +1343,49 @@ async function openProject(file: File) {
   }
 }
 
+function handleStartEmptyRoomProjectV54() {
+  const now = new Date().toISOString();
+  const emptyRoomProduct = normalizeProduct({
+    ...EMPTY_IMPORTED_PRODUCT_BASE,
+    id: `empty-room-${Date.now()}`,
+    name: "Stanza vuota",
+    displayName: "Stanza vuota",
+    source: "empty-room",
+    createdAt: now,
+    updatedAt: now,
+    assets: {},
+    parts: [],
+    views: DEFAULT_VIEWS,
+  });
+
+  setViewerRuntimeComponents([]);
+  setViewerRuntimeMetadata(null);
+  setViewerRuntimeProduct(null);
+  setImporterUiState(null);
+  componentRowRefs.current = {};
+  (window as any).__bagastudioViewerRuntimeComponents = [];
+  (window as any).__bagastudioRuntimeProduct = null;
+  (window as any).__bagastudioProductPackage = null;
+
+  setRuntimeProduct(emptyRoomProduct);
+  setDimension("width", emptyRoomProduct.dimensions?.width?.default ?? 180);
+  setDimension("height", emptyRoomProduct.dimensions?.height?.default ?? 100);
+  setDimension("depth", emptyRoomProduct.dimensions?.depth?.default ?? 60);
+  setActiveView("iso");
+  setSelectedPart(null);
+  setSelectedPartIds([]);
+  setImportName("Stanza vuota");
+  setImportedModelName("");
+  setImportedModelFormat("");
+  setImportedModelVersion(Date.now());
+  setImporterStatus("Nuovo progetto in stanza vuota.");
+  setLastProjectAction("Nuovo progetto in stanza vuota");
+  showUiNotice("Stanza vuota pronta. Apri MODULO e crea il primo modulo.");
+
+  window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
+  window.dispatchEvent(new CustomEvent("bagastudio:runtime-components-cleared"));
+}
+
 async function handleGenericImportFile(file: File) {
   const format = getImportFileFormat(file.name);
 
@@ -3799,62 +3842,79 @@ const availableAccessories = useMemo(() => {
   ) : (
     <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl border border-sky-400/10 bg-[#050d16] p-0">
       {environmentSettings.showRoom ? (
-        <div className="absolute inset-0 z-0 overflow-hidden rounded-2xl bg-[#0a1119]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_5%,rgba(255,255,255,0.18),transparent_32%),linear-gradient(180deg,rgba(2,6,12,0.10),rgba(2,6,12,0.38))]" />
-
-          <div className="absolute left-[4%] right-[4%] top-[4%] bottom-[4%] overflow-hidden rounded-[24px] border border-white/[0.075] bg-[#d8cab9] shadow-[inset_0_1px_0_rgba(255,255,255,0.30),0_28px_90px_rgba(0,0,0,0.50)]">
-            <div className="absolute inset-x-0 top-0 h-[23%] bg-[linear-gradient(180deg,#cdbba8_0%,#d9c8b5_76%,#bca995_100%)] shadow-[inset_0_-20px_45px_rgba(72,52,36,0.12)]" />
-            <div className="absolute left-[3%] right-[3%] top-[21.5%] h-[2px] bg-white/34 shadow-[0_2px_7px_rgba(60,45,35,0.22)]" />
-            <div className="absolute left-[6%] right-[6%] top-[24%] h-[3px] bg-[#c5b39f]/70 shadow-[0_8px_22px_rgba(62,46,35,0.18)]" />
-
-            <div className="absolute left-[6%] top-[9%] h-5 w-5 rounded-full bg-white shadow-[0_0_18px_7px_rgba(255,244,218,0.54),0_58px_76px_20px_rgba(255,236,198,0.24)]" />
-            <div className="absolute left-1/2 top-[8.5%] h-5 w-5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_7px_rgba(255,244,218,0.54),0_58px_76px_24px_rgba(255,236,198,0.25)]" />
-            <div className="absolute right-[6%] top-[9%] h-5 w-5 rounded-full bg-white shadow-[0_0_18px_7px_rgba(255,244,218,0.54),0_58px_76px_20px_rgba(255,236,198,0.24)]" />
-
-            <div className="absolute left-0 top-[22%] bottom-[18%] w-[16%] bg-[linear-gradient(90deg,#bca894_0%,#d9cabb_72%,#e4d7c8_100%)] shadow-[inset_-22px_0_45px_rgba(74,54,40,0.16)]" />
-            <div className="absolute right-0 top-[22%] bottom-[18%] w-[16%] bg-[linear-gradient(270deg,#bca894_0%,#d9cabb_72%,#e4d7c8_100%)] shadow-[inset_22px_0_45px_rgba(74,54,40,0.16)]" />
-            <div className="absolute left-[15.7%] top-[22%] bottom-[18%] w-[1px] bg-white/36" />
-            <div className="absolute right-[15.7%] top-[22%] bottom-[18%] w-[1px] bg-white/36" />
-            <div className="absolute left-[16%] right-[16%] top-[22%] bottom-[18%] bg-[radial-gradient(circle_at_50%_24%,rgba(255,248,235,0.50),transparent_17%),radial-gradient(circle_at_23%_22%,rgba(255,245,225,0.36),transparent_15%),radial-gradient(circle_at_77%_22%,rgba(255,245,225,0.36),transparent_15%),linear-gradient(180deg,#d7c8b7_0%,#cdbda9_100%)]" />
-            <div className="absolute left-[16%] right-[16%] top-[22%] bottom-[18%] opacity-[0.17] bg-[repeating-linear-gradient(115deg,rgba(255,255,255,0.42)_0_1px,transparent_1px_34px),repeating-linear-gradient(0deg,rgba(75,57,42,0.18)_0_1px,transparent_1px_46px)]" />
-
-            <div className="absolute left-[3%] right-[3%] bottom-[18%] h-[10px] bg-[#eee5da] shadow-[0_-1px_0_rgba(255,255,255,0.65),0_-8px_16px_rgba(90,65,45,0.12)]" />
-            <div className="absolute left-[3%] right-[3%] bottom-[16.9%] h-[7px] bg-[#cdbca8] shadow-[0_4px_12px_rgba(0,0,0,0.18)]" />
-            <div className="absolute left-[16%] right-[16%] bottom-[18%] h-[1px] bg-white/50" />
-
-            <div className="absolute left-0 right-0 bottom-0 h-[18%] bg-[linear-gradient(180deg,rgba(62,40,22,0.08),rgba(18,10,5,0.18)),repeating-linear-gradient(90deg,rgba(255,255,255,0.14)_0_1px,transparent_1px_74px),repeating-linear-gradient(0deg,#a97543_0_13px,#b57e4b_13px_26px,#9f6738_26px_39px)] shadow-[inset_0_24px_45px_rgba(255,242,218,0.10)]" />
-            <div className="absolute left-0 right-0 bottom-0 h-[18%] opacity-[0.30] bg-[radial-gradient(circle_at_14%_42%,rgba(55,33,17,0.20),transparent_0_38px),radial-gradient(circle_at_48%_58%,rgba(255,234,196,0.13),transparent_0_44px),radial-gradient(circle_at_82%_36%,rgba(50,30,16,0.16),transparent_0_36px)]" />
-            <div className="absolute left-0 right-0 bottom-[18%] h-[1px] bg-white/34" />
-          </div>
+        <div className="absolute inset-0 z-0 overflow-hidden rounded-2xl bg-[#050d16]">
+          {/* Empty Room Premium V57 - fotorealistic showroom background */}
+          <div
+            className="absolute inset-0 bg-[#050d16]"
+            style={{
+              backgroundImage: "url('/environments/showroom-premium-bagastudio.webp')",
+              backgroundSize: "cover",
+              backgroundPosition: "center center",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,8,14,0.04),rgba(2,8,14,0.18)),radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.06),transparent_44%)]" />
+          <div className="absolute inset-0 shadow-[inset_0_0_90px_rgba(0,0,0,0.32)]" />
 
           <div className="absolute left-5 top-5 z-20 rounded-2xl border border-white/10 bg-black/58 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-100 shadow-[0_14px_40px_rgba(0,0,0,0.36)] backdrop-blur-md">
-            Ambiente vuoto {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
+            Showroom Premium · {environmentSettings.width}×{environmentSettings.depth}×{environmentSettings.height} cm
           </div>
         </div>
       ) : (
         <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,rgba(14,165,233,0.10),transparent_38%),#050d16]" />
       )}
 
-      <label className="group relative z-20 flex w-[min(520px,calc(100%-80px))] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-sky-300/20 bg-[#07111c]/92 px-8 py-8 text-center shadow-[0_26px_82px_rgba(0,0,0,0.54),0_0_46px_rgba(14,165,233,0.10),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-sky-300/55 hover:bg-[#081827]/96">
-        <span className="mb-5 flex h-20 w-20 items-center justify-center rounded-[24px] border border-sky-300/22 bg-sky-400/8 text-5xl text-sky-300 shadow-[0_0_34px_rgba(14,165,233,0.22)] transition group-hover:scale-[1.03] group-hover:text-sky-200">
-          ☁
+      <div className="relative z-20 flex w-[min(620px,calc(100%-80px))] flex-col items-center justify-center rounded-[28px] border border-sky-300/20 bg-[#07111c]/92 px-8 py-8 text-center shadow-[0_26px_82px_rgba(0,0,0,0.54),0_0_46px_rgba(14,165,233,0.10),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
+        <span className="mb-5 flex h-20 w-20 items-center justify-center rounded-[24px] border border-sky-300/22 bg-sky-400/8 text-5xl text-sky-300 shadow-[0_0_34px_rgba(14,165,233,0.22)]">
+          ✦
         </span>
-        <span className="text-lg font-black text-white">Importa file BagaStudio</span>
-        <span className="mt-3 text-sm font-medium text-neutral-300">Modelli 3D, Product Package JSON o progetto .baga.</span>
-        <span className="mt-7 rounded-2xl border border-sky-300/30 bg-sky-500 px-7 py-3 text-sm font-black text-white shadow-[0_0_28px_rgba(14,165,233,0.34)] transition group-hover:bg-sky-400">
-          Seleziona file
+        <span className="text-lg font-black text-white">Nuovo progetto BagaStudio</span>
+        <span className="mt-3 max-w-[440px] text-sm font-medium text-neutral-300">
+          Parti da una stanza vuota, importa un modello 3D/Product Package oppure apri un progetto salvato.
         </span>
-        <input
-          type="file"
-          accept={SUPPORTED_GENERIC_IMPORT_ACCEPT}
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) handleGenericImportFile(file);
-            event.target.value = "";
-          }}
-        />
-      </label>
+
+        <div className="mt-7 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={handleStartEmptyRoomProjectV54}
+            className="rounded-2xl border border-emerald-300/30 bg-emerald-500/18 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-emerald-100 shadow-[0_0_28px_rgba(16,185,129,0.16)] transition hover:-translate-y-0.5 hover:bg-emerald-500/28"
+          >
+            Crea modulo
+          </button>
+
+          <label className="cursor-pointer rounded-2xl border border-sky-300/30 bg-sky-500 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-white shadow-[0_0_28px_rgba(14,165,233,0.28)] transition hover:-translate-y-0.5 hover:bg-sky-400">
+            Importa file
+            <input
+              type="file"
+              accept={SUPPORTED_GENERIC_IMPORT_ACCEPT}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleGenericImportFile(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+
+          <label className="cursor-pointer rounded-2xl border border-violet-300/30 bg-violet-500/18 px-5 py-3 text-sm font-black uppercase tracking-[0.12em] text-violet-100 shadow-[0_0_28px_rgba(139,92,246,0.16)] transition hover:-translate-y-0.5 hover:bg-violet-500/28">
+            Apri progetto
+            <input
+              type="file"
+              accept=".baga,.json,application/json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleGenericImportFile(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+
+        <span className="mt-5 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-100/55">
+          Empty Room UX V54 · Import non obbligatorio
+        </span>
+      </div>
     </div>
   )}
 </section>
