@@ -1371,7 +1371,7 @@ function handleStartEmptyRoomProjectV54() {
   setDimension("width", emptyRoomProduct.dimensions?.width?.default ?? 180);
   setDimension("height", emptyRoomProduct.dimensions?.height?.default ?? 100);
   setDimension("depth", emptyRoomProduct.dimensions?.depth?.default ?? 60);
-  setActiveView("iso");
+  setActiveView("front");
   setSelectedPart(null);
   setSelectedPartIds([]);
   setImportName("Stanza vuota");

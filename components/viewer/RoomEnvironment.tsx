@@ -94,9 +94,9 @@ function usePremiumSceneTextures() {
   return textures;
 }
 
-function cmToM(value: any, fallback: number) {
+function cmToM(value: any, fallback: number, minimum = 0.001) {
   const parsed = Number(value);
-  return Math.max(0.1, Number.isFinite(parsed) ? parsed / 100 : fallback / 100);
+  return Math.max(minimum, Number.isFinite(parsed) ? parsed / 100 : fallback / 100);
 }
 
 export default function PremiumRoomEnvironment({ environment }: { environment?: RoomEnvironmentSettings }) {
@@ -106,8 +106,9 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
   const roomWidthM = cmToM(environment?.roomWidthCm ?? environment?.width, 420);
   const roomDepthM = cmToM(environment?.roomDepthCm ?? environment?.depth, 360);
   const roomHeightM = cmToM(environment?.roomHeightCm ?? environment?.height, 280);
-  const baseboardHeightM = cmToM(environment?.baseboardHeightCm, 4);
-  const baseboardDepthM = cmToM(environment?.baseboardDepthCm, 0.8);
+  const baseboardHeightM = cmToM(environment?.baseboardHeightCm, 5.5, 0.01);
+  const baseboardDepthM = cmToM(environment?.baseboardDepthCm, 1.2, 0.003);
+  const wallThicknessM = 0.035;
 
   const halfW = roomWidthM / 2;
   const halfD = roomDepthM / 2;
@@ -154,9 +155,9 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
         side: THREE.DoubleSide,
       }),
       baseboard: new THREE.MeshStandardMaterial({
-        color: "#8b8172",
-        roughness: 0.58,
-        metalness: 0.02,
+        color: "#f7f7f5",
+        roughness: 0.78,
+        metalness: 0.01,
         side: THREE.DoubleSide,
       }),
       spotlightBody: new THREE.MeshStandardMaterial({
@@ -214,19 +215,19 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
 
       {environment.showBackWall !== false && (
         <mesh receiveShadow position={[0, roomHeightM / 2, -halfD]} material={materials.wall}>
-          <boxGeometry args={[roomWidthM, roomHeightM, 0.035]} />
+          <boxGeometry args={[roomWidthM, roomHeightM, wallThicknessM]} />
         </mesh>
       )}
 
       {environment.showLeftWall !== false && (
         <mesh receiveShadow position={[-halfW, roomHeightM / 2, 0]} rotation={[0, Math.PI / 2, 0]} material={materials.wall}>
-          <boxGeometry args={[roomDepthM, roomHeightM, 0.035]} />
+          <boxGeometry args={[roomDepthM, roomHeightM, wallThicknessM]} />
         </mesh>
       )}
 
       {environment.showRightWall !== false && (
         <mesh receiveShadow position={[halfW, roomHeightM / 2, 0]} rotation={[0, Math.PI / 2, 0]} material={materials.wall}>
-          <boxGeometry args={[roomDepthM, roomHeightM, 0.035]} />
+          <boxGeometry args={[roomDepthM, roomHeightM, wallThicknessM]} />
         </mesh>
       )}
 
@@ -237,18 +238,18 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
       )}
 
       {environment.showBackWall !== false && (
-        <mesh receiveShadow position={[0, baseboardHeightM / 2, -halfD + baseboardDepthM / 2]} material={materials.baseboard}>
-          <boxGeometry args={[roomWidthM, baseboardHeightM, baseboardDepthM]} />
+        <mesh receiveShadow position={[0, baseboardHeightM / 2, -halfD + wallThicknessM / 2 + baseboardDepthM / 2]} material={materials.baseboard}>
+          <boxGeometry args={[roomWidthM - wallThicknessM * 2, baseboardHeightM, baseboardDepthM]} />
         </mesh>
       )}
       {environment.showLeftWall !== false && (
-        <mesh receiveShadow position={[-halfW + baseboardDepthM / 2, baseboardHeightM / 2, 0]} material={materials.baseboard}>
-          <boxGeometry args={[baseboardDepthM, baseboardHeightM, roomDepthM]} />
+        <mesh receiveShadow position={[-halfW + wallThicknessM / 2 + baseboardDepthM / 2, baseboardHeightM / 2, 0]} material={materials.baseboard}>
+          <boxGeometry args={[baseboardDepthM, baseboardHeightM, roomDepthM - wallThicknessM]} />
         </mesh>
       )}
       {environment.showRightWall !== false && (
-        <mesh receiveShadow position={[halfW - baseboardDepthM / 2, baseboardHeightM / 2, 0]} material={materials.baseboard}>
-          <boxGeometry args={[baseboardDepthM, baseboardHeightM, roomDepthM]} />
+        <mesh receiveShadow position={[halfW - wallThicknessM / 2 - baseboardDepthM / 2, baseboardHeightM / 2, 0]} material={materials.baseboard}>
+          <boxGeometry args={[baseboardDepthM, baseboardHeightM, roomDepthM - wallThicknessM]} />
         </mesh>
       )}
     </group>

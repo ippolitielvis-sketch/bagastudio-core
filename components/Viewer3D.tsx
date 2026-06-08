@@ -34,6 +34,14 @@ import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
+import {
+  BAGASTUDIO_DEFAULT_OPENING_VIEW_ID,
+  type BagastudioCameraPresetData,
+  applyCameraPresetToThreeCamera,
+  getSavedCameraPreset,
+  normalizeBagastudioCameraViewId,
+  saveThreeCameraPreset,
+} from "./viewer/camera/CameraPresetManager";
 
 
 type ViewerMiniTabId = "room" | "module" | "view" | "join" | "quotes" | "help";
@@ -5388,6 +5396,40 @@ function getBagastudioCleanSceneBox(scene: THREE.Scene) {
   return getBagastudioPrimaryClusterBox(boxes);
 }
 
+function getBagastudioEnvironmentMeters(environment?: RoomEnvironmentSettings) {
+  const readCm = (...values: any[]) => {
+    const found = values.find((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+    return Number(found || 0) / 100;
+  };
+
+  return {
+    width: readCm(environment?.roomWidthCm, (environment as any)?.width, 420),
+    depth: readCm(environment?.roomDepthCm, (environment as any)?.depth, 360),
+    height: readCm(environment?.roomHeightCm, (environment as any)?.height, 280),
+  };
+}
+
+function buildBagastudioRoomOpeningCameraView(environment: RoomEnvironmentSettings | undefined, viewId?: string | null) {
+  const viewKey = normalizeBagastudioCameraViewId(viewId);
+  if (viewKey !== "front") return null;
+
+  const room = getBagastudioEnvironmentMeters(environment);
+  const halfDepth = Math.max(room.depth / 2, 1.2);
+  const cameraZ = halfDepth + Math.max(room.depth * 0.42, 1.45);
+  const targetZ = -Math.max(room.depth * 0.22, 0.72);
+  const targetY = Math.max(Math.min(room.height * 0.46, 1.45), 1.15);
+
+  return {
+    position: [0, targetY + 0.18, cameraZ] as [number, number, number],
+    target: [0, targetY, targetZ] as [number, number, number],
+    up: [0, 1, 0] as [number, number, number],
+    near: 0.01,
+    far: Math.max(room.depth * 8, 100),
+  };
+}
+
+
+
 function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Camera, viewId = "iso") {
   const box = getBagastudioCleanSceneBox(scene);
   if (!box) return null;
@@ -5397,7 +5439,8 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
   box.getCenter(center);
   box.getSize(size);
 
-  const viewKey = viewId === "3d" ? "iso" : viewId;
+  const normalizedViewId = normalizeBagastudioCameraViewId(viewId);
+  const viewKey = normalizedViewId === "3d" ? "iso" : normalizedViewId;
   const directionByView: Record<string, THREE.Vector3> = {
     iso: new THREE.Vector3(1, 0.55, 1),
     front: new THREE.Vector3(0, 0, 1),
@@ -5461,50 +5504,22 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
 }
 
 function applyBagastudioCameraData(camera: THREE.Camera, gl: THREE.WebGLRenderer, cameraData: any) {
-  if (cameraData?.up) {
-    camera.up.set(cameraData.up[0], cameraData.up[1], cameraData.up[2]);
-  } else {
-    camera.up.set(0, 1, 0);
-  }
-
-  camera.position.set(
-    cameraData.position[0],
-    cameraData.position[1],
-    cameraData.position[2]
-  );
-
-  camera.lookAt(
-    cameraData.target[0],
-    cameraData.target[1],
-    cameraData.target[2]
-  );
-
-  const perspectiveCamera = camera as THREE.PerspectiveCamera;
-  if (Number.isFinite(cameraData?.near)) {
-    perspectiveCamera.near = Math.max(Number(cameraData.near), 0.01);
-  }
-  if (Number.isFinite(cameraData?.far)) {
-    perspectiveCamera.far = Math.max(Number(cameraData.far), perspectiveCamera.near + 10);
-  }
-  perspectiveCamera.updateProjectionMatrix();
-
-  const controls = (gl as any).__r3f?.root?.getState?.().controls;
-  if (controls?.target) {
-    controls.target.set(
-      cameraData.target[0],
-      cameraData.target[1],
-      cameraData.target[2]
-    );
-    controls.update?.();
-  }
+  applyCameraPresetToThreeCamera({
+    camera,
+    renderer: gl,
+    preset: cameraData as BagastudioCameraPresetData,
+  });
 }
+
 
 function CameraController({
   activeViewId,
   views,
+  environment,
 }: {
   activeViewId?: string | null;
   views?: any[];
+  environment?: RoomEnvironmentSettings;
 }) {
   const { camera, gl, scene } = useThree();
 
@@ -5515,25 +5530,45 @@ function CameraController({
     }> = {
       iso: { position: [20, 10, 22], target: [0, 0, 0] },
       "3d": { position: [20, 10, 22], target: [0, 0, 0] },
-      front: { position: [0, 6, 28], target: [0, 0, 0] },
+      front: { position: [0, 1.65, 4.8], target: [0, 1.25, 0] },
       back: { position: [0, 6, -28], target: [0, 0, 0] },
       left: { position: [-28, 6, 0], target: [0, 0, 0] },
       right: { position: [28, 6, 0], target: [0, 0, 0] },
       top: { position: [0, 35, 0.1], target: [0, 0, 0] },
     };
 
-    const viewId = activeViewId || "iso";
+    const viewId = normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
 
-    const selectedView = views?.find((v) => v.id === viewId);
+    const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === viewId);
+    const savedCameraPreset = getSavedCameraPreset(viewId);
 
     const cameraData =
+      savedCameraPreset ||
+      buildBagastudioRoomOpeningCameraView(environment, viewId) ||
       buildBagastudioDynamicCameraView(scene, camera, viewId) ||
       selectedView?.camera ||
       DEFAULT_CAMERA_VIEWS[viewId] ||
       DEFAULT_CAMERA_VIEWS.iso;
 
     applyBagastudioCameraData(camera, gl, cameraData);
-  }, [activeViewId, views, camera, gl, scene]);
+
+    if (!savedCameraPreset) return;
+
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const reloadedPreset = getSavedCameraPreset(viewId);
+          if (reloadedPreset) applyBagastudioCameraData(camera, gl, reloadedPreset);
+        });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeViewId, views, camera, gl, scene, environment]);
 
   return null;
 }
@@ -5542,13 +5577,18 @@ function ViewerRuntimeControls({
   activeViewId,
   views,
   productParts = [],
+  environment,
 }: {
   activeViewId?: string | null;
   views?: any[];
   productParts?: any[];
+  environment?: RoomEnvironmentSettings;
 }) {
   const { camera, gl, scene } = useThree();
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
+  const bagastudioActiveCameraPresetViewRef = useRef(
+    normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID)
+  );
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -5557,25 +5597,33 @@ function ViewerRuntimeControls({
     }> = {
       iso: { position: [20, 10, 22], target: [0, 0, 0] },
       "3d": { position: [20, 10, 22], target: [0, 0, 0] },
-      front: { position: [0, 6, 28], target: [0, 0, 0] },
+      front: { position: [0, 1.65, 4.8], target: [0, 1.25, 0] },
       back: { position: [0, 6, -28], target: [0, 0, 0] },
       left: { position: [-28, 6, 0], target: [0, 0, 0] },
       right: { position: [28, 6, 0], target: [0, 0, 0] },
       top: { position: [0, 35, 0.1], target: [0, 0, 0] },
     };
 
-    const applyCameraView = (viewId = activeViewId || "iso") => {
-      const selectedView = views?.find((v) => v.id === viewId);
+    bagastudioActiveCameraPresetViewRef.current = normalizeBagastudioCameraViewId(
+      activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID
+    );
+
+    const applyCameraView = (viewId = bagastudioActiveCameraPresetViewRef.current) => {
+      const normalizedViewId = normalizeBagastudioCameraViewId(viewId);
+      bagastudioActiveCameraPresetViewRef.current = normalizedViewId;
+      const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === normalizedViewId);
       const cameraData =
-        buildBagastudioDynamicCameraView(scene, camera, viewId) ||
+        getSavedCameraPreset(normalizedViewId) ||
+        buildBagastudioRoomOpeningCameraView(environment, normalizedViewId) ||
+        buildBagastudioDynamicCameraView(scene, camera, normalizedViewId) ||
         selectedView?.camera ||
-        DEFAULT_CAMERA_VIEWS[viewId] ||
+        DEFAULT_CAMERA_VIEWS[normalizedViewId] ||
         DEFAULT_CAMERA_VIEWS.iso;
 
       applyBagastudioCameraData(camera, gl, cameraData);
     };
 
-    const scheduleAutoFitCamera = (viewId = activeViewId || "iso") => {
+    const scheduleAutoFitCamera = (viewId = bagastudioActiveCameraPresetViewRef.current) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           applyCameraView(viewId);
@@ -5747,7 +5795,24 @@ function ViewerRuntimeControls({
     };
 
     const handleReset = () => applyCameraView("iso");
-    const handleAutoFit = () => scheduleAutoFitCamera(activeViewId || "iso");
+    const handleAutoFit = () => scheduleAutoFitCamera(bagastudioActiveCameraPresetViewRef.current);
+    const handleSaveCameraPreset = (event: Event) => {
+      const detail = (event as CustomEvent<{ viewId?: string }>).detail || {};
+      const viewId = normalizeBagastudioCameraViewId(detail.viewId || bagastudioActiveCameraPresetViewRef.current);
+      const controls = (gl as any).__r3f?.root?.getState?.().controls;
+      const target = controls?.target?.clone?.() || (() => {
+        const cleanBox = getBagastudioCleanSceneBox(scene);
+        if (!cleanBox) return new THREE.Vector3(0, 0, 0);
+        const center = new THREE.Vector3();
+        cleanBox.getCenter(center);
+        return center;
+      })();
+      saveThreeCameraPreset({ viewId, camera, target });
+    };
+    const handleApplyCameraPreset = (event: Event) => {
+      const detail = (event as CustomEvent<{ viewId?: string }>).detail || {};
+      applyCameraView(normalizeBagastudioCameraViewId(detail.viewId || bagastudioActiveCameraPresetViewRef.current));
+    };
     const handleFocus = () => focusObjects();
     const handleOrbitLeft = () => orbitCameraBy(-Math.PI / 14, 0);
     const handleOrbitRight = () => orbitCameraBy(Math.PI / 14, 0);
@@ -5762,6 +5827,8 @@ function ViewerRuntimeControls({
 
     window.addEventListener("bagastudio:reset-camera", handleReset);
     window.addEventListener("bagastudio:autofit-camera", handleAutoFit);
+    window.addEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
+    window.addEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
     window.addEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
     window.addEventListener("bagastudio:viewer-components-ready", handleAutoFit);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
@@ -5776,6 +5843,8 @@ function ViewerRuntimeControls({
     return () => {
       window.removeEventListener("bagastudio:reset-camera", handleReset);
       window.removeEventListener("bagastudio:autofit-camera", handleAutoFit);
+      window.removeEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
+      window.removeEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
       window.removeEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
       window.removeEventListener("bagastudio:viewer-components-ready", handleAutoFit);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
@@ -5790,7 +5859,7 @@ function ViewerRuntimeControls({
       delete (window as any).bagastudioGenerateProductThumbnail;
       delete (window as any).bagastudioDownloadProductThumbnail;
     };
-  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts]);
+  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts, environment]);
 
   return null;
 }
@@ -7717,9 +7786,9 @@ productMaterials?.length
   // La logica di scala/import resta invariata; viene solo disattivata la UI overlay.
   const hasActiveImportCalibrationPanel = false;
 
-  const emitViewerCommand = (eventName: string) => {
+  const emitViewerCommand = (eventName: string, detail?: any) => {
     if (typeof window === "undefined") return;
-    window.dispatchEvent(new CustomEvent(eventName));
+    window.dispatchEvent(new CustomEvent(eventName, { detail }));
   };
 
   return (
@@ -7983,6 +8052,8 @@ productMaterials?.length
           onFocus={() => emitViewerCommand("bagastudio:focus-selection")}
           onFit={() => emitViewerCommand("bagastudio:autofit-camera")}
           onResetView={() => emitViewerCommand("bagastudio:reset-camera")}
+          onSaveCameraPreset={(viewId) => emitViewerCommand("bagastudio:save-camera-preset", { viewId })}
+          onApplyCameraPreset={(viewId) => emitViewerCommand("bagastudio:apply-camera-preset", { viewId })}
         />
       </ViewerMiniTab>
 
@@ -8255,8 +8326,8 @@ productMaterials?.length
 
         <Environment preset="apartment" />
 
-<CameraController activeViewId={activeViewId} views={views} />
-<ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} />
+<CameraController activeViewId={activeViewId} views={views} environment={effectiveEnvironment} />
+<ViewerRuntimeControls activeViewId={activeViewId} views={views} productParts={productParts} environment={effectiveEnvironment} />
 
         <PremiumRoomEnvironment environment={roomVisible ? effectiveEnvironment : undefined} />
 
