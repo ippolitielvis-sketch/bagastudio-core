@@ -254,6 +254,8 @@ function ViewerQuoteOverlayV5({
 }
 
 
+
+
 type ParametricSceneModuleV1Props = {
   module: any;
   active: boolean;
@@ -7672,6 +7674,34 @@ productMaterials?.length
     );
   }, [selectedRuntimePartId, viewerRuntimeComponents]);
 
+  const [roomVisualWarmupV59, setRoomVisualWarmupV59] = useState(false);
+  const roomVisualWarmupKeyV59 = useMemo(() => {
+    if (!roomVisible || !effectiveEnvironment) return "room-off";
+
+    return [
+      effectiveEnvironment.roomWidthCm || 420,
+      effectiveEnvironment.roomDepthCm || 360,
+      effectiveEnvironment.roomHeightCm || 280,
+      effectiveEnvironment.floorMaterial || "floor",
+      effectiveEnvironment.wallMaterial || "wall",
+      sceneModulesV38.length,
+    ].join(":");
+  }, [roomVisible, effectiveEnvironment, sceneModulesV38.length]);
+
+  useEffect(() => {
+    if (!roomVisible || !effectiveEnvironment || sceneModulesV38.length < 1) {
+      setRoomVisualWarmupV59(false);
+      return;
+    }
+
+    setRoomVisualWarmupV59(true);
+    const timer = window.setTimeout(() => {
+      setRoomVisualWarmupV59(false);
+    }, 950);
+
+    return () => window.clearTimeout(timer);
+  }, [roomVisible, effectiveEnvironment, roomVisualWarmupKeyV59, sceneModulesV38.length]);
+
   const effectiveProductModel = runtimeImportedModel?.url || productModel;
   const effectiveProductModelFormat = useMemo(
     () => inferModelFormat(effectiveProductModel || "", runtimeImportedModel?.format || productModelFormat),
@@ -8303,6 +8333,24 @@ productMaterials?.length
           creavano pezzi estranei al modello reale e mascheravano il DAE caricato. */}
 
 </Canvas>
+
+      {roomVisualWarmupV59 && (
+        <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden rounded-2xl bg-[#07111c] transition-opacity duration-300">
+          <div
+            className="absolute inset-0 opacity-90"
+            style={{
+              backgroundImage: "url('/environments/showroom-premium-bagastudio.webp')",
+              backgroundSize: "cover",
+              backgroundPosition: "center center",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+          <div className="absolute inset-0 bg-slate-950/36 backdrop-blur-[1px]" />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-cyan-300/25 bg-slate-950/72 px-5 py-3 text-center text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100 shadow-2xl shadow-cyan-950/40">
+            Preparazione stanza
+          </div>
+        </div>
+      )}
     </div>
   );
 }
