@@ -47,6 +47,11 @@ export default function SceneComposerPanel({
 }: SceneComposerPanelProps) {
   const holdMoveTimerRef = useRef<number | null>(null);
   const holdMoveLastStartRef = useRef<number>(0);
+  const moveModelInRoomRef = useRef(moveModelInRoom);
+
+  useEffect(() => {
+    moveModelInRoomRef.current = moveModelInRoom;
+  }, [moveModelInRoom]);
   const stopHoldMove = useCallback(() => {
     if (holdMoveTimerRef.current !== null) {
       window.clearInterval(holdMoveTimerRef.current);
@@ -57,11 +62,11 @@ export default function SceneComposerPanel({
   const startHoldMove = useCallback((deltaX = 0, deltaZ = 0) => {
     stopHoldMove();
     holdMoveLastStartRef.current = Date.now();
-    moveModelInRoom(deltaX, deltaZ);
+    moveModelInRoomRef.current(deltaX, deltaZ);
     holdMoveTimerRef.current = window.setInterval(() => {
-      moveModelInRoom(deltaX, deltaZ);
+      moveModelInRoomRef.current(deltaX, deltaZ);
     }, 80);
-  }, [moveModelInRoom, stopHoldMove]);
+  }, [stopHoldMove]);
 
   useEffect(() => {
     window.addEventListener("mouseup", stopHoldMove);
@@ -99,7 +104,7 @@ export default function SceneComposerPanel({
     onClick: (event: MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
       if (Date.now() - holdMoveLastStartRef.current > 180) {
-        moveModelInRoom(deltaX, deltaZ);
+        moveModelInRoomRef.current(deltaX, deltaZ);
       }
     },
   });
