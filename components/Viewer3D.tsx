@@ -1108,6 +1108,24 @@ type ImportedModuleRegistryEntryV1 = {
   bounds: ImportedModelModuleV1["bounds"];
 };
 
+type SelectedImportedModuleV1 = ImportedModuleRegistryEntryV1 | null;
+
+type ImportedModuleMetadataV1 = {
+  moduleId: string;
+  displayName: string;
+  moduleType: string;
+  componentCount: number;
+  bounds: ImportedModelModuleV1["bounds"];
+  center: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  volume: number;
+  confidence: number;
+  mainMaterial?: string;
+  category?: string;
+};
+
 function buildImportedModuleRecognitionCandidatesV1(
   runtimeComponents: BagaStudioRuntimeComponent[]
 ): ImportedModuleRecognitionCandidateV1[] {
@@ -1261,6 +1279,58 @@ function buildImportedModuleRegistryV1(
   });
 }
 
+function buildImportedModuleMetadataV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): ImportedModuleMetadataV1[] {
+  const componentById = new Map(
+    runtimeComponents.map((component) => [String(component.partId || component.id), component])
+  );
+
+  return registry.map((module) => {
+    const components = module.partIds
+      .map((partId) => componentById.get(partId))
+      .filter((component): component is BagaStudioRuntimeComponent => Boolean(component));
+    const materialCounts = new Map<string, number>();
+    const categoryCounts = new Map<string, number>();
+    components.forEach((component) => {
+      const material = String(component.materialGroup || "").trim();
+      const category = String(component.category || "").trim();
+      if (material) materialCounts.set(material, (materialCounts.get(material) || 0) + 1);
+      if (category) categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+    });
+    const mostCommon = (counts: Map<string, number>) =>
+      Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const { min, max, width, height, depth } = module.bounds;
+
+    return {
+      moduleId: module.moduleId,
+      displayName: module.moduleName || module.moduleId,
+      moduleType: module.moduleType,
+      componentCount: components.length,
+      bounds: {
+        min: [...min] as [number, number, number],
+        max: [...max] as [number, number, number],
+        width,
+        height,
+        depth,
+      },
+      center: [
+        Number(((min[0] + max[0]) / 2).toFixed(4)),
+        Number(((min[1] + max[1]) / 2).toFixed(4)),
+        Number(((min[2] + max[2]) / 2).toFixed(4)),
+      ],
+      width,
+      height,
+      depth,
+      volume: Number((width * height * depth).toFixed(6)),
+      confidence: module.confidence,
+      mainMaterial: mostCommon(materialCounts),
+      category: mostCommon(categoryCounts),
+    };
+  });
+}
+
 function findModuleByIdV1(
   registry: ImportedModuleRegistryEntryV1[],
   moduleId: string
@@ -1295,6 +1365,13 @@ function getModulePartIdsV1(
   moduleId: string
 ): string[] {
   return [...(findModuleByIdV1(registry, moduleId)?.partIds || [])];
+}
+
+function resolveSelectedImportedModuleV1(
+  partId: string,
+  moduleRegistry: ImportedModuleRegistryEntryV1[]
+): SelectedImportedModuleV1 {
+  return findModuleByPartIdV1(moduleRegistry, partId) || null;
 }
 
 function buildImportedModelModulesV1(
@@ -4029,6 +4106,9 @@ function ProductModel({
 
   const [loadedRoot, setLoadedRoot] = useState<THREE.Object3D | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const selectedPartIdV1 = useConfigStore((state) => state.selectedPartId);
+  const [selectedImportedModuleIdV1, setSelectedImportedModuleIdV1] = useState<string | null>(null);
+  const [selectedImportedModuleV1, setSelectedImportedModuleV1] = useState<SelectedImportedModuleV1>(null);
 
   const runtimeModelFormat = useMemo(
     () => inferModelFormat(productModel, productModelFormat),
@@ -4117,6 +4197,7 @@ function ProductModel({
         "imported-product-main"
       );
       const moduleRegistryV1 = buildImportedModuleRegistryV1(resolvedModulesV1, "imported-product-main");
+      const moduleMetadataV1 = buildImportedModuleMetadataV1(moduleRegistryV1, analyzedComponents);
       const moduleQueryV1 = {
         findModuleById: (moduleId: string) => findModuleByIdV1(moduleRegistryV1, moduleId),
         findModuleByPartId: (partId: string) => findModuleByPartIdV1(moduleRegistryV1, partId),
@@ -4128,6 +4209,7 @@ function ProductModel({
       object.userData.bagastudioImportedGraphV1 = importedGraphV1;
       object.userData.bagastudioResolvedModulesV1 = resolvedModulesV1;
       object.userData.bagastudioModuleRegistryV1 = moduleRegistryV1;
+      object.userData.bagastudioModuleMetadataV1 = moduleMetadataV1;
       object.userData.bagastudioModuleQueryV1 = moduleQueryV1;
 
       if (typeof window !== "undefined") {
@@ -4136,12 +4218,14 @@ function ProductModel({
         (window as any).__bagastudioImportedGraphV1 = importedGraphV1;
         (window as any).__bagastudioResolvedModulesV1 = resolvedModulesV1;
         (window as any).__bagastudioModuleRegistryV1 = moduleRegistryV1;
+        (window as any).__bagastudioModuleMetadataV1 = moduleMetadataV1;
         (window as any).__bagastudioModuleQueryV1 = moduleQueryV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
         console.log("[BAGASTUDIO IMPORTED GRAPH V1]", importedGraphV1);
         console.log("[BAGASTUDIO RESOLVED MODULES V1]", resolvedModulesV1);
         console.log("[BAGASTUDIO MODULE REGISTRY V1]", moduleRegistryV1);
+        console.log("[BAGASTUDIO MODULE METADATA V1]", moduleMetadataV1);
         console.log("[BAGASTUDIO MODULE QUERY V1]", moduleQueryV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
@@ -4259,6 +4343,24 @@ function ProductModel({
     }
     setBagastudioModelEdgeDefinitionVisible(loadedRoot, modelEdgesEnabled);
   }, [loadedRoot, runtimeModelFormat, modelEdgesEnabled]);
+
+  useEffect(() => {
+    const moduleRegistryV1 = (loadedRoot?.userData?.bagastudioModuleRegistryV1 || []) as ImportedModuleRegistryEntryV1[];
+    const selectedModuleV1 = resolveSelectedImportedModuleV1(String(selectedPartIdV1 || ""), moduleRegistryV1);
+    setSelectedImportedModuleIdV1(selectedModuleV1?.moduleId || null);
+    setSelectedImportedModuleV1(selectedModuleV1);
+  }, [loadedRoot, selectedPartIdV1]);
+
+  useEffect(() => {
+    if (loadedRoot) loadedRoot.userData.bagastudioSelectedModuleV1 = selectedImportedModuleV1;
+    if (typeof window !== "undefined") {
+      (window as any).__bagastudioSelectedModuleV1 = selectedImportedModuleV1;
+      console.log("[BAGASTUDIO MODULE SELECTED]", {
+        moduleId: selectedImportedModuleIdV1,
+        module: selectedImportedModuleV1,
+      });
+    }
+  }, [loadedRoot, selectedImportedModuleIdV1, selectedImportedModuleV1]);
 
  const setSelectedPartId = useConfigStore(
   (state) => state.setSelectedPart
