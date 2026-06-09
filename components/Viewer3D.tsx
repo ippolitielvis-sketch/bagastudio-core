@@ -1087,6 +1087,27 @@ type ImportedModelGraphV1 = {
   version: "1";
 };
 
+type ImportedModelResolvedModuleV1 = {
+  moduleId: string;
+  moduleName: string;
+  moduleType: string;
+  confidence: number;
+  partIds: string[];
+  candidateKey: string;
+  reasons: string[];
+  bounds?: ImportedModelModuleV1["bounds"];
+};
+
+type ImportedModuleRegistryEntryV1 = {
+  moduleId: string;
+  importedModelId: string;
+  moduleName: string;
+  moduleType: string;
+  confidence: number;
+  partIds: string[];
+  bounds: ImportedModelModuleV1["bounds"];
+};
+
 function buildImportedModuleRecognitionCandidatesV1(
   runtimeComponents: BagaStudioRuntimeComponent[]
 ): ImportedModuleRecognitionCandidateV1[] {
@@ -1155,6 +1176,125 @@ function buildImportedModelGraphV1(
       };
     }),
   };
+}
+
+function resolveImportedModelModulesV1(
+  candidates: ImportedModuleRecognitionCandidateV1[],
+  graph: ImportedModelGraphV1,
+  runtimeComponents: BagaStudioRuntimeComponent[],
+  importedModelId: string
+): ImportedModelResolvedModuleV1[] {
+  const componentById = new Map(
+    runtimeComponents.map((component) => [String(component.partId || component.id), component])
+  );
+  const graphPartIds = new Set(graph.nodes.map((node) => node.partId));
+
+  return candidates.flatMap((candidate, index) => {
+    const partIds = candidate.componentIds.filter(
+      (partId) => graphPartIds.has(partId) && componentById.has(partId)
+    );
+    if (partIds.length === 0) return [];
+
+    const box = new THREE.Box3();
+    partIds.forEach((partId) => {
+      const component = componentById.get(partId);
+      const sourceBounds = component?.runtimeMetadata?.bounds || component?.bounds || {};
+      const min = sourceBounds.min;
+      const max = sourceBounds.max;
+      if (Array.isArray(min) && Array.isArray(max) && min.length >= 3 && max.length >= 3) {
+        box.expandByPoint(new THREE.Vector3(Number(min[0] || 0), Number(min[1] || 0), Number(min[2] || 0)));
+        box.expandByPoint(new THREE.Vector3(Number(max[0] || 0), Number(max[1] || 0), Number(max[2] || 0)));
+        return;
+      }
+      const halfWidth = Number(sourceBounds.width || 0) / 2;
+      const halfHeight = Number(sourceBounds.height || 0) / 2;
+      const halfDepth = Number(sourceBounds.depth || 0) / 2;
+      box.expandByPoint(new THREE.Vector3(-halfWidth, -halfHeight, -halfDepth));
+      box.expandByPoint(new THREE.Vector3(halfWidth, halfHeight, halfDepth));
+    });
+
+    const safeBox = box.isEmpty() ? new THREE.Box3(new THREE.Vector3(), new THREE.Vector3()) : box;
+    const size = safeBox.getSize(new THREE.Vector3());
+    const [candidateType, ...candidateNameParts] = candidate.candidateKey.split(":");
+    const candidateName = candidateNameParts.join(":") || candidate.candidateKey;
+
+    return [{
+      moduleId: sanitizeComponentId(`${importedModelId}_${candidate.candidateKey}`, index + 1),
+      moduleName: candidateName,
+      moduleType: candidateType || "imported-module",
+      confidence: Math.min(1, candidate.score / 100),
+      partIds,
+      candidateKey: candidate.candidateKey,
+      reasons: [...candidate.reasons],
+      bounds: {
+        min: safeBox.min.toArray() as [number, number, number],
+        max: safeBox.max.toArray() as [number, number, number],
+        width: Number(size.x.toFixed(4)),
+        height: Number(size.y.toFixed(4)),
+        depth: Number(size.z.toFixed(4)),
+      },
+    }];
+  });
+}
+
+function buildImportedModuleRegistryV1(
+  resolvedModules: ImportedModelResolvedModuleV1[],
+  importedModelId: string
+): ImportedModuleRegistryEntryV1[] {
+  return resolvedModules.flatMap((module) => {
+    if (!module.bounds) return [];
+    return [{
+      moduleId: module.moduleId,
+      importedModelId,
+      moduleName: module.moduleName,
+      moduleType: module.moduleType,
+      confidence: module.confidence,
+      partIds: [...module.partIds],
+      bounds: {
+        min: [...module.bounds.min] as [number, number, number],
+        max: [...module.bounds.max] as [number, number, number],
+        width: module.bounds.width,
+        height: module.bounds.height,
+        depth: module.bounds.depth,
+      },
+    }];
+  });
+}
+
+function findModuleByIdV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  moduleId: string
+): ImportedModuleRegistryEntryV1 | undefined {
+  return registry.find((module) => module.moduleId === moduleId);
+}
+
+function findModuleByPartIdV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  partId: string
+): ImportedModuleRegistryEntryV1 | undefined {
+  return registry.find((module) => module.partIds.includes(partId));
+}
+
+function findModulesByTypeV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  moduleType: string
+): ImportedModuleRegistryEntryV1[] {
+  return registry.filter((module) => module.moduleType === moduleType);
+}
+
+function findModulesByNameV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  moduleName: string
+): ImportedModuleRegistryEntryV1[] {
+  const normalizedName = moduleName.trim().toLowerCase();
+  return registry.filter((module) => module.moduleName.trim().toLowerCase() === normalizedName);
+}
+
+function getModulePartIdsV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  moduleId: string
+): string[] {
+  return [...(findModuleByIdV1(registry, moduleId)?.partIds || [])];
 }
 
 function buildImportedModelModulesV1(
@@ -3970,16 +4110,39 @@ function ProductModel({
       const importedModulesV1 = buildImportedModelModulesV1(analyzedComponents, "imported-product-main");
       const recognitionCandidatesV1 = buildImportedModuleRecognitionCandidatesV1(analyzedComponents);
       const importedGraphV1 = buildImportedModelGraphV1(analyzedComponents);
+      const resolvedModulesV1 = resolveImportedModelModulesV1(
+        recognitionCandidatesV1,
+        importedGraphV1,
+        analyzedComponents,
+        "imported-product-main"
+      );
+      const moduleRegistryV1 = buildImportedModuleRegistryV1(resolvedModulesV1, "imported-product-main");
+      const moduleQueryV1 = {
+        findModuleById: (moduleId: string) => findModuleByIdV1(moduleRegistryV1, moduleId),
+        findModuleByPartId: (partId: string) => findModuleByPartIdV1(moduleRegistryV1, partId),
+        findModulesByType: (moduleType: string) => findModulesByTypeV1(moduleRegistryV1, moduleType),
+        findModulesByName: (moduleName: string) => findModulesByNameV1(moduleRegistryV1, moduleName),
+        getModulePartIds: (moduleId: string) => getModulePartIdsV1(moduleRegistryV1, moduleId),
+      };
       object.userData.bagastudioImportedModulesV1 = importedModulesV1;
       object.userData.bagastudioImportedGraphV1 = importedGraphV1;
+      object.userData.bagastudioResolvedModulesV1 = resolvedModulesV1;
+      object.userData.bagastudioModuleRegistryV1 = moduleRegistryV1;
+      object.userData.bagastudioModuleQueryV1 = moduleQueryV1;
 
       if (typeof window !== "undefined") {
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
         (window as any).__bagastudioImportedGraphV1 = importedGraphV1;
+        (window as any).__bagastudioResolvedModulesV1 = resolvedModulesV1;
+        (window as any).__bagastudioModuleRegistryV1 = moduleRegistryV1;
+        (window as any).__bagastudioModuleQueryV1 = moduleQueryV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
         console.log("[BAGASTUDIO IMPORTED GRAPH V1]", importedGraphV1);
+        console.log("[BAGASTUDIO RESOLVED MODULES V1]", resolvedModulesV1);
+        console.log("[BAGASTUDIO MODULE REGISTRY V1]", moduleRegistryV1);
+        console.log("[BAGASTUDIO MODULE QUERY V1]", moduleQueryV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
