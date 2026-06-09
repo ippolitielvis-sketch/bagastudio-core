@@ -6262,6 +6262,25 @@ productMaterials?.length
       ...activeSceneModuleDimensionsV1,
       ...moduleDraftDimensionsV2,
     };
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null;
+    const previousTransform = normalizeSceneTransformV42(activeModule?.transform || modelSceneOffset);
+    const roomHeightCm = Math.max(1, Number(baseRoomEnvironment?.roomHeightCm || 280));
+    if (
+      !canSceneModuleDimensionsFitRoomV262(nextDimensions, previousTransform.rotationYDeg) ||
+      Number(nextDimensions.height || 0) > roomHeightCm
+    ) {
+      setWallCollisionNotice("Modulo troppo grande per la stanza: modifica bloccata");
+      window.setTimeout(() => setWallCollisionNotice(""), 2600);
+      return;
+    }
+    const nextTransform = normalizeSceneTransformV42(
+      clampModelSceneTransform(previousTransform, null, nextDimensions)
+    );
+    if (!isSceneModuleTransformInsideRoomV262(nextTransform, nextDimensions)) {
+      setWallCollisionNotice("Modulo troppo grande per la stanza: modifica bloccata");
+      window.setTimeout(() => setWallCollisionNotice(""), 2600);
+      return;
+    }
 
     setSceneModulesV38((current) =>
       current.map((module: any) =>
@@ -6269,6 +6288,10 @@ productMaterials?.length
           ? {
               ...module,
               dimensions: nextDimensions,
+              transform: {
+                ...module.transform,
+                ...nextTransform,
+              },
               updatedAt: new Date().toISOString(),
             }
           : module
