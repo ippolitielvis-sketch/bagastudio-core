@@ -496,6 +496,8 @@ led?: boolean;
 }[];
 };
 
+const EMPTY_VIEWER_VIEWS: NonNullable<Viewer3DProps["views"]> = [];
+
 
 function sniffDataUrlModelFormat(url: string): string {
   if (!url.startsWith("data:")) return "";
@@ -3600,7 +3602,7 @@ function ProductModel({
   productModelFormat,
   importedModelName,
   activeViewId,
-  views = [],
+  views = EMPTY_VIEWER_VIEWS,
   productParts = [],
   woodDirection,
   xRayEnabled = false,
@@ -5142,17 +5144,6 @@ applySelectedPartLightUpV42(mesh, selectedKey);
           ]}
           scale={Math.max(0.01, Number(importCalibration.scale || 1))}
         >
-          {sceneModuleCollisionMapV42.get(String(module.id)) !== "ok" && (
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} renderOrder={8}>
-              <planeGeometry args={[Math.max(0.3, Number(width || 180) / 100), Math.max(0.3, Number(depth || 60) / 100)]} />
-              <meshBasicMaterial
-                color={sceneModuleCollisionMapV42.get(String(module.id)) === "collision" ? "#ef4444" : "#22c55e"}
-                transparent
-                opacity={0.18}
-                depthWrite={false}
-              />
-            </mesh>
-          )}
           <Center disableY>
             <group rotation={importedModelAxisCorrection} position={[0, importedModelGroundOffsetY, 0]}>
               <primitive
@@ -5182,17 +5173,6 @@ applySelectedPartLightUpV42(mesh, selectedKey);
       ]}
       scale={Math.max(0.01, Number(importCalibration.scale || 1))}
     >
-    {(activeSceneModuleStatus || sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module"))) !== "ok" && (
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} renderOrder={8}>
-        <planeGeometry args={[Math.max(0.3, Number(width || 180) / 100), Math.max(0.3, Number(depth || 60) / 100)]} />
-        <meshBasicMaterial
-          color={(activeSceneModuleStatus || sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module"))) === "collision" ? "#ef4444" : "#22c55e"}
-          transparent
-          opacity={0.18}
-          depthWrite={false}
-        />
-      </mesh>
-    )}
     <Center disableY>
 <group
   rotation={importedModelAxisCorrection}
@@ -5591,6 +5571,7 @@ function CameraController({
   environment?: RoomEnvironmentSettings;
 }) {
   const { camera, gl, scene } = useThree();
+  const lastAppliedCameraViewIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -5607,6 +5588,8 @@ function CameraController({
     };
 
     const viewId = normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
+    if (lastAppliedCameraViewIdRef.current === viewId) return;
+    lastAppliedCameraViewIdRef.current = viewId;
 
     const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === viewId);
     const savedCameraPreset = getBagastudioPersistentCameraPreset(viewId);
@@ -5655,9 +5638,11 @@ function ViewerRuntimeControls({
 }) {
   const { camera, gl, scene } = useThree();
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
+  const selectedPartIdRef = useRef(selectedPartId);
   const bagastudioActiveCameraPresetViewRef = useRef(
     normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID)
   );
+  selectedPartIdRef.current = selectedPartId;
 
   useEffect(() => {
     const DEFAULT_CAMERA_VIEWS: Record<string, {
@@ -5702,23 +5687,24 @@ function ViewerRuntimeControls({
 
     const getTargetObjects = () => {
       const objects: THREE.Object3D[] = [];
+      const currentSelectedPartId = selectedPartIdRef.current;
 
       const selectedPart = productParts.find((part: any) => {
-        return part.id === selectedPartId || part.meshName === selectedPartId;
+        return part.id === currentSelectedPartId || part.meshName === currentSelectedPartId;
       });
 
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
         if (!mesh.isMesh) return;
 
-        if (!selectedPartId) {
+        if (!currentSelectedPartId) {
           objects.push(mesh);
           return;
         }
 
         const objectName = String(mesh.name || "");
         const selectedMeshName = String(selectedPart?.meshName || "");
-        const selectedId = String(selectedPartId || "");
+        const selectedId = String(currentSelectedPartId || "");
 
         if (
           objectName === selectedId ||
@@ -5900,7 +5886,6 @@ function ViewerRuntimeControls({
     window.addEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
     window.addEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
     window.addEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
-    window.addEventListener("bagastudio:viewer-components-ready", handleAutoFit);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
     window.addEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
     window.addEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
@@ -5916,7 +5901,6 @@ function ViewerRuntimeControls({
       window.removeEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
       window.removeEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
       window.removeEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
-      window.removeEventListener("bagastudio:viewer-components-ready", handleAutoFit);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
       window.removeEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
@@ -5929,7 +5913,7 @@ function ViewerRuntimeControls({
       delete (window as any).bagastudioGenerateProductThumbnail;
       delete (window as any).bagastudioDownloadProductThumbnail;
     };
-  }, [activeViewId, views, camera, gl, scene, selectedPartId, productParts, environment]);
+  }, [activeViewId, views, camera, gl, scene, productParts, environment]);
 
   return null;
 }
@@ -6073,7 +6057,7 @@ export default function Viewer3D({
   productModelFormat,
   importedModelName,
   productParts,
-  views = [],
+  views = EMPTY_VIEWER_VIEWS,
   activeViewId,
   ledIntensity,
   woodDirection,
