@@ -745,7 +745,7 @@ export default function HomePage() {
   const setLedKelvin = useConfigStore((state) => state.setLedKelvin);
   const setLedIntensity = useConfigStore((state) => state.setLedIntensity);
   const setVisibility = useConfigStore((state) => state.setVisibility);
-  const setActiveView = useConfigStore((state) => state.setActiveView);
+  const setActiveViewStore = useConfigStore((state) => state.setActiveView);
   const setSelectedPart = useConfigStore((state) => state.setSelectedPart);
   const importConfiguration = useConfigStore((state) => state.importConfiguration);
   const exportConfiguration = useConfigStore((state) => state.exportConfiguration);
@@ -765,6 +765,20 @@ const setInsertSize = useConfigStore((state) => state.setInsertSize);
   const ledIntensity = useConfigStore((state) => state.ledIntensity);
   const visibility = useConfigStore((state) => state.visibility);
   const activeViewId = useConfigStore((state) => state.activeViewId);
+  const setActiveView = (viewId: string) => {
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+      function: "setActiveView",
+      activeViewBefore: useConfigStore.getState().activeViewId,
+      viewIdRequested: viewId,
+    });
+    console.trace("[BAGA CAMERA IMPORT DEBUG] setActiveView stack");
+    setActiveViewStore(viewId);
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+      function: "setActiveView/after",
+      activeViewAfter: useConfigStore.getState().activeViewId,
+      viewIdRequested: viewId,
+    });
+  };
   const woodDirection = useConfigStore((state) => state.woodDirection);
 const setWoodDirection = useConfigStore((state) => state.setWoodDirection);
   const selectedPartId = useConfigStore((state) => state.selectedPartId);
@@ -2140,6 +2154,7 @@ const availableAccessories = useMemo(() => {
   ]);
 
   async function handleModelFileImport(file: File) {
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleModelFileImport/start", activeViewBefore: activeViewId, fileName: file.name });
     const format = getImportFileFormat(file.name);
 
     if (!isSupportedImportModel(file)) {
@@ -2173,7 +2188,6 @@ const availableAccessories = useMemo(() => {
     setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
     setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
     setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
-    setActiveView("iso");
     setSelectedPart(null);
                   setSelectedPartIds([]);
     setImportName(file.name);
@@ -2219,9 +2233,11 @@ const availableAccessories = useMemo(() => {
         console.warn("BagaStudio importer state not ready yet", error);
       }
     }, 500);
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleModelFileImport/end", activeViewAfter: useConfigStore.getState().activeViewId, fileName: file.name });
   }
 
   async function handleProductJsonImport(file: File) {
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleProductJsonImport/start", activeViewBefore: activeViewId, fileName: file.name });
     try {
       const text = await file.text();
       const rawProduct = JSON.parse(text);
@@ -2242,7 +2258,6 @@ const availableAccessories = useMemo(() => {
         setDimension("width", nextProduct.dimensions?.width?.default ?? 180);
         setDimension("height", nextProduct.dimensions?.height?.default ?? 100);
         setDimension("depth", nextProduct.dimensions?.depth?.default ?? 60);
-        setActiveView("iso");
         setSelectedPart(null);
                   setSelectedPartIds([]);
         setViewerRuntimeComponents([]);
@@ -2272,6 +2287,7 @@ const availableAccessories = useMemo(() => {
         setImporterStatus(`Product Package importato: ${file.name}`);
         showUiNotice(`Product Package importato: ${file.name}`);
         console.info("BagaStudio Product Package imported without blocking on Viewer runtime loader");
+        console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleProductJsonImport/product-package-end", activeViewAfter: useConfigStore.getState().activeViewId, fileName: file.name });
         return;
       }
 
@@ -2288,7 +2304,6 @@ const availableAccessories = useMemo(() => {
         if (part.meshName) setVisibility(part.meshName, part.visible !== false);
       });
 
-      setActiveView("iso");
       setSelectedPart(null);
                   setSelectedPartIds([]);
       setImportName(file.name);
@@ -2296,6 +2311,7 @@ const availableAccessories = useMemo(() => {
       setImporterStatus(`Prodotto JSON importato: ${file.name}`);
       showUiNotice(`Prodotto JSON importato: ${file.name}`);
       console.info("BagaStudio product imported successfully");
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleProductJsonImport/product-json-end", activeViewAfter: useConfigStore.getState().activeViewId, fileName: file.name });
     } catch (error) {
       console.error("BagaStudio product import error", error);
       setLastProjectAction(t.invalidProductJson);
@@ -3982,6 +3998,24 @@ const availableAccessories = useMemo(() => {
                 Pulisci
               </button>
             </div>
+
+            {(importedModelName || importedModelUrlRef.current) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPart("imported-product-main");
+                  setSelectedPartIds(["imported-product-main"]);
+                  window.dispatchEvent(new CustomEvent("bagastudio:select-imported-model"));
+                }}
+                className={`mb-3 w-full rounded-2xl border px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] transition ${
+                  selectedPartId === "imported-product-main"
+                    ? "border-emerald-300/40 bg-emerald-400/14 text-emerald-100"
+                    : "border-cyan-300/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/18"
+                }`}
+              >
+                {selectedPartId === "imported-product-main" ? "Modello selezionato" : "Seleziona modello"}
+              </button>
+            )}
 
             {viewerRuntimeComponents.length > 0 ? (
               <div className="max-h-[200px] space-y-1.5 overflow-auto pr-1">

@@ -277,9 +277,22 @@ type ParametricSceneModuleV1Props = {
   active: boolean;
   visualFeedback?: "join" | "collision" | null;
   onSelect?: (moduleId: string | null) => void;
+  onMove?: (deltaX: number, deltaZ: number) => void;
+  dragEnabled?: boolean;
+  onDragStateChange?: (dragging: boolean) => void;
 };
 
-function ParametricSceneModuleV1({ module, active, visualFeedback = null, onSelect }: ParametricSceneModuleV1Props) {
+type BagastudioOrbitControlsEventsV1 = {
+  addEventListener?: (type: "start" | "end", listener: () => void) => void;
+  removeEventListener?: (type: "start" | "end", listener: () => void) => void;
+};
+
+function ParametricSceneModuleV1({ module, active, visualFeedback = null, onSelect, onMove, dragEnabled = false, onDragStateChange }: ParametricSceneModuleV1Props) {
+  const { gl, controls } = useThree();
+  const orbitControlsEvents = controls as unknown as BagastudioOrbitControlsEventsV1 | undefined;
+  const dragPointV1 = useRef<THREE.Vector3 | null>(null);
+  const dragMovedV1 = useRef(false);
+  const orbitControlsActiveV1 = useRef(false);
   const dimensions = module?.dimensions || {};
   const widthM = Math.max(0.05, Number(dimensions.width || 180) / 100);
   const depthM = Math.max(0.05, Number(dimensions.depth || 60) / 100);
@@ -291,11 +304,79 @@ function ParametricSceneModuleV1({ module, active, visualFeedback = null, onSele
   const panelMaterial = active ? "#dbeafe" : "#cbd5e1";
   const edgeColor = active ? "#22d3ee" : "#64748b";
 
+  const endModuleDragV1 = () => {
+    const wasDragging = Boolean(dragPointV1.current);
+    dragPointV1.current = null;
+    if (wasDragging) onDragStateChange?.(false);
+    if (controls) (controls as any).enabled = true;
+    gl.domElement.style.cursor = "auto";
+  };
+
+  useEffect(() => {
+    const handleOrbitStart = () => {
+      if (!dragPointV1.current) orbitControlsActiveV1.current = true;
+    };
+    const handleOrbitEnd = () => {
+      orbitControlsActiveV1.current = false;
+    };
+    orbitControlsEvents?.addEventListener?.("start", handleOrbitStart);
+    orbitControlsEvents?.addEventListener?.("end", handleOrbitEnd);
+    window.addEventListener("pointerup", endModuleDragV1);
+    window.addEventListener("pointercancel", endModuleDragV1);
+    window.addEventListener("blur", endModuleDragV1);
+    gl.domElement.addEventListener("pointerleave", endModuleDragV1);
+    return () => {
+      orbitControlsEvents?.removeEventListener?.("start", handleOrbitStart);
+      orbitControlsEvents?.removeEventListener?.("end", handleOrbitEnd);
+      window.removeEventListener("pointerup", endModuleDragV1);
+      window.removeEventListener("pointercancel", endModuleDragV1);
+      window.removeEventListener("blur", endModuleDragV1);
+      gl.domElement.removeEventListener("pointerleave", endModuleDragV1);
+      endModuleDragV1();
+    };
+  }, [controls, gl, orbitControlsEvents]);
+
   const panelCommon = {
     castShadow: true,
     receiveShadow: true,
+    onPointerDown: (event: any) => {
+      if (!active || !dragEnabled || orbitControlsActiveV1.current || event.button !== 0) return;
+      event.stopPropagation();
+      dragPointV1.current = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+      dragMovedV1.current = false;
+      onDragStateChange?.(true);
+      event.target?.setPointerCapture?.(event.pointerId);
+      if (controls) (controls as any).enabled = false;
+      gl.domElement.style.cursor = "grabbing";
+    },
+    onPointerMove: (event: any) => {
+      if (!active || !dragEnabled || !dragPointV1.current) return;
+      event.stopPropagation();
+      const nextPoint = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+      if (!nextPoint) return;
+      dragMovedV1.current = true;
+      onMove?.(nextPoint.x - dragPointV1.current.x, nextPoint.z - dragPointV1.current.z);
+      dragPointV1.current = nextPoint;
+    },
+    onPointerUp: (event: any) => {
+      if (!dragPointV1.current) return;
+      event.stopPropagation();
+      event.target?.releasePointerCapture?.(event.pointerId);
+      endModuleDragV1();
+    },
+    onPointerCancel: endModuleDragV1,
+    onPointerOver: () => {
+      if (active && dragEnabled && !dragPointV1.current) gl.domElement.style.cursor = "grab";
+    },
+    onPointerOut: () => {
+      if (!dragPointV1.current) gl.domElement.style.cursor = "auto";
+    },
     onClick: (event: any) => {
       event.stopPropagation();
+      if (dragMovedV1.current) {
+        dragMovedV1.current = false;
+        return;
+      }
       if (moduleId) onSelect?.(moduleId);
     },
   };
@@ -463,6 +544,8 @@ type Viewer3DProps = {
  activeSceneModuleId?: string;
  activeSceneModuleStatus?: "ok" | "join" | "collision" | null;
   onSelectSceneModule?: (moduleId: string | null) => void;
+  importedModelDragEnabled?: boolean;
+  onMoveImportedModel?: (deltaX: number, deltaZ: number) => void;
   views?: {
   id: string;
   name: string;
@@ -3617,7 +3700,12 @@ function ProductModel({
   activeSceneModuleId,
   activeSceneModuleStatus,
   onSelectSceneModule,
+  importedModelDragEnabled = false,
+  onMoveImportedModel,
 }: Viewer3DProps) {
+  const { gl, controls } = useThree();
+  const importedModelDragPointV1 = useRef<THREE.Vector3 | null>(null);
+  const importedModelDragMovedV1 = useRef(false);
   const materialsSource =
   productMaterials?.length
     ? productMaterials
@@ -3632,6 +3720,26 @@ function ProductModel({
   );
 
   const useImportedSafeLed = isImportedModelFormat(runtimeModelFormat);
+
+  const endImportedModelDragV1 = () => {
+    importedModelDragPointV1.current = null;
+    if (controls) (controls as any).enabled = true;
+    gl.domElement.style.cursor = "auto";
+  };
+
+  useEffect(() => {
+    window.addEventListener("pointerup", endImportedModelDragV1);
+    window.addEventListener("pointercancel", endImportedModelDragV1);
+    window.addEventListener("blur", endImportedModelDragV1);
+    gl.domElement.addEventListener("pointerleave", endImportedModelDragV1);
+    return () => {
+      window.removeEventListener("pointerup", endImportedModelDragV1);
+      window.removeEventListener("pointercancel", endImportedModelDragV1);
+      window.removeEventListener("blur", endImportedModelDragV1);
+      gl.domElement.removeEventListener("pointerleave", endImportedModelDragV1);
+      endImportedModelDragV1();
+    };
+  }, [controls, gl]);
 
   const materialRefreshKey = useMemo(
     () =>
@@ -5159,6 +5267,34 @@ applySelectedPartLightUpV42(mesh, selectedKey);
 
     <group
       name="bagastudio-import-calibration-v1"
+      onPointerDown={(event: any) => {
+        if (!importedModelDragEnabled || event.button !== 0) return;
+        event.stopPropagation();
+        importedModelDragPointV1.current = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+        importedModelDragMovedV1.current = false;
+        event.target?.setPointerCapture?.(event.pointerId);
+        if (controls) (controls as any).enabled = false;
+        gl.domElement.style.cursor = "grabbing";
+      }}
+      onPointerMove={(event: any) => {
+        if (!importedModelDragEnabled || !importedModelDragPointV1.current) return;
+        event.stopPropagation();
+        const nextPoint = event.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+        if (!nextPoint) return;
+        importedModelDragMovedV1.current = true;
+        onMoveImportedModel?.(
+          nextPoint.x - importedModelDragPointV1.current.x,
+          nextPoint.z - importedModelDragPointV1.current.z
+        );
+        importedModelDragPointV1.current = nextPoint;
+      }}
+      onPointerUp={(event: any) => {
+        if (!importedModelDragPointV1.current) return;
+        event.stopPropagation();
+        event.target?.releasePointerCapture?.(event.pointerId);
+        endImportedModelDragV1();
+      }}
+      onPointerCancel={endImportedModelDragV1}
       position={[
         Number(importCalibration.offsetX || 0) + Number(modelSceneOffset?.x || 0),
         Number(importCalibration.offsetY || 0),
@@ -5190,6 +5326,10 @@ applySelectedPartLightUpV42(mesh, selectedKey);
     receiveShadow
     onClick={(e: any) => {
       e.stopPropagation();
+      if (importedModelDragMovedV1.current) {
+        importedModelDragMovedV1.current = false;
+        return;
+      }
 
       const clickedObject = e.object as THREE.Object3D;
       const clickedObjectText = String(
@@ -5502,6 +5642,12 @@ function buildBagastudioDynamicCameraView(scene: THREE.Scene, camera: THREE.Came
 }
 
 function applyBagastudioCameraData(camera: THREE.Camera, gl: THREE.WebGLRenderer, cameraData: any) {
+  console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+    function: "applyBagastudioCameraData",
+    cameraPositionBefore: camera.position.toArray(),
+    cameraData,
+  });
+  console.trace("[BAGA CAMERA IMPORT DEBUG] applyBagastudioCameraData stack");
   applyCameraPresetToThreeCamera({
     camera,
     renderer: gl,
@@ -5588,6 +5734,12 @@ function CameraController({
     };
 
     const viewId = normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
+    console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+      function: "CameraController/useEffect",
+      activeViewId,
+      viewIdRequested: viewId,
+      lastAppliedViewId: lastAppliedCameraViewIdRef.current,
+    });
     if (lastAppliedCameraViewIdRef.current === viewId) return;
     lastAppliedCameraViewIdRef.current = viewId;
 
@@ -5664,6 +5816,13 @@ function ViewerRuntimeControls({
 
     const applyCameraView = (viewId = bagastudioActiveCameraPresetViewRef.current) => {
       const normalizedViewId = normalizeBagastudioCameraViewId(viewId);
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+        function: "ViewerRuntimeControls/applyCameraView",
+        activeViewBefore: activeViewId,
+        viewIdRequested: viewId,
+        normalizedViewId,
+      });
+      console.trace("[BAGA CAMERA IMPORT DEBUG] applyCameraView stack");
       bagastudioActiveCameraPresetViewRef.current = normalizedViewId;
       const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === normalizedViewId);
       const cameraData =
@@ -5678,6 +5837,12 @@ function ViewerRuntimeControls({
     };
 
     const scheduleAutoFitCamera = (viewId = bagastudioActiveCameraPresetViewRef.current) => {
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", {
+        function: "ViewerRuntimeControls/scheduleAutoFitCamera",
+        activeViewBefore: activeViewId,
+        viewIdRequested: viewId,
+      });
+      console.trace("[BAGA CAMERA IMPORT DEBUG] scheduleAutoFitCamera stack");
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           applyCameraView(viewId);
@@ -5849,8 +6014,14 @@ function ViewerRuntimeControls({
       }
     };
 
-    const handleReset = () => applyCameraView("iso");
-    const handleAutoFit = () => scheduleAutoFitCamera(bagastudioActiveCameraPresetViewRef.current);
+    const handleReset = () => {
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "event/reset-camera", activeViewBefore: activeViewId, viewIdRequested: "iso" });
+      applyCameraView("iso");
+    };
+    const handleAutoFit = () => {
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "event/autofit-camera", activeViewBefore: activeViewId, viewIdRequested: bagastudioActiveCameraPresetViewRef.current });
+      scheduleAutoFitCamera(bagastudioActiveCameraPresetViewRef.current);
+    };
     const handleSaveCameraPreset = (event: Event) => {
       const detail = (event as CustomEvent<{ viewId?: string }>).detail || {};
       const viewId = normalizeBagastudioCameraViewId(detail.viewId || bagastudioActiveCameraPresetViewRef.current);
@@ -5867,9 +6038,13 @@ function ViewerRuntimeControls({
     };
     const handleApplyCameraPreset = (event: Event) => {
       const detail = (event as CustomEvent<{ viewId?: string }>).detail || {};
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "event/apply-camera-preset", activeViewBefore: activeViewId, viewIdRequested: detail.viewId });
       applyCameraView(normalizeBagastudioCameraViewId(detail.viewId || bagastudioActiveCameraPresetViewRef.current));
     };
-    const handleFocus = () => focusObjects();
+    const handleFocus = () => {
+      console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "event/focus-selection", activeViewBefore: activeViewId });
+      focusObjects();
+    };
     const handleOrbitLeft = () => orbitCameraBy(-Math.PI / 14, 0);
     const handleOrbitRight = () => orbitCameraBy(Math.PI / 14, 0);
     const handleOrbitUp = () => orbitCameraBy(0, -Math.PI / 18);
@@ -5885,7 +6060,6 @@ function ViewerRuntimeControls({
     window.addEventListener("bagastudio:autofit-camera", handleAutoFit);
     window.addEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
     window.addEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
-    window.addEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
     window.addEventListener("bagastudio:focus-selection", handleFocus);
     window.addEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
     window.addEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
@@ -5900,7 +6074,6 @@ function ViewerRuntimeControls({
       window.removeEventListener("bagastudio:autofit-camera", handleAutoFit);
       window.removeEventListener("bagastudio:save-camera-preset", handleSaveCameraPreset);
       window.removeEventListener("bagastudio:apply-camera-preset", handleApplyCameraPreset);
-      window.removeEventListener("bagastudio:viewer-runtime-model-loaded", handleAutoFit);
       window.removeEventListener("bagastudio:focus-selection", handleFocus);
       window.removeEventListener("bagastudio:camera-orbit-left", handleOrbitLeft);
       window.removeEventListener("bagastudio:camera-orbit-right", handleOrbitRight);
@@ -6126,6 +6299,7 @@ productMaterials?.length
   // I moduli parametrici e il DAE importato entrano in sceneModulesV38 solo quando esistono davvero.
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => []);
   const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState<string | null>(null);
+  const moduleDragActiveV1 = useRef(false);
   const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
   const [joinAssistantPosition, setJoinAssistantPosition] = useState({ left: 450, top: 253 });
   const [candidateSceneModuleStatusV42, setCandidateSceneModuleStatusV42] =
@@ -7382,6 +7556,19 @@ productMaterials?.length
     const current = getActiveSceneTransformV25();
     {
       const requestedRotation = Number(current.rotationYDeg || 0) + deltaRotationYDeg;
+      if (!activeSceneModuleIsParametricV1) {
+        const requestedImportTransform: SceneTransformV42 = {
+          ...normalizeSceneTransformV42(modelSceneOffset),
+          rotationYDeg: requestedRotation,
+        };
+        const clampedImportTransform = normalizeSceneTransformV42(
+          clampModelSceneTransform(requestedImportTransform, null)
+        );
+        setActiveWallSnap(null);
+        setModelSceneOffset(clampedImportTransform);
+        if (!isSameSceneTransformV42(requestedImportTransform, clampedImportTransform)) showWallCollisionNoticeV42();
+        return;
+      }
       const sideWallLock = activeWallSnap === "left" || activeWallSnap === "right" ? activeWallSnap : null;
 
       if (sideWallLock && !canSceneModuleFitWallV42(sideWallLock, requestedRotation)) {
@@ -7580,6 +7767,16 @@ productMaterials?.length
       window.removeEventListener("bagastudio:tool-orbit", setOrbitMode);
     };
   }, []);
+
+  useEffect(() => {
+    const selectImportedModel = () => {
+      setRuntimeSelectedPartId("imported-product-main");
+      setActiveSceneModuleIdV38("imported-product-main");
+      setActiveWallSnap(null);
+    };
+    window.addEventListener("bagastudio:select-imported-model", selectImportedModel);
+    return () => window.removeEventListener("bagastudio:select-imported-model", selectImportedModel);
+  }, [setRuntimeSelectedPartId]);
 
   useEffect(() => {
     const supportedFormats = ["glb", "gltf", "dae", "fbx", "obj", "stl"];
@@ -8160,13 +8357,30 @@ productMaterials?.length
                 Modello: {effectiveImportedModelName || effectiveProductModelFormat || "import"}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={resetImportCalibration}
-              className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 transition hover:bg-amber-400/20"
-            >
-              Reset
-            </button>
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setRuntimeSelectedPartId("imported-product-main");
+                  setActiveSceneModuleIdV38("imported-product-main");
+                  setActiveWallSnap(null);
+                }}
+                className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide transition ${
+                  selectedRuntimePartId === "imported-product-main"
+                    ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-100"
+                    : "border-amber-300/30 bg-amber-500/10 text-amber-100 hover:bg-amber-400/20"
+                }`}
+              >
+                {selectedRuntimePartId === "imported-product-main" ? "Modello selezionato" : "Seleziona modello"}
+              </button>
+              <button
+                type="button"
+                onClick={resetImportCalibration}
+                className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 transition hover:bg-amber-400/20"
+              >
+                Reset
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -8486,6 +8700,7 @@ productMaterials?.length
         }}
         onContextMenu={(event) => event.preventDefault()}
         onPointerMissed={() => {
+          if (moduleDragActiveV1.current) return;
           selectSceneModuleV38(null);
         }}
         style={{ touchAction: "none" }}
@@ -8538,6 +8753,17 @@ productMaterials?.length
                   : null
             }
             onSelect={selectSceneModuleV38}
+            onMove={moveModelInRoom}
+            dragEnabled={module.id === activeSceneModuleIdV38 && !selectedRuntimePartId}
+            onDragStateChange={(dragging) => {
+              if (dragging) {
+                moduleDragActiveV1.current = true;
+                return;
+              }
+              window.setTimeout(() => {
+                moduleDragActiveV1.current = false;
+              }, 0);
+            }}
           />
         ))}
 
@@ -8567,6 +8793,8 @@ productMaterials?.length
   activeSceneModuleId={activeSceneModuleIsParametricV1 ? String(activeImportedSceneModuleForRenderV1?.id || "") : activeSceneModuleIdV38 || ""}
   activeSceneModuleStatus={candidateSceneModuleStatusV42}
   onSelectSceneModule={selectSceneModuleV38}
+  importedModelDragEnabled={activeSceneModuleIdV38 === "imported-product-main" && selectedRuntimePartId === "imported-product-main"}
+  onMoveImportedModel={moveModelInRoom}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
   modelEdgesEnabled={viewerModelEdgesEnabled}

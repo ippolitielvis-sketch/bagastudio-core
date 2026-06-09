@@ -191,7 +191,6 @@ setRuntimeProduct: (product) => {
     ledKelvin: {},
     ledIntensity: {},
     visibility: {},
-    activeViewId: "iso",
   });
 },
   setDimension: (key, value) => {
