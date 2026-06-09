@@ -1066,6 +1066,49 @@ type ImportedModelModuleV1 = {
   };
 };
 
+type ImportedModuleRecognitionCandidateV1 = {
+  candidateKey: string;
+  score: number;
+  reasons: string[];
+  componentIds: string[];
+};
+
+function buildImportedModuleRecognitionCandidatesV1(
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): ImportedModuleRecognitionCandidateV1[] {
+  const candidates = new Map<string, ImportedModuleRecognitionCandidateV1>();
+  const addCandidate = (candidateKey: string, points: number, reason: string, componentId: string) => {
+    if (!candidateKey) return;
+    const candidate = candidates.get(candidateKey) || {
+      candidateKey,
+      score: 0,
+      reasons: [],
+      componentIds: [],
+    };
+    candidate.score += points;
+    if (!candidate.reasons.includes(reason)) candidate.reasons.push(reason);
+    if (!candidate.componentIds.includes(componentId)) candidate.componentIds.push(componentId);
+    candidates.set(candidateKey, candidate);
+  };
+
+  runtimeComponents.forEach((component) => {
+    const componentId = String(component.partId || component.id);
+    const parentName = String((component as any)?.parentName || component.runtimeMetadata?.parentName || "").trim().toLowerCase();
+    const meshName = String(component.meshName || "").trim().toLowerCase().replace(/[_\-\d]+$/g, "");
+    const category = String(component.category || "").trim().toLowerCase();
+    const materialGroup = String(component.materialGroup || "").trim().toLowerCase();
+    const componentType = String(component.componentType || "").trim().toLowerCase();
+
+    addCandidate(parentName ? `parent:${parentName}` : "", 40, "parentName +40", componentId);
+    addCandidate(meshName ? `mesh:${meshName}` : "", 20, "meshName simile +20", componentId);
+    addCandidate(category ? `category:${category}` : "", 15, "category +15", componentId);
+    addCandidate(materialGroup ? `materialGroup:${materialGroup}` : "", 15, "materialGroup +15", componentId);
+    addCandidate(componentType ? `componentType:${componentType}` : "", 10, "componentType +10", componentId);
+  });
+
+  return Array.from(candidates.values());
+}
+
 function buildImportedModelModulesV1(
   components: BagaStudioRuntimeComponent[],
   importedModelId: string
@@ -3877,12 +3920,14 @@ function ProductModel({
       setBagastudioModelEdgeDefinitionVisible(object, modelEdgesEnabled);
       const analyzedComponents = analyzeImportedModelComponents(object, format);
       const importedModulesV1 = buildImportedModelModulesV1(analyzedComponents, "imported-product-main");
+      const recognitionCandidatesV1 = buildImportedModuleRecognitionCandidatesV1(analyzedComponents);
       object.userData.bagastudioImportedModulesV1 = importedModulesV1;
 
       if (typeof window !== "undefined") {
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
+        console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
