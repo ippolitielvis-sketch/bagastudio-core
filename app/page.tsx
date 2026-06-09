@@ -814,6 +814,7 @@ const [importedModelFormat, setImportedModelFormat] = useState("");
 const [importedModelVersion, setImportedModelVersion] = useState(0);
 const [importerStatus, setImporterStatus] = useState("");
 const [isImporterDragging, setIsImporterDragging] = useState(false);
+const [pendingModelImportV1, setPendingModelImportV1] = useState<any>(null);
 const [importerUiState, setImporterUiState] = useState<any>(null);
 const [lastImporterEvent, setLastImporterEvent] = useState("");
 const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<any[]>([]);
@@ -2153,6 +2154,21 @@ const availableAccessories = useMemo(() => {
     saveAutosave,
   ]);
 
+  useEffect(() => {
+    if (!runtimeProduct || !pendingModelImportV1) return;
+    console.log("[BAGASTUDIO PENDING IMPORT V3] scheduled");
+    const handleRoomReadyV6 = () => {
+      window.dispatchEvent(new CustomEvent("bagastudio:viewer-load-model", { detail: pendingModelImportV1 }));
+      console.log("[BAGASTUDIO PENDING IMPORT V3] dispatched");
+      setPendingModelImportV1(null);
+    };
+    window.addEventListener("bagastudio:viewer-room-ready", handleRoomReadyV6, { once: true });
+
+    return () => {
+      window.removeEventListener("bagastudio:viewer-room-ready", handleRoomReadyV6);
+    };
+  }, [runtimeProduct, pendingModelImportV1]);
+
   async function handleModelFileImport(file: File) {
     console.warn("[BAGA CAMERA IMPORT DEBUG]", { function: "handleModelFileImport/start", activeViewBefore: activeViewId, fileName: file.name });
     const format = getImportFileFormat(file.name);
@@ -2210,20 +2226,22 @@ const availableAccessories = useMemo(() => {
       })
     );
 
-    window.dispatchEvent(
-      new CustomEvent("bagastudio:viewer-load-model", {
-        detail: {
-          file,
-          fileName: file.name,
-          format,
-          objectUrl,
-          modelUrl: objectUrl,
-          source: "viewer-import-ui",
-          forceReload: true,
-          importedAt: new Date().toISOString(),
-        },
-      })
-    );
+    const viewerLoadModelDetail = {
+      file,
+      fileName: file.name,
+      format,
+      objectUrl,
+      modelUrl: objectUrl,
+      source: "viewer-import-ui",
+      forceReload: true,
+      importedAt: new Date().toISOString(),
+    };
+    if (runtimeProduct) {
+      window.dispatchEvent(new CustomEvent("bagastudio:viewer-load-model", { detail: viewerLoadModelDetail }));
+    } else {
+      setActiveView("front");
+      setPendingModelImportV1(viewerLoadModelDetail);
+    }
 
     window.setTimeout(() => {
       try {
@@ -3833,7 +3851,7 @@ const availableAccessories = useMemo(() => {
         ledKelvin={ledKelvin}
         ledIntensity={ledIntensity}
         activeViewId={activeViewId}
-        productModel={getModelUrl(runtimeProduct)}
+        productModel={pendingModelImportV1 ? "" : getModelUrl(runtimeProduct)}
         productModelFormat={getModelFormat(runtimeProduct)}
         productMaterials={MATERIAL_LIBRARY}
         productParts={runtimeProduct.parts}

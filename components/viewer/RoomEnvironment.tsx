@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { configureSceneTexture, resolveSceneMaterialPreset } from "./sceneMaterials";
 
@@ -102,6 +102,7 @@ function cmToM(value: any, fallback: number, minimum = 0.001) {
 export default function PremiumRoomEnvironment({ environment }: { environment?: RoomEnvironmentSettings }) {
   const textures = usePremiumSceneTextures();
   const preset = resolveSceneMaterialPreset();
+  const roomReadyDispatchedRef = useRef(false);
 
   const roomWidthM = cmToM(environment?.roomWidthCm ?? environment?.width, 420);
   const roomDepthM = cmToM(environment?.roomDepthCm ?? environment?.depth, 360);
@@ -181,6 +182,17 @@ export default function PremiumRoomEnvironment({ environment }: { environment?: 
       Object.values(materials).forEach((material) => material.dispose());
     };
   }, [materials]);
+
+  useEffect(() => {
+    if (!environment || !materials || roomReadyDispatchedRef.current || typeof window === "undefined") return;
+    const roomReadyFrame = window.requestAnimationFrame(() => {
+      if (roomReadyDispatchedRef.current) return;
+      roomReadyDispatchedRef.current = true;
+      window.dispatchEvent(new CustomEvent("bagastudio:viewer-room-ready"));
+    });
+
+    return () => window.cancelAnimationFrame(roomReadyFrame);
+  }, [environment, materials]);
 
   if (!environment || !materials) return null;
 
