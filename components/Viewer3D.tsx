@@ -53,11 +53,12 @@ type ViewerMiniTabProps = {
   defaultPosition: { left: number; top: number };
   open: boolean;
   onToggle: (id: ViewerMiniTabId) => void;
+  onPositionChange?: (position: { left: number; top: number }) => void;
   dockRight?: boolean;
   children?: ReactNode;
 };
 
-function ViewerMiniTab({ id, label, eyebrow, defaultPosition, open, onToggle, dockRight = true, children }: ViewerMiniTabProps) {
+function ViewerMiniTab({ id, label, eyebrow, defaultPosition, open, onToggle, onPositionChange, dockRight = true, children }: ViewerMiniTabProps) {
   const [position, setPosition] = useState(defaultPosition);
   const [isDockedRight, setIsDockedRight] = useState(dockRight);
   const dragRef = useRef<{
@@ -86,10 +87,15 @@ function ViewerMiniTab({ id, label, eyebrow, defaultPosition, open, onToggle, do
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
-    setPosition({
-      left: Math.max(12, Math.min(980, drag.startLeft + event.clientX - drag.startX)),
+    const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1440;
+    const panelWidth = 430;
+    const maxLeft = Math.max(12, viewportWidth - panelWidth - 24);
+    const nextPosition = {
+      left: Math.max(12, Math.min(maxLeft, drag.startLeft + event.clientX - drag.startX)),
       top: Math.max(12, Math.min(720, drag.startTop + event.clientY - drag.startY)),
-    });
+    };
+    setPosition(nextPosition);
+    onPositionChange?.(nextPosition);
   };
 
   const dockBackRight = () => {
@@ -104,7 +110,9 @@ function ViewerMiniTab({ id, label, eyebrow, defaultPosition, open, onToggle, do
     event.currentTarget?.releasePointerCapture?.(event.pointerId);
 
     const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1440;
-    const finalLeft = Math.max(12, Math.min(980, drag.startLeft + event.clientX - drag.startX));
+    const panelWidth = 430;
+    const maxLeft = Math.max(12, viewportWidth - panelWidth - 24);
+    const finalLeft = Math.max(12, Math.min(maxLeft, drag.startLeft + event.clientX - drag.startX));
     // Se la mini-tab viene trascinata vicino alla destra, torna automaticamente nel dock.
     if (finalLeft > viewportWidth - 520) {
       dockBackRight();
@@ -267,10 +275,11 @@ function ViewerQuoteOverlayV5({
 type ParametricSceneModuleV1Props = {
   module: any;
   active: boolean;
+  visualFeedback?: "join" | "collision" | null;
   onSelect?: (moduleId: string | null) => void;
 };
 
-function ParametricSceneModuleV1({ module, active, onSelect }: ParametricSceneModuleV1Props) {
+function ParametricSceneModuleV1({ module, active, visualFeedback = null, onSelect }: ParametricSceneModuleV1Props) {
   const dimensions = module?.dimensions || {};
   const widthM = Math.max(0.05, Number(dimensions.width || 180) / 100);
   const depthM = Math.max(0.05, Number(dimensions.depth || 60) / 100);
@@ -327,6 +336,13 @@ function ParametricSceneModuleV1({ module, active, onSelect }: ParametricSceneMo
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.018, 0]} renderOrder={9}>
           <planeGeometry args={[widthM, depthM]} />
           <meshBasicMaterial color="#22d3ee" transparent opacity={0.12} depthWrite={false} />
+        </mesh>
+      )}
+      {visualFeedback && (
+        <mesh position={[0, yCenter, 0]} renderOrder={10} userData={{ bagastudioIgnoreRaycast: true }}>
+          <boxGeometry args={[widthM + 0.012, heightM + 0.012, depthM + 0.012]} />
+          <meshBasicMaterial color={visualFeedback === "collision" ? "#ef4444" : "#22c55e"} transparent opacity={0.16} depthWrite={false} side={THREE.DoubleSide} />
+          <Edges color={visualFeedback === "collision" ? "#f87171" : "#4ade80"} threshold={10} />
         </mesh>
       )}
     </group>
@@ -445,6 +461,7 @@ type Viewer3DProps = {
  modelSceneOffset?: { x: number; z: number; rotationYDeg?: number };
  sceneModules?: any[];
  activeSceneModuleId?: string;
+ activeSceneModuleStatus?: "ok" | "join" | "collision" | null;
   onSelectSceneModule?: (moduleId: string | null) => void;
   views?: {
   id: string;
@@ -3596,6 +3613,7 @@ function ProductModel({
   modelSceneOffset = { x: 0, z: 0, rotationYDeg: 0 },
   sceneModules = [],
   activeSceneModuleId,
+  activeSceneModuleStatus,
   onSelectSceneModule,
 }: Viewer3DProps) {
   const materialsSource =
@@ -5037,7 +5055,7 @@ applySelectedPartLightUpV42(mesh, selectedKey);
     const modules = Array.isArray(sceneModules) ? sceneModules : [];
     const footprintWidth = Math.max(0.24, Number(width || 180) / 100);
     const footprintDepth = Math.max(0.24, Number(depth || 60) / 100);
-    const joinTolerance = 0.12;
+    const joinTolerance = 0.03;
 
     const getBox = (module: any, fallbackTransform?: any) => {
       const transform = module?.transform || fallbackTransform || {};
@@ -5073,7 +5091,7 @@ applySelectedPartLightUpV42(mesh, selectedKey);
 
         const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
         const overlapZ = Math.min(a.front, b.front) - Math.max(a.back, b.back);
-        const intersects = overlapX > 0 && overlapZ > 0;
+        const intersects = overlapX > 0.005 && overlapZ > 0.005;
 
         const nearlyJoined =
           !intersects &&
@@ -5164,11 +5182,11 @@ applySelectedPartLightUpV42(mesh, selectedKey);
       ]}
       scale={Math.max(0.01, Number(importCalibration.scale || 1))}
     >
-    {sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module")) !== "ok" && (
+    {(activeSceneModuleStatus || sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module"))) !== "ok" && (
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} renderOrder={8}>
         <planeGeometry args={[Math.max(0.3, Number(width || 180) / 100), Math.max(0.3, Number(depth || 60) / 100)]} />
         <meshBasicMaterial
-          color={sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module")) === "collision" ? "#ef4444" : "#22c55e"}
+          color={(activeSceneModuleStatus || sceneModuleCollisionMapV42.get(String(activeSceneModuleId || "primary-module"))) === "collision" ? "#ef4444" : "#22c55e"}
           transparent
           opacity={0.18}
           depthWrite={false}
@@ -6118,13 +6136,17 @@ productMaterials?.length
   const [customWallSnapDistanceCm, setCustomWallSnapDistanceCm] = useState(1);
   const [wallSnapNotice, setWallSnapNotice] = useState("");
   const [wallCollisionNotice, setWallCollisionNotice] = useState("");
+  const [moduleCollisionNoticeV42, setModuleCollisionNoticeV42] = useState(false);
+  const moduleCollisionNoticeTimeoutV42 = useRef<number | null>(null);
   // Module UX V2.6.7: la stanza puo' nascere vuota.
   // I moduli parametrici e il DAE importato entrano in sceneModulesV38 solo quando esistono davvero.
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => []);
   const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState<string | null>(null);
   const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
+  const [joinAssistantPosition, setJoinAssistantPosition] = useState({ left: 450, top: 253 });
   const [candidateSceneModuleStatusV42, setCandidateSceneModuleStatusV42] =
     useState<SceneModuleCollisionStatusV42 | null>(null);
+  const candidateSceneModuleCollisionTimeoutV42 = useRef<number | null>(null);
   const [viewerMiniTabsOpenV5, setViewerMiniTabsOpenV5] = useState<Record<ViewerMiniTabId, boolean>>({
     room: false,
     module: false,
@@ -6554,7 +6576,7 @@ productMaterials?.length
     return {
       overlapX,
       overlapZ,
-      intersects: overlapX > 0.001 && overlapZ > 0.001,
+      intersects: overlapX > 0.005 && overlapZ > 0.005,
     };
   };
 
@@ -6563,7 +6585,7 @@ productMaterials?.length
     activeTransform: { x?: number; z?: number; rotationYDeg?: number } = modelSceneOffset
   ) => {
     const collisionMap = new Map<string, SceneModuleCollisionStatusV42>();
-    const joinTolerance = 0.12;
+    const joinTolerance = 0.03;
     const boxes = modules.map((module: any) => {
       const transform = module?.id === activeSceneModuleIdV38 ? activeTransform : module?.transform || {};
       const dimensions = module?.id === activeSceneModuleIdV38 ? activeSceneModuleDimensionsV1 : module?.dimensions;
@@ -6598,6 +6620,16 @@ productMaterials?.length
           if (collisionMap.get(b.id) !== "collision") collisionMap.set(b.id, "join");
         }
 
+        const distanceX = Math.min(Math.abs(a.right - b.left), Math.abs(b.right - a.left));
+        const distanceZ = Math.min(Math.abs(a.front - b.back), Math.abs(b.front - a.back));
+        const nearX = distanceX <= joinTolerance && overlapZ > -joinTolerance;
+        const nearZ = distanceZ <= joinTolerance && overlapX > -joinTolerance;
+        const finalStatus =
+          collisionMap.get(a.id) === "collision" || collisionMap.get(b.id) === "collision"
+            ? "collision"
+            : collisionMap.get(a.id) === "join" || collisionMap.get(b.id) === "join"
+              ? "join"
+              : "ok";
       }
     }
 
@@ -6814,6 +6846,8 @@ productMaterials?.length
     window.setTimeout(() => setWallCollisionNotice(""), 2200);
   };
 
+  let activeSceneModuleCandidateStatusV42: SceneModuleCollisionStatusV42 | null = null;
+
   const syncActiveSceneModuleV38 = (
     nextTransform: SceneTransformV42,
     nextWallSnap: typeof activeWallSnap = activeWallSnap
@@ -6839,9 +6873,79 @@ productMaterials?.length
 
     const candidateStatus = getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform)
       .get(activeSceneModuleIdV38 || "__no_active_module__") || null;
-    setCandidateSceneModuleStatusV42(candidateStatus === "ok" ? null : candidateStatus);
+    activeSceneModuleCandidateStatusV42 = candidateStatus;
+    if (candidateStatus === "collision") {
+      if (candidateSceneModuleCollisionTimeoutV42.current !== null) {
+        window.clearTimeout(candidateSceneModuleCollisionTimeoutV42.current);
+      }
+      setCandidateSceneModuleStatusV42("collision");
+      candidateSceneModuleCollisionTimeoutV42.current = window.setTimeout(() => {
+        setCandidateSceneModuleStatusV42(null);
+        candidateSceneModuleCollisionTimeoutV42.current = null;
+      }, 1400);
+    } else if (candidateStatus === "join") {
+      if (candidateSceneModuleCollisionTimeoutV42.current === null) {
+        setCandidateSceneModuleStatusV42("join");
+      }
+    } else if (candidateSceneModuleCollisionTimeoutV42.current === null) {
+      setCandidateSceneModuleStatusV42(null);
+    }
 
-    const resolvedTransform = resolveSceneModuleCollisionV42(clampedTransform, previousTransform, sceneModulesV38);
+    let contactSnappedTransformV43 = clampedTransform;
+    if (candidateStatus === "join") {
+      const joinDetectionGap = 0.03;
+      const activeBounds = getSceneModuleBoundsV42(clampedTransform, activeDimensionsForBoundsV262);
+      let closestSnap: { distance: number; x?: number; z?: number } | null = null;
+      sceneModulesV38.forEach((module: any) => {
+        if (!module || module.id === activeSceneModuleIdV38) return;
+        const otherBounds = getSceneModuleBoundsV42(module.transform || {}, module.dimensions);
+        const overlapX = Math.min(activeBounds.right, otherBounds.right) - Math.max(activeBounds.left, otherBounds.left);
+        const overlapZ = Math.min(activeBounds.front, otherBounds.front) - Math.max(activeBounds.back, otherBounds.back);
+        const candidates: Array<{ distance: number; x?: number; z?: number } | null> = [
+          overlapZ > -joinDetectionGap && otherBounds.left - activeBounds.right >= 0 ? { distance: otherBounds.left - activeBounds.right, x: clampedTransform.x + otherBounds.left - activeBounds.right } : null,
+          overlapZ > -joinDetectionGap && activeBounds.left - otherBounds.right >= 0 ? { distance: activeBounds.left - otherBounds.right, x: clampedTransform.x + otherBounds.right - activeBounds.left } : null,
+          overlapX > -joinDetectionGap && otherBounds.back - activeBounds.front >= 0 ? { distance: otherBounds.back - activeBounds.front, z: clampedTransform.z + otherBounds.back - activeBounds.front } : null,
+          overlapX > -joinDetectionGap && activeBounds.back - otherBounds.front >= 0 ? { distance: activeBounds.back - otherBounds.front, z: clampedTransform.z + otherBounds.front - activeBounds.back } : null,
+        ];
+        candidates.forEach((candidate) => {
+          if (!candidate) return;
+          if (candidate.distance <= joinDetectionGap && (!closestSnap || candidate.distance < closestSnap.distance)) {
+            closestSnap = candidate;
+          }
+        });
+      });
+      const selectedSnap = closestSnap as { distance: number; x?: number; z?: number } | null;
+      if (selectedSnap) {
+        contactSnappedTransformV43 = normalizeSceneTransformV42({
+          ...clampedTransform,
+          ...(selectedSnap.x !== undefined ? { x: selectedSnap.x } : {}),
+          ...(selectedSnap.z !== undefined ? { z: selectedSnap.z } : {}),
+        });
+        activeSceneModuleCandidateStatusV42 = "join";
+        setCandidateSceneModuleStatusV42("join");
+      }
+    }
+
+    const resolvedTransform = resolveSceneModuleCollisionV42(contactSnappedTransformV43, previousTransform, sceneModulesV38);
+    if (candidateStatus === "collision") {
+      if (moduleCollisionNoticeTimeoutV42.current !== null) {
+        window.clearTimeout(moduleCollisionNoticeTimeoutV42.current);
+      }
+      setModuleCollisionNoticeV42(true);
+      moduleCollisionNoticeTimeoutV42.current = window.setTimeout(() => {
+        setModuleCollisionNoticeV42(false);
+        moduleCollisionNoticeTimeoutV42.current = null;
+      }, 1400);
+    }
+    console.warn("[MODULE MOVE STATUS]", {
+      activeSceneModuleIdV38,
+      candidateStatus,
+      previousTransform,
+      clampedTransform,
+      resolvedTransform,
+      isSameAfterResolve: isSameSceneTransformV42(clampedTransform, resolvedTransform),
+      candidateSceneModuleStatusV42,
+    });
     if (!isSceneModuleTransformInsideRoomV262(resolvedTransform, activeDimensionsForBoundsV262)) {
       setWallCollisionNotice("Modulo bloccato dentro i limiti della stanza");
       window.setTimeout(() => setWallCollisionNotice(""), 2200);
@@ -6875,6 +6979,17 @@ productMaterials?.length
   useEffect(() => {
     setCandidateSceneModuleStatusV42(null);
   }, [activeSceneModuleIdV38]);
+
+  useEffect(() => {
+    if (candidateSceneModuleStatusV42 !== "join") {
+      setJoinAssistantOpenV42(false);
+      setViewerMiniTabsOpenV5((current) => ({ ...current, join: false }));
+      return;
+    }
+    if (joinAssistantOpenV42 && viewerMiniTabsOpenV5.join) return;
+    setJoinAssistantOpenV42(true);
+    setViewerMiniTabsOpenV5((current) => ({ ...current, join: true }));
+  }, [candidateSceneModuleStatusV42, joinAssistantOpenV42, viewerMiniTabsOpenV5.join]);
 
   const commitActiveSceneTransformV25 = (
     nextTransform: SceneTransformV42,
@@ -7252,7 +7367,7 @@ productMaterials?.length
         rotationYDeg,
       };
       const nextTransform = commitActiveSceneTransformV25(requestedTransform, nextWallSnapForMove);
-      if (!wallCollisionAlreadyHandledV42 && !candidateSceneModuleStatusV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
+      if (!wallCollisionAlreadyHandledV42 && activeSceneModuleCandidateStatusV42 !== "collision" && activeSceneModuleCandidateStatusV42 !== "join" && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
     }
   };
 
@@ -7835,6 +7950,20 @@ productMaterials?.length
     if (typeof window === "undefined") return;
     window.dispatchEvent(new CustomEvent(eventName, { detail }));
   };
+  const moduleVisualFeedbackMapV1 = getSceneModuleCollisionMapV42(sceneModulesV38, getActiveSceneTransformV25());
+  if (candidateSceneModuleStatusV42 && activeSceneModuleIdV38) {
+    moduleVisualFeedbackMapV1.set(activeSceneModuleIdV38, candidateSceneModuleStatusV42);
+  }
+  const collisionHighlightModuleIdsV1 = new Set(
+    Array.from(moduleVisualFeedbackMapV1.entries())
+      .filter(([, status]) => status === "collision")
+      .map(([moduleId]) => moduleId)
+  );
+  const joinHighlightModuleIdsV43 = new Set(
+    Array.from(moduleVisualFeedbackMapV1.entries())
+      .filter(([, status]) => status === "join")
+      .map(([moduleId]) => moduleId)
+  );
 
   return (
     <div className="relative h-full w-full rounded-2xl border border-neutral-800 bg-neutral-900 overflow-hidden">
@@ -7927,9 +8056,11 @@ productMaterials?.length
             id="join"
             label="Giunzione"
             eyebrow="Scene Composer V42"
-            defaultPosition={{ left: 1180, top: 253 }}
+            defaultPosition={joinAssistantPosition}
             open={viewerMiniTabsOpenV5.join}
             onToggle={toggleViewerMiniTabV5}
+            onPositionChange={setJoinAssistantPosition}
+            dockRight={false}
           >
             <div className="w-[390px] rounded-3xl border border-emerald-300/35 bg-slate-950/92 p-4 text-xs text-emerald-50 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl">
             <div className="flex items-start justify-between gap-3">
@@ -7982,6 +8113,15 @@ productMaterials?.length
           </ViewerMiniTab>
         );
       })()}
+
+      {moduleCollisionNoticeV42 && (
+        <div className="pointer-events-none fixed left-1/2 top-6 z-[100] max-w-[300px] -translate-x-1/2 rounded-2xl border border-red-400/40 bg-red-950/80 px-3 py-2 text-[11px] font-black text-red-50 shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+          <div className="uppercase tracking-[0.18em]">Collisione modulo</div>
+          <div className="mt-1 text-[10px] font-semibold opacity-80">
+            Spostamento bloccato prima dell&apos;attraversamento.
+          </div>
+        </div>
+      )}
 
       {wallCollisionNotice && (
         <div className="pointer-events-none absolute left-1/2 top-6 z-[999] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-red-400/35 bg-red-950/92 px-5 py-3 text-sm text-white shadow-[0_18px_55px_rgba(0,0,0,0.58)] backdrop-blur-xl">
@@ -8383,6 +8523,13 @@ productMaterials?.length
             key={`parametric-module-v1-${module.id}`}
             module={module}
             active={module.id === activeSceneModuleIdV38}
+            visualFeedback={
+              collisionHighlightModuleIdsV1.has(String(module.id))
+                ? "collision"
+                : joinHighlightModuleIdsV43.has(String(module.id))
+                  ? "join"
+                  : null
+            }
             onSelect={selectSceneModuleV38}
           />
         ))}
@@ -8411,6 +8558,7 @@ productMaterials?.length
   modelSceneOffset={activeSceneModuleIsParametricV1 ? normalizeSceneTransformV42(activeImportedSceneModuleForRenderV1?.transform || { x: 0, z: -0.62, rotationYDeg: 0 }) : modelSceneOffset}
   sceneModules={importedSceneModulesV1}
   activeSceneModuleId={activeSceneModuleIsParametricV1 ? String(activeImportedSceneModuleForRenderV1?.id || "") : activeSceneModuleIdV38 || ""}
+  activeSceneModuleStatus={candidateSceneModuleStatusV42}
   onSelectSceneModule={selectSceneModuleV38}
   xRayEnabled={xRayEnabled}
   xRayOpacity={xRayOpacity}
