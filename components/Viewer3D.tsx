@@ -1073,6 +1073,20 @@ type ImportedModuleRecognitionCandidateV1 = {
   componentIds: string[];
 };
 
+type ImportedModelGraphNodeV1 = {
+  partId: string;
+  parentPartId?: string;
+  parentName?: string;
+  moduleCandidateKey: string;
+  neighbors: string[];
+  bounds: BagaStudioRuntimeComponent["bounds"];
+};
+
+type ImportedModelGraphV1 = {
+  nodes: ImportedModelGraphNodeV1[];
+  version: "1";
+};
+
 function buildImportedModuleRecognitionCandidatesV1(
   runtimeComponents: BagaStudioRuntimeComponent[]
 ): ImportedModuleRecognitionCandidateV1[] {
@@ -1107,6 +1121,40 @@ function buildImportedModuleRecognitionCandidatesV1(
   });
 
   return Array.from(candidates.values());
+}
+
+function buildImportedModelGraphV1(
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): ImportedModelGraphV1 {
+  const recognitionCandidates = buildImportedModuleRecognitionCandidatesV1(runtimeComponents);
+  const candidateKeyByComponentId = new Map<string, { candidateKey: string; score: number }>();
+
+  recognitionCandidates.forEach((candidate) => {
+    candidate.componentIds.forEach((componentId) => {
+      const current = candidateKeyByComponentId.get(componentId);
+      if (!current || candidate.score > current.score) {
+        candidateKeyByComponentId.set(componentId, {
+          candidateKey: candidate.candidateKey,
+          score: candidate.score,
+        });
+      }
+    });
+  });
+
+  return {
+    version: "1",
+    nodes: runtimeComponents.map((component) => {
+      const partId = String(component.partId || component.id);
+      return {
+        partId,
+        parentPartId: component.parentPartId,
+        parentName: String((component as any)?.parentName || component.runtimeMetadata?.parentName || "") || undefined,
+        moduleCandidateKey: candidateKeyByComponentId.get(partId)?.candidateKey || "",
+        neighbors: [],
+        bounds: component.runtimeMetadata?.bounds || component.bounds,
+      };
+    }),
+  };
 }
 
 function buildImportedModelModulesV1(
@@ -3921,13 +3969,17 @@ function ProductModel({
       const analyzedComponents = analyzeImportedModelComponents(object, format);
       const importedModulesV1 = buildImportedModelModulesV1(analyzedComponents, "imported-product-main");
       const recognitionCandidatesV1 = buildImportedModuleRecognitionCandidatesV1(analyzedComponents);
+      const importedGraphV1 = buildImportedModelGraphV1(analyzedComponents);
       object.userData.bagastudioImportedModulesV1 = importedModulesV1;
+      object.userData.bagastudioImportedGraphV1 = importedGraphV1;
 
       if (typeof window !== "undefined") {
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
+        (window as any).__bagastudioImportedGraphV1 = importedGraphV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
+        console.log("[BAGASTUDIO IMPORTED GRAPH V1]", importedGraphV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
