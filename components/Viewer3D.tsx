@@ -5037,7 +5037,7 @@ applySelectedPartLightUpV42(mesh, selectedKey);
     const modules = Array.isArray(sceneModules) ? sceneModules : [];
     const footprintWidth = Math.max(0.24, Number(width || 180) / 100);
     const footprintDepth = Math.max(0.24, Number(depth || 60) / 100);
-    const joinTolerance = 0.08;
+    const joinTolerance = 0.12;
 
     const getBox = (module: any, fallbackTransform?: any) => {
       const transform = module?.transform || fallbackTransform || {};
@@ -5511,6 +5511,57 @@ function applyBagastudioCameraData(camera: THREE.Camera, gl: THREE.WebGLRenderer
   });
 }
 
+const BAGASTUDIO_VIEWER_CAMERA_PRESET_BACKUP_KEY_PREFIX = "bagastudio.viewer.cameraPresetBackup.";
+
+function isBagastudioViewerCameraPresetData(value: any): value is BagastudioCameraPresetData {
+  return (
+    value &&
+    Array.isArray(value.position) &&
+    value.position.length === 3 &&
+    value.position.every((item: any) => Number.isFinite(Number(item))) &&
+    Array.isArray(value.target) &&
+    value.target.length === 3 &&
+    value.target.every((item: any) => Number.isFinite(Number(item)))
+  );
+}
+
+function readBagastudioViewerCameraPresetBackup(viewId?: string | null): BagastudioCameraPresetData | null {
+  if (typeof window === "undefined") return null;
+
+  const normalizedViewId = normalizeBagastudioCameraViewId(viewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
+
+  try {
+    const raw = window.localStorage.getItem(`${BAGASTUDIO_VIEWER_CAMERA_PRESET_BACKUP_KEY_PREFIX}${normalizedViewId}`);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    return isBagastudioViewerCameraPresetData(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBagastudioViewerCameraPresetBackup(viewId: string, preset: BagastudioCameraPresetData) {
+  if (typeof window === "undefined") return;
+
+  const normalizedViewId = normalizeBagastudioCameraViewId(viewId);
+  if (!isBagastudioViewerCameraPresetData(preset)) return;
+
+  try {
+    window.localStorage.setItem(
+      `${BAGASTUDIO_VIEWER_CAMERA_PRESET_BACKUP_KEY_PREFIX}${normalizedViewId}`,
+      JSON.stringify(preset)
+    );
+  } catch {
+    // Camera preset backup is best-effort only. The main manager still owns the feature.
+  }
+}
+
+function getBagastudioPersistentCameraPreset(viewId?: string | null): BagastudioCameraPresetData | null {
+  const normalizedViewId = normalizeBagastudioCameraViewId(viewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
+  return getSavedCameraPreset(normalizedViewId) || readBagastudioViewerCameraPresetBackup(normalizedViewId);
+}
+
 
 function CameraController({
   activeViewId,
@@ -5540,7 +5591,7 @@ function CameraController({
     const viewId = normalizeBagastudioCameraViewId(activeViewId || BAGASTUDIO_DEFAULT_OPENING_VIEW_ID);
 
     const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === viewId);
-    const savedCameraPreset = getSavedCameraPreset(viewId);
+    const savedCameraPreset = getBagastudioPersistentCameraPreset(viewId);
 
     const cameraData =
       savedCameraPreset ||
@@ -5559,7 +5610,7 @@ function CameraController({
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (cancelled) return;
-          const reloadedPreset = getSavedCameraPreset(viewId);
+          const reloadedPreset = getBagastudioPersistentCameraPreset(viewId);
           if (reloadedPreset) applyBagastudioCameraData(camera, gl, reloadedPreset);
         });
       });
@@ -5613,7 +5664,7 @@ function ViewerRuntimeControls({
       bagastudioActiveCameraPresetViewRef.current = normalizedViewId;
       const selectedView = views?.find((v) => normalizeBagastudioCameraViewId(v.id) === normalizedViewId);
       const cameraData =
-        getSavedCameraPreset(normalizedViewId) ||
+        getBagastudioPersistentCameraPreset(normalizedViewId) ||
         buildBagastudioRoomOpeningCameraView(environment, normalizedViewId) ||
         buildBagastudioDynamicCameraView(scene, camera, normalizedViewId) ||
         selectedView?.camera ||
@@ -5807,7 +5858,8 @@ function ViewerRuntimeControls({
         cleanBox.getCenter(center);
         return center;
       })();
-      saveThreeCameraPreset({ viewId, camera, target });
+      const savedPreset = saveThreeCameraPreset({ viewId, camera, target });
+      writeBagastudioViewerCameraPresetBackup(viewId, savedPreset);
     };
     const handleApplyCameraPreset = (event: Event) => {
       const detail = (event as CustomEvent<{ viewId?: string }>).detail || {};
@@ -6071,6 +6123,8 @@ productMaterials?.length
   const [sceneModulesV38, setSceneModulesV38] = useState<any[]>(() => []);
   const [activeSceneModuleIdV38, setActiveSceneModuleIdV38] = useState<string | null>(null);
   const [joinAssistantOpenV42, setJoinAssistantOpenV42] = useState(false);
+  const [candidateSceneModuleStatusV42, setCandidateSceneModuleStatusV42] =
+    useState<SceneModuleCollisionStatusV42 | null>(null);
   const [viewerMiniTabsOpenV5, setViewerMiniTabsOpenV5] = useState<Record<ViewerMiniTabId, boolean>>({
     room: false,
     module: false,
@@ -6356,7 +6410,11 @@ productMaterials?.length
     // Modulo Parametrico V1:
     // quando la scheda MODULO cambia larghezza/profondità, collisioni, snap e limiti stanza
     // devono usare l'ingombro parametrico scelto dall'utente, non solo la bbox del DAE.
-    if (activeSceneModuleDimensionsV1) {
+    // V640: usa i bounds parametrici solo per moduli parametrici reali/selezionati.
+    // Il DAE/import principale deve invece usare i bounds visuali reali, altrimenti può uscire da SX/DX.
+    const shouldUseParametricBoundsV640 = Boolean(dimensionsOverride || (activeSceneModuleIdV38 && activeSceneModuleIsParametricV1));
+
+    if (shouldUseParametricBoundsV640) {
       return {
         minX: -parametricWidthM / 2,
         maxX: parametricWidthM / 2,
@@ -6505,7 +6563,7 @@ productMaterials?.length
     activeTransform: { x?: number; z?: number; rotationYDeg?: number } = modelSceneOffset
   ) => {
     const collisionMap = new Map<string, SceneModuleCollisionStatusV42>();
-    const joinTolerance = 0.08;
+    const joinTolerance = 0.12;
     const boxes = modules.map((module: any) => {
       const transform = module?.id === activeSceneModuleIdV38 ? activeTransform : module?.transform || {};
       const dimensions = module?.id === activeSceneModuleIdV38 ? activeSceneModuleDimensionsV1 : module?.dimensions;
@@ -6539,6 +6597,7 @@ productMaterials?.length
           if (collisionMap.get(a.id) !== "collision") collisionMap.set(a.id, "join");
           if (collisionMap.get(b.id) !== "collision") collisionMap.set(b.id, "join");
         }
+
       }
     }
 
@@ -6550,37 +6609,12 @@ productMaterials?.length
     previousTransform: SceneTransformV42,
     modules: any[] = sceneModulesV38
   ) => {
-    let resolvedTransform: SceneTransformV42 = normalizeSceneTransformV42(candidateTransform);
     const activeId = String(activeSceneModuleIdV38 || "");
-    const deltaX = Number(candidateTransform.x || 0) - Number(previousTransform.x || 0);
-    const deltaZ = Number(candidateTransform.z || 0) - Number(previousTransform.z || 0);
-
-    for (const module of modules) {
-      if (!module || String(module.id) === activeId) continue;
-
-      const otherBounds = getSceneModuleBoundsV42(module.transform || {}, module.dimensions);
-      const activeDimensions = modules.find((item: any) => String(item?.id || "") === activeId)?.dimensions || activeSceneModuleDimensionsV1;
-      const activeBounds = getSceneModuleBoundsV42(resolvedTransform, activeDimensions);
-      const { overlapX, overlapZ, intersects } = doSceneModuleBoundsIntersectV42(activeBounds, otherBounds);
-      if (!intersects) continue;
-
-      if (Math.abs(deltaX) >= Math.abs(deltaZ)) {
-        if (deltaX > 0) resolvedTransform.x -= overlapX;
-        else if (deltaX < 0) resolvedTransform.x += overlapX;
-        else if (activeBounds.left < otherBounds.left) resolvedTransform.x -= overlapX;
-        else resolvedTransform.x += overlapX;
-      } else {
-        if (deltaZ > 0) resolvedTransform.z -= overlapZ;
-        else if (deltaZ < 0) resolvedTransform.z += overlapZ;
-        else if (activeBounds.back < otherBounds.back) resolvedTransform.z -= overlapZ;
-        else resolvedTransform.z += overlapZ;
-      }
-
-      resolvedTransform = clampModelSceneTransform(resolvedTransform, null, modules.find((item: any) => String(item?.id || "") === activeId)?.dimensions || activeSceneModuleDimensionsV1);
-    }
-
-    const finalStatus = getSceneModuleCollisionMapV42(modules, resolvedTransform).get(activeId);
-    return finalStatus === "collision" ? normalizeSceneTransformV42(previousTransform) : normalizeSceneTransformV42(resolvedTransform);
+    const normalizedCandidate = normalizeSceneTransformV42(candidateTransform);
+    const finalStatus = getSceneModuleCollisionMapV42(modules, normalizedCandidate).get(activeId);
+    return finalStatus === "collision"
+      ? normalizeSceneTransformV42(previousTransform)
+      : normalizedCandidate;
   };
 
   const findSceneModuleDuplicateTransformV42 = (sourceTransform: SceneTransformV42, dimensionsOverride?: any): SceneTransformV42 | null => {
@@ -6803,21 +6837,16 @@ productMaterials?.length
       return previousTransform;
     }
 
+    const candidateStatus = getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform)
+      .get(activeSceneModuleIdV38 || "__no_active_module__") || null;
+    setCandidateSceneModuleStatusV42(candidateStatus === "ok" ? null : candidateStatus);
+
     const resolvedTransform = resolveSceneModuleCollisionV42(clampedTransform, previousTransform, sceneModulesV38);
     if (!isSceneModuleTransformInsideRoomV262(resolvedTransform, activeDimensionsForBoundsV262)) {
       setWallCollisionNotice("Modulo bloccato dentro i limiti della stanza");
       window.setTimeout(() => setWallCollisionNotice(""), 2200);
       return previousTransform;
     }
-    const wasModuleCollision =
-      !isSameSceneTransformV42(clampedTransform, resolvedTransform) &&
-      getSceneModuleCollisionMapV42(sceneModulesV38, clampedTransform).get(activeSceneModuleIdV38 || "__no_active_module__") === "collision";
-
-    if (wasModuleCollision) {
-      setWallCollisionNotice("Collisione modulo: spostamento bloccato prima dell'attraversamento");
-      window.setTimeout(() => setWallCollisionNotice(""), 2200);
-    }
-
     setSceneModulesV38((current) =>
       current.map((module) =>
         module.id === activeSceneModuleIdV38
@@ -6839,9 +6868,13 @@ productMaterials?.length
   };
 
   const getActiveSceneTransformV25 = (): SceneTransformV42 => {
-    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || sceneModulesV38[0] || null;
+    const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null;
     return normalizeSceneTransformV42(activeModule?.transform || modelSceneOffset);
   };
+
+  useEffect(() => {
+    setCandidateSceneModuleStatusV42(null);
+  }, [activeSceneModuleIdV38]);
 
   const commitActiveSceneTransformV25 = (
     nextTransform: SceneTransformV42,
@@ -6880,14 +6913,6 @@ productMaterials?.length
 
     setActiveSceneModuleIdV38(moduleId);
     setActiveWallSnap(target.transform?.activeWallSnap || null);
-
-    // Module UX V2.3: i moduli parametrici hanno trasformazione propria.
-    // Non devono mai scrivere dentro modelSceneOffset, altrimenti il DAE importato
-    // viene teletrasportato sulla posizione del modulo selezionato/deselezionato.
-    if (isParametricSceneModuleV1(target)) return;
-
-    const nextTransform = clampModelSceneTransform(target.transform || { x: 0, z: -0.62, rotationYDeg: 0 });
-    setModelSceneOffset(nextTransform);
   };
 
   const addSceneModuleSnapshotV38 = () => {
@@ -7019,7 +7044,7 @@ productMaterials?.length
   };
 
   const deleteActiveSceneModuleV42 = () => {
-    if (!activeSceneModuleIdV38 || sceneModulesV38.length <= 1) return;
+    if (!activeSceneModuleIdV38) return;
 
     const currentIndex = sceneModulesV38.findIndex((module) => module.id === activeSceneModuleIdV38);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -7035,6 +7060,9 @@ productMaterials?.length
         setModelSceneOffset(nextTransform);
       }
       setActiveWallSnap(nextActiveModule.transform?.activeWallSnap || null);
+    } else {
+      setActiveSceneModuleIdV38(null);
+      setActiveWallSnap(null);
     }
 
     window.dispatchEvent(
@@ -7091,14 +7119,31 @@ productMaterials?.length
     const activeModuleV42 = activeSceneModuleIdV38
       ? sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null
       : null;
-    if (!activeModuleV42) {
-      setWallCollisionNotice("Seleziona un modulo parametrico prima di spostarlo");
-      window.setTimeout(() => setWallCollisionNotice(""), 1600);
-      return;
-    }
-    if (!isParametricSceneModuleV1(activeModuleV42)) {
-      setWallCollisionNotice("Il DAE importato resta fisso: crea o seleziona un modulo parametrico");
-      window.setTimeout(() => setWallCollisionNotice(""), 2200);
+    if (!activeModuleV42 || !isParametricSceneModuleV1(activeModuleV42)) {
+      // BagaStudio V639 REAL:
+      // se non e' selezionato un modulo parametrico, i pulsanti movimento devono
+      // comandare il DAE/import principale tramite modelSceneOffset.
+      const currentImportTransform = normalizeSceneTransformV42(modelSceneOffset);
+      const requestedImportTransform: SceneTransformV42 = {
+        ...currentImportTransform,
+        x: Number(currentImportTransform.x || 0) + deltaX,
+        z: Number(currentImportTransform.z || 0) + deltaZ,
+      };
+      const nextImportTransform = normalizeSceneTransformV42(
+        clampModelSceneTransform(requestedImportTransform, null)
+      );
+      const resolvedImportTransform = resolveSceneModuleCollisionV42(
+        nextImportTransform,
+        currentImportTransform,
+        sceneModulesV38
+      );
+
+      setActiveWallSnap(null);
+      setModelSceneOffset(resolvedImportTransform);
+      if (!isSameSceneTransformV42(nextImportTransform, resolvedImportTransform)) {
+        setWallCollisionNotice("Collisione modulo: spostamento bloccato prima dell'attraversamento");
+        window.setTimeout(() => setWallCollisionNotice(""), 2200);
+      } else if (!isSameSceneTransformV42(requestedImportTransform, nextImportTransform)) showWallCollisionNoticeV42();
       return;
     }
     const storedWallSnapV42 = activeModuleV42?.transform?.activeWallSnap || null;
@@ -7207,7 +7252,7 @@ productMaterials?.length
         rotationYDeg,
       };
       const nextTransform = commitActiveSceneTransformV25(requestedTransform, nextWallSnapForMove);
-      if (!wallCollisionAlreadyHandledV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
+      if (!wallCollisionAlreadyHandledV42 && !candidateSceneModuleStatusV42 && !isSameSceneTransformV42(requestedTransform, nextTransform)) showWallCollisionNoticeV42();
     }
   };
 
@@ -7815,9 +7860,11 @@ productMaterials?.length
         </div>
       )}
 
-      {sceneModulesV38.length > 1 && (() => {
-        const collisionMap = getSceneModuleCollisionMapV42(sceneModulesV38, modelSceneOffset);
-        const activeStatus = collisionMap.get(activeSceneModuleIdV38 || "__no_active_module__");
+      {(sceneModulesV38.length > 1 || candidateSceneModuleStatusV42) && (() => {
+        const collisionMap = getSceneModuleCollisionMapV42(sceneModulesV38, getActiveSceneTransformV25());
+        const activeStatus =
+          candidateSceneModuleStatusV42 ||
+          collisionMap.get(activeSceneModuleIdV38 || "__no_active_module__");
         if (!activeStatus || activeStatus === "ok") return null;
 
         // UX V5.1: se l'assistente giunzione è già aperto nella mini-tab,
@@ -7826,7 +7873,7 @@ productMaterials?.length
         if (activeStatus === "join" && joinAssistantOpenV42 && viewerMiniTabsOpenV5.join) return null;
 
         return (
-          <div className={`absolute right-4 top-20 z-40 max-w-[300px] rounded-2xl border px-3 py-2 text-[11px] font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
+          <div className={`fixed left-1/2 top-6 z-[100] max-w-[300px] -translate-x-1/2 rounded-2xl border px-3 py-2 text-[11px] font-black shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl ${
             activeStatus === "collision"
               ? "border-red-400/40 bg-red-950/80 text-red-50"
               : "border-emerald-400/35 bg-emerald-950/78 text-emerald-50"
@@ -7857,7 +7904,7 @@ productMaterials?.length
 
       {joinAssistantOpenV42 && viewerMiniTabsOpenV5.join && (() => {
         const activeModule = sceneModulesV38.find((module: any) => module.id === activeSceneModuleIdV38) || null;
-        const activeBounds = getSceneModuleBoundsV42(modelSceneOffset);
+        const activeBounds = getSceneModuleBoundsV42(getActiveSceneTransformV25());
         const otherModule = sceneModulesV38.find((module: any) => {
           if (!module || module.id === activeSceneModuleIdV38) return false;
           const otherBounds = getSceneModuleBoundsV42(module.transform || {});
@@ -8147,7 +8194,7 @@ productMaterials?.length
             <button
               type="button"
               onClick={deleteActiveSceneModuleV42}
-              disabled={!activeSceneModuleIdV38 || sceneModulesV38.length <= 1}
+              disabled={!activeSceneModuleIdV38}
               className="rounded-2xl border border-rose-300/25 bg-rose-400/14 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-rose-50 hover:bg-rose-400/24 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Elimina selez.

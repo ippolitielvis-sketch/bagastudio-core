@@ -59,14 +59,20 @@ export default function SceneComposerPanel({
     }
   }, []);
 
+  // BagaStudio V64 - movimento continuo controllato:
+  // un click singolo resta preciso, mentre la pressione prolungata avanza più lenta.
+  const applyControlledMove = useCallback((deltaX = 0, deltaZ = 0, multiplier = 1) => {
+    moveModelInRoomRef.current(deltaX * multiplier, deltaZ * multiplier);
+  }, []);
+
   const startHoldMove = useCallback((deltaX = 0, deltaZ = 0) => {
     stopHoldMove();
     holdMoveLastStartRef.current = Date.now();
-    moveModelInRoomRef.current(deltaX, deltaZ);
+    applyControlledMove(deltaX, deltaZ, 0.55);
     holdMoveTimerRef.current = window.setInterval(() => {
-      moveModelInRoomRef.current(deltaX, deltaZ);
-    }, 80);
-  }, [stopHoldMove]);
+      applyControlledMove(deltaX, deltaZ, 0.32);
+    }, 150);
+  }, [applyControlledMove, stopHoldMove]);
 
   useEffect(() => {
     window.addEventListener("mouseup", stopHoldMove);
@@ -104,7 +110,7 @@ export default function SceneComposerPanel({
     onClick: (event: MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
       if (Date.now() - holdMoveLastStartRef.current > 180) {
-        moveModelInRoomRef.current(deltaX, deltaZ);
+        applyControlledMove(deltaX, deltaZ, 0.55);
       }
     },
   });
@@ -140,7 +146,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      {...getHoldMoveButtonProps(0, -0.16)}
+      {...getHoldMoveButtonProps(0, -0.08)}
       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Verso parete di fondo"
     >
@@ -150,7 +156,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      {...getHoldMoveButtonProps(-0.16, 0)}
+      {...getHoldMoveButtonProps(-0.08, 0)}
       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Verso lato sinistro stanza"
     >
@@ -163,7 +169,7 @@ export default function SceneComposerPanel({
     </div>
     <button
       type="button"
-      {...getHoldMoveButtonProps(0.16, 0)}
+      {...getHoldMoveButtonProps(0.08, 0)}
       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Verso lato destro stanza"
     >
@@ -173,7 +179,7 @@ export default function SceneComposerPanel({
     <span />
     <button
       type="button"
-      {...getHoldMoveButtonProps(0, 0.16)}
+      {...getHoldMoveButtonProps(0, 0.08)}
       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-center transition hover:border-emerald-300/45 hover:bg-emerald-400/10"
       title="Verso fronte / ingresso stanza"
     >
