@@ -1026,6 +1026,9 @@ function getBagastudioImportedAxisCorrection(root: THREE.Object3D | null, format
 type BagaStudioRuntimeComponent = {
   id: string;
   partId?: string;
+  importedModelId?: string;
+  moduleId?: string;
+  parentPartId?: string;
   index: number;
   meshName: string;
   originalName: string;
@@ -1046,6 +1049,88 @@ type BagaStudioRuntimeComponent = {
     depth: number;
   };
 };
+
+type ImportedModelModuleV1 = {
+  importedModelId: string;
+  moduleId: string;
+  moduleName: string;
+  moduleType: string;
+  partIds: string[];
+  confidence: number;
+  bounds: {
+    min: [number, number, number];
+    max: [number, number, number];
+    width: number;
+    height: number;
+    depth: number;
+  };
+};
+
+function buildImportedModelModulesV1(
+  components: BagaStudioRuntimeComponent[],
+  importedModelId: string
+): ImportedModelModuleV1[] {
+  const groups = new Map<string, {
+    name: string;
+    type: string;
+    confidence: number;
+    components: BagaStudioRuntimeComponent[];
+  }>();
+
+  components.forEach((component) => {
+    const parentName = String((component as any)?.parentName || component.runtimeMetadata?.parentName || "").trim();
+    const category = String(component.category || "").trim();
+    const materialGroup = String(component.materialGroup || "").trim();
+    const componentType = String(component.componentType || "").trim();
+    const hasClassification = Boolean(category || materialGroup || componentType);
+    const name = parentName || (hasClassification
+      ? [category, materialGroup, componentType].filter(Boolean).join(" / ")
+      : "Componenti non classificati");
+    const type = parentName ? "parent" : hasClassification ? componentType || category || materialGroup : "unclassified";
+    const confidence = parentName ? 0.85 : hasClassification ? 0.65 : 0.35;
+    const key = `${parentName ? "parent" : hasClassification ? "classification" : "fallback"}:${name.toLowerCase()}`;
+    const group = groups.get(key) || { name, type, confidence, components: [] };
+    group.components.push(component);
+    groups.set(key, group);
+  });
+
+  return Array.from(groups.values()).map((group, index) => {
+    const box = new THREE.Box3();
+    group.components.forEach((component) => {
+      const sourceBounds = component.runtimeMetadata?.bounds || component.bounds || {};
+      const min = sourceBounds.min;
+      const max = sourceBounds.max;
+      if (Array.isArray(min) && Array.isArray(max) && min.length >= 3 && max.length >= 3) {
+        box.expandByPoint(new THREE.Vector3(Number(min[0] || 0), Number(min[1] || 0), Number(min[2] || 0)));
+        box.expandByPoint(new THREE.Vector3(Number(max[0] || 0), Number(max[1] || 0), Number(max[2] || 0)));
+        return;
+      }
+      const halfWidth = Number(sourceBounds.width || 0) / 2;
+      const halfHeight = Number(sourceBounds.height || 0) / 2;
+      const halfDepth = Number(sourceBounds.depth || 0) / 2;
+      box.expandByPoint(new THREE.Vector3(-halfWidth, -halfHeight, -halfDepth));
+      box.expandByPoint(new THREE.Vector3(halfWidth, halfHeight, halfDepth));
+    });
+    const safeBox = box.isEmpty() ? new THREE.Box3(new THREE.Vector3(), new THREE.Vector3()) : box;
+    const size = safeBox.getSize(new THREE.Vector3());
+    const moduleId = sanitizeComponentId(`${importedModelId}_${group.name}`, index + 1);
+    return {
+      importedModelId,
+      moduleId,
+      moduleName: group.name,
+      moduleType: group.type,
+      partIds: group.components.map((component) => String(component.partId || component.id)),
+      confidence: group.confidence,
+      bounds: {
+        min: safeBox.min.toArray() as [number, number, number],
+        max: safeBox.max.toArray() as [number, number, number],
+        width: Number(size.x.toFixed(4)),
+        height: Number(size.y.toFixed(4)),
+        depth: Number(size.z.toFixed(4)),
+      },
+    };
+  });
+}
 
 
 
@@ -3791,9 +3876,13 @@ function ProductModel({
       }
       setBagastudioModelEdgeDefinitionVisible(object, modelEdgesEnabled);
       const analyzedComponents = analyzeImportedModelComponents(object, format);
+      const importedModulesV1 = buildImportedModelModulesV1(analyzedComponents, "imported-product-main");
+      object.userData.bagastudioImportedModulesV1 = importedModulesV1;
 
       if (typeof window !== "undefined") {
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
+        (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
+        console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
             detail: {
@@ -8517,6 +8606,12 @@ productMaterials?.length
                     step={1}
                     value={value}
                     onChange={(event) => updateModuleDraftDimensionV2(key, event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyDraftDimensionsToActiveModuleV2();
+                      }
+                    }}
                     className="mt-1 w-full rounded-xl border border-emerald-300/18 bg-slate-950/90 px-2 py-1.5 text-sm font-black text-white outline-none focus:border-emerald-300/55"
                   />
                   <span className="mt-1 block text-[8px] text-slate-500">cm</span>

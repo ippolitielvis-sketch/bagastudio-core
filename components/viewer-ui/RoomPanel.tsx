@@ -177,6 +177,12 @@ export default function RoomPanel({
                     value={draft[key as keyof RoomPanelDraft]}
                     step={step as number}
                     onChange={(event) => updateDraft(key as keyof RoomPanelDraft, event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyRoom();
+                      }
+                    }}
                     className="w-full rounded-xl border border-white/10 bg-slate-950/80 px-2 py-2 text-xs font-black text-white outline-none transition focus:border-cyan-300/60"
                   />
                 </label>
