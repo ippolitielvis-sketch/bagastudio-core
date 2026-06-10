@@ -8,11 +8,15 @@ import type { EdiV2LaboratoryProfile, EdiV2ShaderMode, EdiV2State, EdiV2VisualMo
 const states: EdiV2State[] = ["idle", "thinking", "analyzing", "speaking", "suggestion", "warning", "success"];
 const modes: EdiV2VisualMode[] = ["prototype", "minimal", "energy", "experimental"];
 const shaderModes: EdiV2ShaderMode[] = ["heart", "plasma", "magnetic", "particles", "glow", "composite"];
-const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "plasmaIntensity" | "magneticIntensity" | "particleDensity" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number }> = [
+const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "heartPulseSpeed" | "heartRadius" | "heartNoise" | "heartGlow" | "plasmaIntensity" | "magneticIntensity" | "particleDensity" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number }> = [
   { key: "bloomIntensity", label: "Bloom strength" },
   { key: "bloomRadius", label: "Bloom radius", min: 0 },
   { key: "bloomThreshold", label: "Bloom threshold", min: 0 },
   { key: "heartIntensity", label: "Heart intensity" },
+  { key: "heartPulseSpeed", label: "Heart pulse speed", min: 0 },
+  { key: "heartRadius", label: "Heart radius", min: .2 },
+  { key: "heartNoise", label: "Heart noise", min: 0 },
+  { key: "heartGlow", label: "Heart glow", min: 0 },
   { key: "plasmaIntensity", label: "Plasma intensity" },
   { key: "magneticIntensity", label: "Magnetic intensity" },
   { key: "particleDensity", label: "Particle density", min: 0 },
