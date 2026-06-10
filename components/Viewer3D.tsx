@@ -7,6 +7,7 @@ import {
   Center,
   Environment,
   Edges,
+  Html,
   Line,
   Text,
 } from "@react-three/drei";
@@ -1126,6 +1127,95 @@ type ImportedModuleMetadataV1 = {
   category?: string;
 };
 
+type ImportedModuleFingerprintV1 = {
+  moduleId: string;
+  moduleName: string;
+  componentCount: number;
+  panelCount: number;
+  hardwareCount: number;
+  drawerCount: number;
+  doorCount: number;
+  shelfCount: number;
+  backPanelCount: number;
+  sidePanelCount: number;
+  topPanelCount: number;
+  bottomPanelCount: number;
+  dominantMaterial?: string;
+  dominantCategory?: string;
+  boundingBox: ImportedModelModuleV1["bounds"];
+  center: [number, number, number];
+  symmetryScore: number;
+  verticalDistribution: number;
+  horizontalDistribution: number;
+  fingerprintConfidence: number;
+  structuralSignature?: string;
+  hierarchyDepth?: number;
+  structuralNodes?: number;
+  structuralComplexity?: number;
+  repeatedPatterns?: number;
+  estimatedSubAssemblies?: number;
+  estimatedDrawerGroups?: number;
+  estimatedDoorGroups?: number;
+  estimatedShelfGroups?: number;
+};
+
+type ImportedModuleSimilarityV1 = {
+  sourceModuleId: string;
+  targetModuleId: string;
+  similarityScore: number;
+  componentScore: number;
+  geometryScore: number;
+  materialScore: number;
+  categoryScore: number;
+  fingerprintScore: number;
+  reasons: string[];
+};
+
+type ImportedRecognizedModuleV2 = {
+  moduleId: string;
+  recognizedType: string;
+  confidence: number;
+  candidateTypes: Array<{ type: string; score: number }>;
+  matchedFeatures: string[];
+  missingFeatures: string[];
+  recognitionReason: string;
+  recognitionScore: number;
+};
+
+type ImportedAssemblyNodeV1 = {
+  assemblyId: string;
+  name: string;
+  objectType: string;
+  depth: number;
+  partId?: string;
+  category?: string;
+  materialGroup?: string;
+  children: ImportedAssemblyNodeV1[];
+};
+
+type ImportedSemanticAssemblyNodeV1 = ImportedAssemblyNodeV1 & {
+  dominantCategory?: string;
+  dominantMaterial?: string;
+  childCount: number;
+  estimatedModuleType: string;
+  semanticConfidence: number;
+  children: ImportedSemanticAssemblyNodeV1[];
+};
+
+type ImportedSemanticGroupV1 = {
+  groupId: string;
+  groupName: string;
+  groupType: string;
+  partIds: string[];
+  componentCount: number;
+  dominantCategory?: string;
+  dominantMaterial?: string;
+  bounds: ImportedModelModuleV1["bounds"];
+  center: [number, number, number];
+  confidence: number;
+  reasons: string[];
+};
+
 function buildImportedModuleRecognitionCandidatesV1(
   runtimeComponents: BagaStudioRuntimeComponent[]
 ): ImportedModuleRecognitionCandidateV1[] {
@@ -1206,12 +1296,32 @@ function resolveImportedModelModulesV1(
     runtimeComponents.map((component) => [String(component.partId || component.id), component])
   );
   const graphPartIds = new Set(graph.nodes.map((node) => node.partId));
+  const candidateByKey = new Map(candidates.map((candidate) => [candidate.candidateKey, candidate]));
+  const groups = new Map<string, { name: string; type: string; candidateKey: string; partIds: string[] }>();
 
-  return candidates.flatMap((candidate, index) => {
-    const partIds = candidate.componentIds.filter(
-      (partId) => graphPartIds.has(partId) && componentById.has(partId)
-    );
-    if (partIds.length === 0) return [];
+  runtimeComponents.forEach((component) => {
+    const partId = String(component.partId || component.id);
+    if (!graphPartIds.has(partId)) return;
+    const parentName = String((component as any)?.parentName || component.runtimeMetadata?.parentName || "").trim();
+    const category = String(component.category || "").trim();
+    const materialGroup = String(component.materialGroup || "").trim();
+    const componentType = String(component.componentType || "").trim();
+    const classification = [category, materialGroup, componentType].filter(Boolean).join(" / ");
+    const hasStrongParent = parentName.length > 1;
+    const name = hasStrongParent ? parentName : classification || "Componenti non classificati";
+    const type = hasStrongParent ? "parent" : componentType || category || materialGroup || "imported-module";
+    const candidateKey = hasStrongParent
+      ? `parent:${parentName.toLowerCase()}`
+      : classification
+        ? `classification:${classification.toLowerCase()}`
+        : "fallback:componenti non classificati";
+    const group = groups.get(candidateKey) || { name, type, candidateKey, partIds: [] };
+    if (!group.partIds.includes(partId)) group.partIds.push(partId);
+    groups.set(candidateKey, group);
+  });
+
+  return Array.from(groups.values()).map((group, index) => {
+    const partIds = group.partIds;
 
     const box = new THREE.Box3();
     partIds.forEach((partId) => {
@@ -1233,17 +1343,16 @@ function resolveImportedModelModulesV1(
 
     const safeBox = box.isEmpty() ? new THREE.Box3(new THREE.Vector3(), new THREE.Vector3()) : box;
     const size = safeBox.getSize(new THREE.Vector3());
-    const [candidateType, ...candidateNameParts] = candidate.candidateKey.split(":");
-    const candidateName = candidateNameParts.join(":") || candidate.candidateKey;
+    const candidate = candidateByKey.get(group.candidateKey);
 
-    return [{
-      moduleId: sanitizeComponentId(`${importedModelId}_${candidate.candidateKey}`, index + 1),
-      moduleName: candidateName,
-      moduleType: candidateType || "imported-module",
-      confidence: Math.min(1, candidate.score / 100),
+    return {
+      moduleId: sanitizeComponentId(`${importedModelId}_${group.candidateKey}`, index + 1),
+      moduleName: group.name,
+      moduleType: group.type,
+      confidence: candidate ? Math.min(1, candidate.score / 100) : group.candidateKey.startsWith("parent:") ? 0.85 : group.candidateKey.startsWith("classification:") ? 0.65 : 0.35,
       partIds,
-      candidateKey: candidate.candidateKey,
-      reasons: [...candidate.reasons],
+      candidateKey: group.candidateKey,
+      reasons: candidate ? [...candidate.reasons] : [group.candidateKey.startsWith("parent:") ? "parentName grouping V2" : group.candidateKey.startsWith("classification:") ? "classification grouping V2" : "fallback grouping V2"],
       bounds: {
         min: safeBox.min.toArray() as [number, number, number],
         max: safeBox.max.toArray() as [number, number, number],
@@ -1251,7 +1360,7 @@ function resolveImportedModelModulesV1(
         height: Number(size.y.toFixed(4)),
         depth: Number(size.z.toFixed(4)),
       },
-    }];
+    };
   });
 }
 
@@ -1331,6 +1440,430 @@ function buildImportedModuleMetadataV1(
   });
 }
 
+function buildImportedModuleFingerprintsV1(
+  modules: ImportedModuleRegistryEntryV1[],
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): ImportedModuleFingerprintV1[] {
+  const componentByPartId = new Map(
+    runtimeComponents.map((component) => [String(component.partId || component.id), component])
+  );
+  const dominantValue = (values: string[]) =>
+    Array.from(
+      values.reduce<Map<string, number>>((counts, value) => {
+        if (value) counts.set(value, (counts.get(value) || 0) + 1);
+        return counts;
+      }, new Map())
+    ).sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  return modules.map((module) => {
+    const components = module.partIds
+      .map((partId) => componentByPartId.get(String(partId)))
+      .filter((component): component is BagaStudioRuntimeComponent => Boolean(component));
+    const labels = components.map((component) =>
+      [
+        component.meshName,
+        component.originalName,
+        component.displayName,
+        component.category,
+        component.componentType,
+        ...(component.tags || []),
+      ].join(" ").toLowerCase()
+    );
+    const countMatching = (pattern: RegExp) => labels.filter((label) => pattern.test(label)).length;
+    const panelCount = countMatching(/panel|pannell|fianco|side|top|bottom|fondo|schien|back|shelf|ripian/);
+    const hardwareCount = countMatching(/hardware|ferrament|handle|manigl|hinge|cernier|vite|screw/);
+    const drawerCount = countMatching(/drawer|casset/);
+    const doorCount = countMatching(/door|anta|sportell/);
+    const shelfCount = countMatching(/shelf|ripian|mensol/);
+    const backPanelCount = countMatching(/back|schien/);
+    const sidePanelCount = countMatching(/side|fianco|laterale/);
+    const topPanelCount = countMatching(/top|cappello|superiore/);
+    const bottomPanelCount = countMatching(/bottom|fondo|base|inferiore/);
+    const widthTotal = components.reduce((total, component) => total + Math.abs(Number(component.bounds?.width || 0)), 0);
+    const heightTotal = components.reduce((total, component) => total + Math.abs(Number(component.bounds?.height || 0)), 0);
+    const depthTotal = components.reduce((total, component) => total + Math.abs(Number(component.bounds?.depth || 0)), 0);
+    const distributionTotal = Math.max(widthTotal + heightTotal + depthTotal, 0.0001);
+    const pairedStructuralCount = Math.min(sidePanelCount, 2) + Math.min(topPanelCount, bottomPanelCount);
+    const matchedComponents = Math.min(components.length, panelCount + hardwareCount + drawerCount + doorCount + shelfCount);
+    const bounds = module.bounds;
+
+    return {
+      moduleId: module.moduleId,
+      moduleName: module.moduleName,
+      componentCount: components.length,
+      panelCount,
+      hardwareCount,
+      drawerCount,
+      doorCount,
+      shelfCount,
+      backPanelCount,
+      sidePanelCount,
+      topPanelCount,
+      bottomPanelCount,
+      dominantMaterial: dominantValue(components.map((component) => String(component.materialGroup || "").trim())),
+      dominantCategory: dominantValue(components.map((component) => String(component.category || "").trim())),
+      boundingBox: {
+        ...bounds,
+        min: [...bounds.min],
+        max: [...bounds.max],
+      },
+      center: [
+        (bounds.min[0] + bounds.max[0]) / 2,
+        (bounds.min[1] + bounds.max[1]) / 2,
+        (bounds.min[2] + bounds.max[2]) / 2,
+      ],
+      symmetryScore: Number(Math.min(1, pairedStructuralCount / Math.max(panelCount, 1)).toFixed(3)),
+      verticalDistribution: Number((heightTotal / distributionTotal).toFixed(3)),
+      horizontalDistribution: Number(((widthTotal + depthTotal) / distributionTotal).toFixed(3)),
+      fingerprintConfidence: Number(
+        Math.min(1, module.confidence * 0.7 + (matchedComponents / Math.max(components.length, 1)) * 0.3).toFixed(3)
+      ),
+    };
+  });
+}
+
+function buildImportedModuleSimilarityV1(
+  fingerprints: ImportedModuleFingerprintV1[]
+): ImportedModuleSimilarityV1[] {
+  const similarityRatio = (a: number, b: number) =>
+    Math.max(0, 1 - Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1));
+  const results: ImportedModuleSimilarityV1[] = [];
+
+  for (let sourceIndex = 0; sourceIndex < fingerprints.length; sourceIndex += 1) {
+    for (let targetIndex = sourceIndex + 1; targetIndex < fingerprints.length; targetIndex += 1) {
+      const source = fingerprints[sourceIndex];
+      const target = fingerprints[targetIndex];
+      const reasons: string[] = [];
+      const structuralFields: Array<keyof ImportedModuleFingerprintV1> = [
+        "panelCount",
+        "drawerCount",
+        "doorCount",
+        "shelfCount",
+        "sidePanelCount",
+        "topPanelCount",
+        "bottomPanelCount",
+        "backPanelCount",
+      ];
+      const structuralMatches = structuralFields.filter((field) => source[field] === target[field]).length;
+      const componentScore = similarityRatio(source.componentCount, target.componentCount) * 100;
+      const dimensionScore = (
+        similarityRatio(source.boundingBox.width, target.boundingBox.width) +
+        similarityRatio(source.boundingBox.height, target.boundingBox.height) +
+        similarityRatio(source.boundingBox.depth, target.boundingBox.depth)
+      ) / 3;
+      const geometryScore = dimensionScore * 100;
+      const materialScore = source.dominantMaterial && source.dominantMaterial === target.dominantMaterial ? 100 : 0;
+      const categoryScore = source.dominantCategory && source.dominantCategory === target.dominantCategory ? 100 : 0;
+      const fingerprintScore = (
+        structuralMatches / structuralFields.length * 0.75 +
+        similarityRatio(source.symmetryScore, target.symmetryScore) * 0.25
+      ) * 100;
+      const similarityScore = Number(
+        (componentScore * 0.2 + geometryScore * 0.25 + materialScore * 0.15 + categoryScore * 0.15 + fingerprintScore * 0.25).toFixed(2)
+      );
+
+      if (structuralMatches === structuralFields.length) reasons.push("same structure");
+      if (materialScore === 100) reasons.push("same material");
+      if (categoryScore === 100) reasons.push("same category");
+      if (geometryScore >= 90) reasons.push("same dimensions");
+      if (source.drawerCount !== target.drawerCount) reasons.push("different drawer count");
+      if (source.panelCount !== target.panelCount) reasons.push("different panels");
+      if (source.doorCount !== target.doorCount) reasons.push("different door count");
+      if (source.shelfCount !== target.shelfCount) reasons.push("different shelf count");
+
+      results.push({
+        sourceModuleId: source.moduleId,
+        targetModuleId: target.moduleId,
+        similarityScore,
+        componentScore: Number(componentScore.toFixed(2)),
+        geometryScore: Number(geometryScore.toFixed(2)),
+        materialScore,
+        categoryScore,
+        fingerprintScore: Number(fingerprintScore.toFixed(2)),
+        reasons,
+      });
+    }
+  }
+
+  return results;
+}
+
+function buildStructuralFingerprintV2(
+  fingerprint: ImportedModuleFingerprintV1,
+  assemblyTree: ImportedAssemblyNodeV1,
+  semanticGroups: ImportedSemanticGroupV1[]
+): ImportedModuleFingerprintV1 {
+  const modulePartIds = new Set(
+    semanticGroups
+      .filter((group) => group.partIds.some((partId) => fingerprint.moduleId.includes(partId)))
+      .flatMap((group) => group.partIds)
+  );
+  const relevantGroups = semanticGroups.filter((group) =>
+    group.partIds.some((partId) => modulePartIds.has(partId))
+  );
+  let hierarchyDepth = 0;
+  let structuralNodes = 0;
+  let estimatedSubAssemblies = 0;
+  const visitAssembly = (node: ImportedAssemblyNodeV1) => {
+    const isRelevant = Boolean(node.partId && modulePartIds.has(node.partId));
+    const hasRelevantChild = node.children.some((child) => Boolean(child.partId && modulePartIds.has(child.partId)));
+    if (isRelevant || hasRelevantChild) {
+      structuralNodes += 1;
+      hierarchyDepth = Math.max(hierarchyDepth, node.depth);
+      if (node.children.length > 0) estimatedSubAssemblies += 1;
+    }
+    node.children.forEach(visitAssembly);
+  };
+  visitAssembly(assemblyTree);
+
+  const patternCounts = new Map<string, number>();
+  relevantGroups.forEach((group) => {
+    const patternKey = [
+      group.groupType,
+      group.dominantCategory || "none",
+      group.dominantMaterial || "none",
+      group.componentCount,
+    ].join("|");
+    patternCounts.set(patternKey, (patternCounts.get(patternKey) || 0) + 1);
+  });
+  const repeatedPatterns = Array.from(patternCounts.values()).reduce(
+    (total, count) => total + Math.max(0, count - 1),
+    0
+  );
+  const structuralComplexity = Number(
+    (
+      structuralNodes +
+      hierarchyDepth * 1.5 +
+      estimatedSubAssemblies * 2 +
+      repeatedPatterns +
+      fingerprint.componentCount * 0.5
+    ).toFixed(2)
+  );
+  const signatureParts = [
+    `c${fingerprint.componentCount}`,
+    `p${fingerprint.panelCount}`,
+    `d${fingerprint.drawerCount}`,
+    `o${fingerprint.doorCount}`,
+    `s${fingerprint.shelfCount}`,
+    `h${hierarchyDepth}`,
+    `n${structuralNodes}`,
+    `a${estimatedSubAssemblies}`,
+    `r${repeatedPatterns}`,
+  ];
+
+  return {
+    ...fingerprint,
+    structuralSignature: signatureParts.join("-"),
+    hierarchyDepth,
+    structuralNodes,
+    structuralComplexity,
+    repeatedPatterns,
+    estimatedSubAssemblies,
+    estimatedDrawerGroups: fingerprint.drawerCount > 0 ? Math.max(1, Math.ceil(fingerprint.drawerCount / 2)) : 0,
+    estimatedDoorGroups: fingerprint.doorCount > 0 ? Math.max(1, Math.ceil(fingerprint.doorCount / 2)) : 0,
+    estimatedShelfGroups: fingerprint.shelfCount > 0 ? Math.max(1, Math.ceil(fingerprint.shelfCount / 3)) : 0,
+  };
+}
+
+function buildImportedRecognitionV2(
+  structuralFingerprints: ImportedModuleFingerprintV1[],
+  fingerprints: ImportedModuleFingerprintV1[],
+  semanticGroups: ImportedSemanticGroupV1[]
+): ImportedRecognizedModuleV2[] {
+  const baseFingerprintById = new Map(fingerprints.map((fingerprint) => [fingerprint.moduleId, fingerprint]));
+
+  return structuralFingerprints.map((structuralFingerprint) => {
+    const fingerprint = baseFingerprintById.get(structuralFingerprint.moduleId) || structuralFingerprint;
+    const semanticGroupCount = semanticGroups.filter((group) =>
+      group.groupId.includes(structuralFingerprint.moduleId) ||
+      structuralFingerprint.moduleId.includes(group.groupId)
+    ).length;
+    const candidates = [
+      {
+        type: "cassettiera",
+        checks: [
+          ["sidePanelCount >= 2", fingerprint.sidePanelCount >= 2, 25],
+          ["drawer groups/count >= 2", Number(structuralFingerprint.estimatedDrawerGroups || 0) >= 2 || fingerprint.drawerCount >= 2, 35],
+          ["hardwareCount >= 2", fingerprint.hardwareCount >= 2, 20],
+          ["backPanelCount >= 1", fingerprint.backPanelCount >= 1, 20],
+        ] as Array<[string, boolean, number]>,
+      },
+      {
+        type: "base-con-anta",
+        checks: [
+          ["door groups/count >= 1", Number(structuralFingerprint.estimatedDoorGroups || 0) >= 1 || fingerprint.doorCount >= 1, 55],
+          ["drawer groups <= 1", Number(structuralFingerprint.estimatedDrawerGroups || 0) <= 1, 25],
+          ["sidePanelCount >= 2", fingerprint.sidePanelCount >= 2, 20],
+        ] as Array<[string, boolean, number]>,
+      },
+      {
+        type: "colonna",
+        checks: [
+          ["hierarchyDepth >= 4", Number(structuralFingerprint.hierarchyDepth || 0) >= 4, 30],
+          ["shelf groups/count >= 3", Number(structuralFingerprint.estimatedShelfGroups || 0) >= 3 || fingerprint.shelfCount >= 3, 35],
+          ["height greater than width/depth", fingerprint.boundingBox.height > fingerprint.boundingBox.width && fingerprint.boundingBox.height > fingerprint.boundingBox.depth, 35],
+        ] as Array<[string, boolean, number]>,
+      },
+      {
+        type: "reception",
+        checks: [
+          ["width much greater than depth", fingerprint.boundingBox.width >= fingerprint.boundingBox.depth * 2, 35],
+          ["estimatedSubAssemblies >= 2", Number(structuralFingerprint.estimatedSubAssemblies || 0) >= 2, 30],
+          ["high componentCount", fingerprint.componentCount >= 10, 25],
+          ["semantic groups available", semanticGroupCount > 0, 10],
+        ] as Array<[string, boolean, number]>,
+      },
+    ].map((candidate) => ({
+      ...candidate,
+      score: candidate.checks.reduce((score, [, matched, points]) => score + (matched ? points : 0), 0),
+    })).sort((a, b) => b.score - a.score);
+    const bestCandidate = candidates[0];
+    const recognized = bestCandidate.score >= 50;
+    const matchedFeatures = bestCandidate.checks.filter(([, matched]) => matched).map(([feature]) => feature);
+    const missingFeatures = bestCandidate.checks.filter(([, matched]) => !matched).map(([feature]) => feature);
+    const recognitionScore = recognized ? bestCandidate.score : Math.min(bestCandidate.score, 49);
+
+    return {
+      moduleId: structuralFingerprint.moduleId,
+      recognizedType: recognized ? bestCandidate.type : "unknown-module",
+      confidence: Number((recognitionScore / 100).toFixed(2)),
+      candidateTypes: candidates.map((candidate) => ({ type: candidate.type, score: candidate.score })),
+      matchedFeatures,
+      missingFeatures,
+      recognitionReason: recognized
+        ? `${bestCandidate.type}: ${matchedFeatures.join(", ")}`
+        : `unknown-module: insufficient structural evidence; best candidate ${bestCandidate.type}`,
+      recognitionScore,
+    };
+  });
+}
+
+function buildImportedAssemblyTreeV1(root: THREE.Object3D): ImportedAssemblyNodeV1 {
+  const buildNode = (object: THREE.Object3D, depth: number): ImportedAssemblyNodeV1 => ({
+    assemblyId: String(object.uuid || object.id),
+    name: String(object.name || object.type || `Assembly ${object.id}`),
+    objectType: String(object.type || "Object3D"),
+    depth,
+    partId: String(object.userData?.bagastudioPartId || object.userData?.bagastudioMeshName || "") || undefined,
+    category: String(object.userData?.bagastudioCategory || "") || undefined,
+    materialGroup: String(object.userData?.bagastudioMaterialGroup || "") || undefined,
+    children: object.children.map((child) => buildNode(child, depth + 1)),
+  });
+
+  return buildNode(root, 0);
+}
+
+function buildSemanticAssemblyTreeV1(assemblyTree: ImportedAssemblyNodeV1): ImportedSemanticAssemblyNodeV1 {
+  const buildSemanticNode = (node: ImportedAssemblyNodeV1): ImportedSemanticAssemblyNodeV1 => {
+    const children = node.children.map(buildSemanticNode);
+    const categoryCounts = new Map<string, number>();
+    const materialCounts = new Map<string, number>();
+    const collectSemantics = (target: ImportedSemanticAssemblyNodeV1) => {
+      if (target.category) categoryCounts.set(target.category, (categoryCounts.get(target.category) || 0) + 1);
+      if (target.materialGroup) materialCounts.set(target.materialGroup, (materialCounts.get(target.materialGroup) || 0) + 1);
+      target.children.forEach(collectSemantics);
+    };
+    const mostCommon = (counts: Map<string, number>) =>
+      Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const semanticNode: ImportedSemanticAssemblyNodeV1 = {
+      ...node,
+      children,
+      childCount: children.length,
+      estimatedModuleType: node.objectType === "Mesh" ? "part" : node.name || "unknown-assembly",
+      semanticConfidence: 0,
+    };
+    collectSemantics(semanticNode);
+    semanticNode.dominantCategory = mostCommon(categoryCounts);
+    semanticNode.dominantMaterial = mostCommon(materialCounts);
+    semanticNode.estimatedModuleType = semanticNode.dominantCategory || (children.length > 0 ? "assembly" : "unknown-assembly");
+    semanticNode.semanticConfidence = Number(
+      Math.min(1, (semanticNode.dominantCategory ? 0.45 : 0) + (semanticNode.dominantMaterial ? 0.3 : 0) + (children.length > 0 ? 0.25 : 0)).toFixed(2)
+    );
+    return semanticNode;
+  };
+
+  return buildSemanticNode(assemblyTree);
+}
+
+function buildImportedSemanticGroupsV1(
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): ImportedSemanticGroupV1[] {
+  const groups = new Map<string, { name: string; type: string; confidence: number; reasons: string[]; components: BagaStudioRuntimeComponent[] }>();
+  runtimeComponents.forEach((component) => {
+    const parentName = String((component as any)?.parentName || component.runtimeMetadata?.parentName || "").trim();
+    const category = String(component.category || "").trim();
+    const materialGroup = String(component.materialGroup || "").trim();
+    const componentType = String(component.componentType || "").trim();
+    const classification = [category, materialGroup, componentType].filter(Boolean).join(" / ");
+    const hasStrongParent = parentName.length > 1;
+    const key = hasStrongParent
+      ? `parent:${parentName.toLowerCase()}`
+      : classification
+        ? `classification:${classification.toLowerCase()}`
+        : `isolated:${String(component.partId || component.id)}`;
+    const group = groups.get(key) || {
+      name: hasStrongParent ? parentName : classification || String(component.displayName || component.meshName || component.id),
+      type: hasStrongParent ? "parent" : componentType || category || materialGroup || "isolated",
+      confidence: hasStrongParent ? 0.85 : classification ? 0.65 : 0.25,
+      reasons: [hasStrongParent ? "significant parentName" : classification ? "compatible category/material/type" : "isolated component"],
+      components: [],
+    };
+    group.components.push(component);
+    groups.set(key, group);
+  });
+
+  return Array.from(groups.entries()).map(([key, group], index) => {
+    const box = new THREE.Box3();
+    const categoryCounts = new Map<string, number>();
+    const materialCounts = new Map<string, number>();
+    group.components.forEach((component) => {
+      const sourceBounds = component.runtimeMetadata?.bounds || component.bounds || {};
+      const min = sourceBounds.min;
+      const max = sourceBounds.max;
+      if (Array.isArray(min) && Array.isArray(max) && min.length >= 3 && max.length >= 3) {
+        box.expandByPoint(new THREE.Vector3(Number(min[0] || 0), Number(min[1] || 0), Number(min[2] || 0)));
+        box.expandByPoint(new THREE.Vector3(Number(max[0] || 0), Number(max[1] || 0), Number(max[2] || 0)));
+      } else {
+        const halfWidth = Number(sourceBounds.width || 0) / 2;
+        const halfHeight = Number(sourceBounds.height || 0) / 2;
+        const halfDepth = Number(sourceBounds.depth || 0) / 2;
+        box.expandByPoint(new THREE.Vector3(-halfWidth, -halfHeight, -halfDepth));
+        box.expandByPoint(new THREE.Vector3(halfWidth, halfHeight, halfDepth));
+      }
+      const category = String(component.category || "").trim();
+      const material = String(component.materialGroup || "").trim();
+      if (category) categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+      if (material) materialCounts.set(material, (materialCounts.get(material) || 0) + 1);
+    });
+    const safeBox = box.isEmpty() ? new THREE.Box3(new THREE.Vector3(), new THREE.Vector3()) : box;
+    const size = safeBox.getSize(new THREE.Vector3());
+    const center = safeBox.getCenter(new THREE.Vector3());
+    const mostCommon = (counts: Map<string, number>) =>
+      Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const componentCount = group.components.length;
+
+    return {
+      groupId: sanitizeComponentId(`semantic_group_${key}`, index + 1),
+      groupName: group.name,
+      groupType: group.type,
+      partIds: group.components.map((component) => String(component.partId || component.id)),
+      componentCount,
+      dominantCategory: mostCommon(categoryCounts),
+      dominantMaterial: mostCommon(materialCounts),
+      bounds: {
+        min: safeBox.min.toArray() as [number, number, number],
+        max: safeBox.max.toArray() as [number, number, number],
+        width: Number(size.x.toFixed(4)),
+        height: Number(size.y.toFixed(4)),
+        depth: Number(size.z.toFixed(4)),
+      },
+      center: center.toArray().map((value) => Number(value.toFixed(4))) as [number, number, number],
+      confidence: componentCount > 1 ? group.confidence : Math.min(group.confidence, 0.35),
+      reasons: [...group.reasons, componentCount > 1 ? "multi-part semantic group" : "single-part fallback"],
+    };
+  });
+}
+
 function findModuleByIdV1(
   registry: ImportedModuleRegistryEntryV1[],
   moduleId: string
@@ -1372,6 +1905,60 @@ function resolveSelectedImportedModuleV1(
   moduleRegistry: ImportedModuleRegistryEntryV1[]
 ): SelectedImportedModuleV1 {
   return findModuleByPartIdV1(moduleRegistry, partId) || null;
+}
+
+function resolveSemanticSelectedModuleV1(
+  partId: string,
+  selectedModule: SelectedImportedModuleV1,
+  assemblyTree: ImportedAssemblyNodeV1,
+  semanticAssemblyTree: ImportedSemanticAssemblyNodeV1,
+  moduleRegistry: ImportedModuleRegistryEntryV1[]
+): {
+  module: SelectedImportedModuleV1;
+  childCount: number;
+  semanticConfidence: number;
+  reason: string;
+} {
+  const collectPartIds = (node: ImportedAssemblyNodeV1): string[] => [
+    ...(node.partId ? [node.partId] : []),
+    ...node.children.flatMap(collectPartIds),
+  ];
+  const findSemanticPath = (
+    assemblyNode: ImportedAssemblyNodeV1,
+    semanticNode: ImportedSemanticAssemblyNodeV1
+  ): ImportedSemanticAssemblyNodeV1[] | null => {
+    if (assemblyNode.partId === partId) return [semanticNode];
+    for (let index = 0; index < assemblyNode.children.length; index += 1) {
+      const childPath = findSemanticPath(assemblyNode.children[index], semanticNode.children[index]);
+      if (childPath) return [semanticNode, ...childPath];
+    }
+    return null;
+  };
+  const semanticPath = findSemanticPath(assemblyTree, semanticAssemblyTree) || [];
+  const preferredAssembly = [...semanticPath]
+    .reverse()
+    .find((node) => node.childCount > 1 && node.semanticConfidence >= 0.5);
+  if (!preferredAssembly) {
+    return { module: selectedModule, childCount: 0, semanticConfidence: 0, reason: "no significant semantic assembly" };
+  }
+
+  const assemblyPartIds = new Set(collectPartIds(preferredAssembly));
+  const semanticModule = moduleRegistry.find(
+    (module) => assemblyPartIds.has(partId) && module.partIds.some((modulePartId) => assemblyPartIds.has(modulePartId))
+  );
+  return semanticModule
+    ? {
+        module: semanticModule,
+        childCount: preferredAssembly.childCount,
+        semanticConfidence: preferredAssembly.semanticConfidence,
+        reason: "semantic assembly matched existing module",
+      }
+    : {
+        module: selectedModule,
+        childCount: preferredAssembly.childCount,
+        semanticConfidence: preferredAssembly.semanticConfidence,
+        reason: "semantic assembly has no matching registry module",
+      };
 }
 
 function buildImportedModelModulesV1(
@@ -4109,6 +4696,7 @@ function ProductModel({
   const selectedPartIdV1 = useConfigStore((state) => state.selectedPartId);
   const [selectedImportedModuleIdV1, setSelectedImportedModuleIdV1] = useState<string | null>(null);
   const [selectedImportedModuleV1, setSelectedImportedModuleV1] = useState<SelectedImportedModuleV1>(null);
+  const [importedModelInspectorOpenV1, setImportedModelInspectorOpenV1] = useState(false);
 
   const runtimeModelFormat = useMemo(
     () => inferModelFormat(productModel, productModelFormat),
@@ -4198,6 +4786,15 @@ function ProductModel({
       );
       const moduleRegistryV1 = buildImportedModuleRegistryV1(resolvedModulesV1, "imported-product-main");
       const moduleMetadataV1 = buildImportedModuleMetadataV1(moduleRegistryV1, analyzedComponents);
+      const moduleFingerprintsV1 = buildImportedModuleFingerprintsV1(moduleRegistryV1, analyzedComponents);
+      const moduleSimilarityV1 = buildImportedModuleSimilarityV1(moduleFingerprintsV1);
+      const assemblyTreeV1 = buildImportedAssemblyTreeV1(object);
+      const semanticAssemblyTreeV1 = buildSemanticAssemblyTreeV1(assemblyTreeV1);
+      const semanticGroupsV1 = buildImportedSemanticGroupsV1(analyzedComponents);
+      const structuralFingerprintsV2 = moduleFingerprintsV1.map((fingerprint) =>
+        buildStructuralFingerprintV2(fingerprint, assemblyTreeV1, semanticGroupsV1)
+      );
+      const recognitionV2 = buildImportedRecognitionV2(structuralFingerprintsV2, moduleFingerprintsV1, semanticGroupsV1);
       const moduleQueryV1 = {
         findModuleById: (moduleId: string) => findModuleByIdV1(moduleRegistryV1, moduleId),
         findModuleByPartId: (partId: string) => findModuleByPartIdV1(moduleRegistryV1, partId),
@@ -4210,15 +4807,115 @@ function ProductModel({
       object.userData.bagastudioResolvedModulesV1 = resolvedModulesV1;
       object.userData.bagastudioModuleRegistryV1 = moduleRegistryV1;
       object.userData.bagastudioModuleMetadataV1 = moduleMetadataV1;
+      object.userData.bagastudioFingerprintsV1 = moduleFingerprintsV1;
+      object.userData.bagastudioSimilarityV1 = moduleSimilarityV1;
+      object.userData.bagastudioAssemblyTreeV1 = assemblyTreeV1;
+      object.userData.bagastudioSemanticAssemblyTreeV1 = semanticAssemblyTreeV1;
+      object.userData.bagastudioSemanticGroupsV1 = semanticGroupsV1;
+      object.userData.bagastudioStructuralFingerprintsV2 = structuralFingerprintsV2;
+      object.userData.bagastudioRecognitionV2 = recognitionV2;
       object.userData.bagastudioModuleQueryV1 = moduleQueryV1;
 
       if (typeof window !== "undefined") {
+        const assemblyNodesV1: ImportedAssemblyNodeV1[] = [];
+        const collectAssemblyNodesV1 = (node: ImportedAssemblyNodeV1) => {
+          assemblyNodesV1.push(node);
+          node.children.forEach(collectAssemblyNodesV1);
+        };
+        collectAssemblyNodesV1(assemblyTreeV1);
+        const assemblyDiagnosticsV1 = {
+          assemblyCount: assemblyNodesV1.length,
+          maxDepth: Math.max(0, ...assemblyNodesV1.map((node) => node.depth)),
+          orphans: assemblyNodesV1.filter((node) => node.depth > 0 && !node.partId && node.children.length === 0).length,
+          topAssemblies: assemblyTreeV1.children.slice(0, 10).map((node) => node.name),
+        };
+        const semanticAssemblyNodesV1: ImportedSemanticAssemblyNodeV1[] = [];
+        const collectSemanticAssemblyNodesV1 = (node: ImportedSemanticAssemblyNodeV1) => {
+          semanticAssemblyNodesV1.push(node);
+          node.children.forEach(collectSemanticAssemblyNodesV1);
+        };
+        collectSemanticAssemblyNodesV1(semanticAssemblyTreeV1);
+        const semanticAssemblyDiagnosticsV1 = {
+          semanticAssemblies: semanticAssemblyNodesV1.length,
+          recognizedModules: semanticAssemblyNodesV1.filter((node) => node.estimatedModuleType !== "unknown-assembly").length,
+          unknownAssemblies: semanticAssemblyNodesV1.filter((node) => node.estimatedModuleType === "unknown-assembly").length,
+          averageConfidence: Number(
+            (semanticAssemblyNodesV1.reduce((total, node) => total + node.semanticConfidence, 0) / Math.max(1, semanticAssemblyNodesV1.length)).toFixed(2)
+          ),
+        };
+        const semanticGroupsDiagnosticsV1 = {
+          groupCount: semanticGroupsV1.length,
+          multiPartGroups: semanticGroupsV1.filter((group) => group.componentCount > 1).length,
+          singlePartGroups: semanticGroupsV1.filter((group) => group.componentCount <= 1).length,
+          largestGroups: [...semanticGroupsV1]
+            .sort((a, b) => b.componentCount - a.componentCount)
+            .slice(0, 10)
+            .map((group) => ({ groupId: group.groupId, componentCount: group.componentCount })),
+          averageConfidence: Number(
+            (semanticGroupsV1.reduce((total, group) => total + group.confidence, 0) / Math.max(1, semanticGroupsV1.length)).toFixed(2)
+          ),
+        };
+        const fingerprintDiagnosticsV1 = {
+          fingerprintCount: moduleFingerprintsV1.length,
+          largestModules: [...moduleFingerprintsV1]
+            .sort((a, b) => b.componentCount - a.componentCount)
+            .slice(0, 10)
+            .map((fingerprint) => ({ moduleId: fingerprint.moduleId, componentCount: fingerprint.componentCount })),
+          averageComponents: Number(
+            (moduleFingerprintsV1.reduce((total, fingerprint) => total + fingerprint.componentCount, 0) / Math.max(1, moduleFingerprintsV1.length)).toFixed(2)
+          ),
+          averageConfidence: Number(
+            (moduleFingerprintsV1.reduce((total, fingerprint) => total + fingerprint.fingerprintConfidence, 0) / Math.max(1, moduleFingerprintsV1.length)).toFixed(3)
+          ),
+        };
+        const similarityDiagnosticsV1 = {
+          comparisonCount: moduleSimilarityV1.length,
+          highestSimilarity: Math.max(0, ...moduleSimilarityV1.map((comparison) => comparison.similarityScore)),
+          averageSimilarity: Number(
+            (moduleSimilarityV1.reduce((total, comparison) => total + comparison.similarityScore, 0) / Math.max(1, moduleSimilarityV1.length)).toFixed(2)
+          ),
+          topMatches: [...moduleSimilarityV1]
+            .sort((a, b) => b.similarityScore - a.similarityScore)
+            .slice(0, 10),
+        };
+        const structuralFingerprintDiagnosticsV2 = {
+          moduleCount: structuralFingerprintsV2.length,
+          averageHierarchyDepth: Number(
+            (structuralFingerprintsV2.reduce((total, fingerprint) => total + Number(fingerprint.hierarchyDepth || 0), 0) / Math.max(1, structuralFingerprintsV2.length)).toFixed(2)
+          ),
+          averageStructuralComplexity: Number(
+            (structuralFingerprintsV2.reduce((total, fingerprint) => total + Number(fingerprint.structuralComplexity || 0), 0) / Math.max(1, structuralFingerprintsV2.length)).toFixed(2)
+          ),
+          largestStructure: [...structuralFingerprintsV2]
+            .sort((a, b) => Number(b.structuralComplexity || 0) - Number(a.structuralComplexity || 0))[0] || null,
+          averageSubAssemblies: Number(
+            (structuralFingerprintsV2.reduce((total, fingerprint) => total + Number(fingerprint.estimatedSubAssemblies || 0), 0) / Math.max(1, structuralFingerprintsV2.length)).toFixed(2)
+          ),
+        };
+        const recognitionDiagnosticsV2 = {
+          recognizedModules: recognitionV2.filter((recognition) => recognition.recognizedType !== "unknown-module").length,
+          averageConfidence: Number(
+            (recognitionV2.reduce((total, recognition) => total + recognition.confidence, 0) / Math.max(1, recognitionV2.length)).toFixed(2)
+          ),
+          recognizedTypes: Array.from(new Set(recognitionV2.map((recognition) => recognition.recognizedType))),
+          unknownModules: recognitionV2.filter((recognition) => recognition.recognizedType === "unknown-module").length,
+          topRecognitions: [...recognitionV2]
+            .sort((a, b) => b.recognitionScore - a.recognitionScore)
+            .slice(0, 10),
+        };
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
         (window as any).__bagastudioImportedGraphV1 = importedGraphV1;
         (window as any).__bagastudioResolvedModulesV1 = resolvedModulesV1;
         (window as any).__bagastudioModuleRegistryV1 = moduleRegistryV1;
         (window as any).__bagastudioModuleMetadataV1 = moduleMetadataV1;
+        (window as any).__bagastudioFingerprintsV1 = moduleFingerprintsV1;
+        (window as any).__bagastudioSimilarityV1 = moduleSimilarityV1;
+        (window as any).__bagastudioAssemblyTreeV1 = assemblyTreeV1;
+        (window as any).__bagastudioSemanticAssemblyTreeV1 = semanticAssemblyTreeV1;
+        (window as any).__bagastudioSemanticGroupsV1 = semanticGroupsV1;
+        (window as any).__bagastudioStructuralFingerprintsV2 = structuralFingerprintsV2;
+        (window as any).__bagastudioRecognitionV2 = recognitionV2;
         (window as any).__bagastudioModuleQueryV1 = moduleQueryV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
@@ -4226,6 +4923,13 @@ function ProductModel({
         console.log("[BAGASTUDIO RESOLVED MODULES V1]", resolvedModulesV1);
         console.log("[BAGASTUDIO MODULE REGISTRY V1]", moduleRegistryV1);
         console.log("[BAGASTUDIO MODULE METADATA V1]", moduleMetadataV1);
+        console.log("[BAGASTUDIO FINGERPRINT V1]", fingerprintDiagnosticsV1);
+        console.log("[BAGASTUDIO SIMILARITY V1]", similarityDiagnosticsV1);
+        console.log("[BAGASTUDIO ASSEMBLY TREE V1]", assemblyDiagnosticsV1);
+        console.log("[BAGASTUDIO SEMANTIC ASSEMBLY V1]", semanticAssemblyDiagnosticsV1);
+        console.log("[BAGASTUDIO SEMANTIC GROUPS V1]", semanticGroupsDiagnosticsV1);
+        console.log("[BAGASTUDIO STRUCTURAL FINGERPRINT V2]", structuralFingerprintDiagnosticsV2);
+        console.log("[BAGASTUDIO RECOGNITION V2]", recognitionDiagnosticsV2);
         console.log("[BAGASTUDIO MODULE QUERY V1]", moduleQueryV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
@@ -4347,8 +5051,37 @@ function ProductModel({
   useEffect(() => {
     const moduleRegistryV1 = (loadedRoot?.userData?.bagastudioModuleRegistryV1 || []) as ImportedModuleRegistryEntryV1[];
     const selectedModuleV1 = resolveSelectedImportedModuleV1(String(selectedPartIdV1 || ""), moduleRegistryV1);
-    setSelectedImportedModuleIdV1(selectedModuleV1?.moduleId || null);
-    setSelectedImportedModuleV1(selectedModuleV1);
+    const assemblyTreeV1 = loadedRoot?.userData?.bagastudioAssemblyTreeV1 as ImportedAssemblyNodeV1 | undefined;
+    const semanticAssemblyTreeV1 = loadedRoot?.userData?.bagastudioSemanticAssemblyTreeV1 as ImportedSemanticAssemblyNodeV1 | undefined;
+    const semanticSelectionV1 = assemblyTreeV1 && semanticAssemblyTreeV1
+      ? resolveSemanticSelectedModuleV1(
+          String(selectedPartIdV1 || ""),
+          selectedModuleV1,
+          assemblyTreeV1,
+          semanticAssemblyTreeV1,
+          moduleRegistryV1
+        )
+      : { module: selectedModuleV1, childCount: 0, semanticConfidence: 0, reason: "semantic assembly unavailable" };
+    setSelectedImportedModuleIdV1(semanticSelectionV1.module?.moduleId || null);
+    setSelectedImportedModuleV1(semanticSelectionV1.module);
+    if (typeof window !== "undefined") {
+      const semanticSelectionDiagnosticsV1 = {
+        originalModuleId: selectedModuleV1?.moduleId || null,
+        semanticModuleId: semanticSelectionV1.module?.moduleId || null,
+        partId: String(selectedPartIdV1 || ""),
+        childCount: semanticSelectionV1.childCount,
+        semanticConfidence: semanticSelectionV1.semanticConfidence,
+        reason: semanticSelectionV1.reason,
+      };
+      (window as any).__bagastudioSemanticSelectedModuleV1 = semanticSelectionV1.module;
+      console.log("[BAGASTUDIO SEMANTIC SELECTED MODULE V1]", semanticSelectionDiagnosticsV1);
+      console.log("[BAGASTUDIO SEMANTIC MODULE ACTIVE]", {
+        oldModuleId: selectedModuleV1?.moduleId || null,
+        newModuleId: semanticSelectionV1.module?.moduleId || null,
+        changed: selectedModuleV1?.moduleId !== semanticSelectionV1.module?.moduleId,
+        reason: semanticSelectionV1.reason,
+      });
+    }
   }, [loadedRoot, selectedPartIdV1]);
 
   useEffect(() => {
@@ -4361,6 +5094,47 @@ function ProductModel({
       });
     }
   }, [loadedRoot, selectedImportedModuleIdV1, selectedImportedModuleV1]);
+
+  const importedModelInspectorDataV1 = useMemo(() => {
+    const assemblyTreeV1 = loadedRoot?.userData?.bagastudioAssemblyTreeV1 as ImportedAssemblyNodeV1 | undefined;
+    const semanticAssemblyTreeV1 = loadedRoot?.userData?.bagastudioSemanticAssemblyTreeV1 as ImportedSemanticAssemblyNodeV1 | undefined;
+    const semanticGroupsV1 = (loadedRoot?.userData?.bagastudioSemanticGroupsV1 || []) as ImportedSemanticGroupV1[];
+    const partId = String(selectedPartIdV1 || "");
+    const findAssemblyNodeV1 = (node?: ImportedAssemblyNodeV1): ImportedAssemblyNodeV1 | undefined => {
+      if (!node) return undefined;
+      if (node.partId === partId) return node;
+      for (const child of node.children) {
+        const found = findAssemblyNodeV1(child);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const findSemanticNodeV1 = (node?: ImportedSemanticAssemblyNodeV1): ImportedSemanticAssemblyNodeV1 | undefined => {
+      if (!node) return undefined;
+      if (node.partId === partId) return node;
+      for (const child of node.children) {
+        const found = findSemanticNodeV1(child);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const assemblyNodeV1 = findAssemblyNodeV1(assemblyTreeV1);
+    const semanticNodeV1 = findSemanticNodeV1(semanticAssemblyTreeV1);
+    const semanticGroupV1 = semanticGroupsV1.find((group) => group.partIds.includes(partId));
+
+    return {
+      partId: partId || null,
+      moduleId: selectedImportedModuleV1?.moduleId || null,
+      moduleType: selectedImportedModuleV1?.moduleType || null,
+      childCount: semanticNodeV1?.childCount ?? assemblyNodeV1?.children.length ?? 0,
+      semanticConfidence: semanticNodeV1?.semanticConfidence ?? selectedImportedModuleV1?.confidence ?? 0,
+      dominantCategory: semanticGroupV1?.dominantCategory || semanticNodeV1?.dominantCategory || null,
+      dominantMaterial: semanticGroupV1?.dominantMaterial || semanticNodeV1?.dominantMaterial || null,
+      reason: semanticGroupV1?.reasons.join(", ") || (semanticNodeV1 ? "semantic assembly match" : "no significant semantic assembly"),
+      assemblyDepth: assemblyNodeV1?.depth ?? null,
+      groupSize: semanticGroupV1?.componentCount ?? 0,
+    };
+  }, [loadedRoot, selectedImportedModuleV1, selectedPartIdV1]);
 
  const setSelectedPartId = useConfigStore(
   (state) => state.setSelectedPart
@@ -4513,6 +5287,15 @@ const createSelectedPartHighlightMaterial = (
 const applySelectedPartLightUpV42 = (mesh: THREE.Mesh, highlightKey = mesh.uuid) => {
   const existing = highlightedMeshMapRef.current.get(highlightKey);
   if (existing?.mesh === mesh) return;
+
+  const sourceMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  if (sourceMaterials.length === 0 || sourceMaterials.some((material) => !material || typeof material.clone !== "function")) {
+    console.warn("[BAGASTUDIO HIGHLIGHT SKIPPED]", {
+      partId: highlightKey,
+      reason: "mesh material missing or not clonable",
+    });
+    return;
+  }
 
   restoreHighlightedMesh(highlightKey);
 
@@ -5401,6 +6184,57 @@ if (keepExistingHighlights) {
 applySelectedPartLightUpV42(mesh, selectedKey);
   }, [scene, selectedPartId]);
 
+  useEffect(() => {
+    if (!scene) return;
+    const highlightedPartIdsV1 = new Set(selectedImportedModuleV1?.partIds || []);
+    if (highlightedPartIdsV1.size === 0) {
+      if (typeof window !== "undefined") {
+        (window as any).__bagastudioHighlightedModuleV1 = null;
+        console.log("[BAGASTUDIO MODULE HIGHLIGHT V1]", null);
+      }
+      return;
+    }
+
+    clearSelectedPartHighlightsV4252();
+    scene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const meshAliases = [
+        mesh.userData?.bagastudioPartId,
+        mesh.userData?.bagastudioMeshName,
+        mesh.userData?.bagastudioDisplayName,
+        mesh.userData?.bagastudioOriginalName,
+        mesh.name,
+      ].map((value) => String(value || "")).filter(Boolean);
+      const matchedPartId = meshAliases.find((alias) => highlightedPartIdsV1.has(alias));
+      if (matchedPartId) applySelectedPartLightUpV42(mesh, matchedPartId);
+    });
+
+    if (typeof window !== "undefined") {
+      const moduleMetadataV2 = ((loadedRoot?.userData?.bagastudioModuleMetadataV1 || []) as ImportedModuleMetadataV1[])
+        .find((metadata) => metadata.moduleId === selectedImportedModuleV1!.moduleId);
+      const highlightedModuleDiagnosticsV2 = {
+        moduleId: selectedImportedModuleV1!.moduleId,
+        moduleName: selectedImportedModuleV1!.moduleName,
+        moduleType: selectedImportedModuleV1!.moduleType,
+        partCount: selectedImportedModuleV1!.partIds.length,
+        partIds: selectedImportedModuleV1!.partIds.slice(0, 10),
+        confidence: selectedImportedModuleV1!.confidence,
+        mainMaterial: moduleMetadataV2?.mainMaterial,
+        category: moduleMetadataV2?.category,
+      };
+      (window as any).__bagastudioHighlightedModuleV1 = selectedImportedModuleV1;
+      (window as any).__bagastudioLastHighlightedModuleV2 = highlightedModuleDiagnosticsV2;
+      console.log("[BAGASTUDIO MODULE HIGHLIGHT V1]", highlightedModuleDiagnosticsV2);
+      if (selectedImportedModuleV1!.partIds.length <= 1) {
+        console.warn("[BAGASTUDIO MODULE TOO SMALL V2]", {
+          reason: "resolved module contains one or fewer partIds",
+          ...highlightedModuleDiagnosticsV2,
+        });
+      }
+    }
+  }, [scene, loadedRoot, selectedImportedModuleV1]);
+
   const importedModelOffsetDiagnostics = useMemo(() => {
     if (!scene) return null;
 
@@ -5681,6 +6515,52 @@ applySelectedPartLightUpV42(mesh, selectedKey);
 
   return (
     <>
+      {typeof window !== "undefined" && (window as any).__BAGASTUDIO_DEV__ === true && (
+        <Html fullscreen style={{ pointerEvents: "none" }}>
+          <div
+            style={{
+              position: "absolute",
+              left: 12,
+              bottom: 12,
+              width: 280,
+              border: "1px solid rgba(148, 163, 184, 0.45)",
+              borderRadius: 8,
+              background: "rgba(15, 23, 42, 0.94)",
+              color: "#e2e8f0",
+              fontFamily: "monospace",
+              fontSize: 11,
+              pointerEvents: "auto",
+              zIndex: 1000,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setImportedModelInspectorOpenV1((current) => !current)}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                border: 0,
+                background: "transparent",
+                color: "inherit",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              Imported Model Intelligence {importedModelInspectorOpenV1 ? "−" : "+"}
+            </button>
+            {importedModelInspectorOpenV1 && (
+              <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: "4px 8px", padding: "0 10px 10px" }}>
+                {Object.entries(importedModelInspectorDataV1).map(([label, value]) => (
+                  <div key={label} style={{ display: "contents" }}>
+                    <span style={{ color: "#94a3b8" }}>{label}</span>
+                    <span style={{ overflowWrap: "anywhere" }}>{value === null ? "—" : String(value)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
       {sceneModulePreviewClonesV39.map((module: any) => (
         <group
           key={`scene-module-preview-v39-${module.id}`}
