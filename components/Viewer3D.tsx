@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
+import { createPortal } from "react-dom";
 import {
   OrbitControls,
   Center,
   Environment,
   Edges,
-  Html,
   Line,
   Text,
 } from "@react-three/drei";
@@ -1182,6 +1182,120 @@ type ImportedRecognizedModuleV2 = {
   recognitionScore: number;
 };
 
+type StructurePart = {
+  partId: string;
+  category: string;
+  estimatedRole: string;
+  confidence: number;
+  semanticSource: string;
+};
+
+type FrontPart = StructurePart;
+type InteriorPart = StructurePart;
+type HardwarePart = StructurePart;
+type AccessoryPart = StructurePart;
+
+type ImportedFurnitureAnatomyV1 = {
+  moduleId: string;
+  structure: StructurePart[];
+  fronts: FrontPart[];
+  interior: InteriorPart[];
+  hardware: HardwarePart[];
+  accessories: AccessoryPart[];
+  statistics: {
+    structureCount: number;
+    frontCount: number;
+    interiorCount: number;
+    hardwareCount: number;
+    accessoryCount: number;
+    totalRecognizedParts: number;
+  };
+};
+
+type StructuralRoleV1 = {
+  partId: string;
+  role: "LEFT_SIDE" | "RIGHT_SIDE" | "TOP" | "BOTTOM" | "BACK" | "SHELF" | "PARTITION" | "TOE_KICK" | "STRETCHER" | "UNKNOWN";
+  confidence: number;
+  reason: string;
+  orientation: "HORIZONTAL" | "VERTICAL" | "BACK_PLANE" | "UNKNOWN";
+  position: [number, number, number];
+};
+
+type BagaStudioKnowledgeKernelV1 = {
+  runtimeComponents: BagaStudioRuntimeComponent[];
+  metadata: ImportedModuleMetadataV1[];
+  moduleRegistry: ImportedModuleRegistryEntryV1[];
+  recognition: ImportedRecognizedModuleV2[];
+  semanticGroups: ImportedSemanticGroupV1[];
+  furnitureAnatomy: ImportedFurnitureAnatomyV1[];
+  structuralRoles: StructuralRoleV1[];
+  similarity: ImportedModuleSimilarityV1[];
+  diagnostics: {
+    componentCount: number;
+    moduleCount: number;
+    recognizedModules: number;
+    unknownModules: number;
+    anatomyModules: number;
+    structuralRolesCount: number;
+    averageConfidence: number;
+  };
+};
+
+type KnowledgeCoverageV1 = {
+  recognitionCoverage: number;
+  semanticCoverage: number;
+  anatomyCoverage: number;
+  structuralCoverage: number;
+  dependencyCoverage: number;
+  factoryCoverage: number;
+  overallCoverage: number;
+  missingKnowledge: string[];
+  warnings: string[];
+};
+
+type ImportedDependencyNodeV1 = {
+  moduleId: string;
+  partId: string;
+  children: string[];
+  parents: string[];
+  connections: string[];
+  dependencyType: "supported-by" | "attached-to" | "inside" | "contains" | "adjacent" | "front-of" | "behind" | "left-of" | "right-of" | "unknown";
+  confidence: number;
+};
+
+type ImportedDependencyGraphV1 = {
+  nodes: ImportedDependencyNodeV1[];
+  edges: Array<{
+    sourcePartId: string;
+    targetPartId: string;
+    type: ImportedDependencyNodeV1["dependencyType"];
+    confidence: number;
+  }>;
+  moduleCount: number;
+  edgeCount: number;
+  averageConfidence: number;
+};
+
+type ImportedReasoningNodeV1 = {
+  moduleId: string;
+  partId: string;
+  dependencyIds: string[];
+  affectedNodes: string[];
+  confidence: number;
+  reason: string;
+};
+
+type ImportedReasoningEngineV1 = {
+  nodes: ImportedReasoningNodeV1[];
+  chains: Array<{
+    sourcePartId: string;
+    affectedPartIds: string[];
+    propagationDepth: number;
+  }>;
+  averageConfidence: number;
+  chainCount: number;
+};
+
 type ImportedAssemblyNodeV1 = {
   assemblyId: string;
   name: string;
@@ -1736,6 +1850,463 @@ function buildImportedRecognitionV2(
       recognitionScore,
     };
   });
+}
+
+function buildFurnitureAnatomyV1(
+  registry: ImportedModuleRegistryEntryV1[],
+  metadata: ImportedModuleMetadataV1[],
+  recognition: ImportedRecognizedModuleV2[],
+  semanticGroups: ImportedSemanticGroupV1[]
+): ImportedFurnitureAnatomyV1[] {
+  const metadataByModuleId = new Map(metadata.map((entry) => [entry.moduleId, entry]));
+  const recognitionByModuleId = new Map(recognition.map((entry) => [entry.moduleId, entry]));
+
+  return registry.map((module) => {
+    const moduleMetadata = metadataByModuleId.get(module.moduleId);
+    const moduleRecognition = recognitionByModuleId.get(module.moduleId);
+    const structure: StructurePart[] = [];
+    const fronts: FrontPart[] = [];
+    const interior: InteriorPart[] = [];
+    const hardware: HardwarePart[] = [];
+    const accessories: AccessoryPart[] = [];
+
+    module.partIds.forEach((partId) => {
+      const group = semanticGroups.find((candidate) => candidate.partIds.includes(partId));
+      const semanticText = [
+        partId,
+        group?.groupName,
+        group?.groupType,
+        group?.dominantCategory,
+        group?.dominantMaterial,
+        moduleMetadata?.category,
+        moduleRecognition?.recognizedType,
+      ].filter(Boolean).join(" ").toLowerCase();
+      const semanticSource = group
+        ? `semantic-group:${group.groupId}`
+        : moduleRecognition
+          ? `recognition-v2:${moduleRecognition.recognizedType}`
+          : "module-registry";
+      const confidence = Number(
+        Math.min(1, Math.max(group?.confidence || 0.35, moduleRecognition?.confidence || 0.35)).toFixed(2)
+      );
+      const part = (category: string, estimatedRole: string) => ({
+        partId,
+        category,
+        estimatedRole,
+        confidence,
+        semanticSource,
+      });
+      const structureMatch = /side|fianco|top|cielo|cappello|bottom|fondo|base|back|schien|shelf|ripian|partition|divisor|divisorio|toe|zoccol|stretcher|travers/.test(semanticText);
+      const clearNonStructureMatch = /handle|manigl|hinge|cernier|slide|guida|hardware|ferrament|mirror|specch|sink|lavabo|led|decor|door|anta|drawer|casset|front|frontale/.test(semanticText);
+
+      if (/handle|manigl|hinge|cernier|slide|guida|hardware|ferrament/.test(semanticText)) {
+        hardware.push(part("hardware", /hinge|cernier/.test(semanticText) ? "hinge" : /slide|guida/.test(semanticText) ? "slide" : "handle"));
+      } else if (/mirror|specch|sink|lavabo|led|decor/.test(semanticText)) {
+        accessories.push(part("accessory", /mirror|specch/.test(semanticText) ? "mirror" : /sink|lavabo/.test(semanticText) ? "sink" : /led/.test(semanticText) ? "led" : "decorative"));
+      } else if (/door|anta|drawer|casset|front|frontale/.test(semanticText)) {
+        fronts.push(part("front", /door|anta/.test(semanticText) ? "door" : /drawer|casset/.test(semanticText) ? "drawer" : "front"));
+      } else if (/shelf|ripian|internal|intern|partition|divisor/.test(semanticText)) {
+        interior.push(part("interior", /shelf|ripian/.test(semanticText) ? "shelf" : "internal-partition"));
+      } else if (/side|fianco|top|cappello|bottom|fondo|back|schien|toe|zoccol|stretcher|travers|partition|pannell|panel/.test(semanticText)) {
+        const estimatedRole =
+          /side|fianco/.test(semanticText) ? "side-panel" :
+          /top|cappello/.test(semanticText) ? "top" :
+          /bottom|fondo/.test(semanticText) ? "bottom" :
+          /back|schien/.test(semanticText) ? "back" :
+          /toe|zoccol/.test(semanticText) ? "toe-kick" :
+          /stretcher|travers/.test(semanticText) ? "stretcher" :
+          /partition|divisor/.test(semanticText) ? "partition" :
+          "structural-panel";
+        structure.push(part("structure", estimatedRole));
+      }
+
+      if (structureMatch && !clearNonStructureMatch && !structure.some((structurePart) => structurePart.partId === partId)) {
+        const estimatedRole =
+          /side|fianco/.test(semanticText) ? "side-panel" :
+          /top|cielo|cappello/.test(semanticText) ? "top" :
+          /bottom|fondo|base/.test(semanticText) ? "bottom" :
+          /back|schien/.test(semanticText) ? "back" :
+          /shelf|ripian/.test(semanticText) ? "shelf" :
+          /partition|divisor|divisorio/.test(semanticText) ? "partition" :
+          /toe|zoccol/.test(semanticText) ? "toe-kick" :
+          "stretcher";
+        structure.push({
+          partId,
+          category: "structure",
+          estimatedRole,
+          confidence: Number(Math.min(confidence, 0.7).toFixed(2)),
+          semanticSource: "anatomy-structure-fix-v1",
+        });
+      }
+    });
+
+    return {
+      moduleId: module.moduleId,
+      structure,
+      fronts,
+      interior,
+      hardware,
+      accessories,
+      statistics: {
+        structureCount: structure.length,
+        frontCount: fronts.length,
+        interiorCount: interior.length,
+        hardwareCount: hardware.length,
+        accessoryCount: accessories.length,
+        totalRecognizedParts: structure.length + fronts.length + interior.length + hardware.length + accessories.length,
+      },
+    };
+  });
+}
+
+function buildStructuralRolesV1(
+  anatomy: ImportedFurnitureAnatomyV1[],
+  metadata: ImportedModuleMetadataV1[],
+  runtimeComponents: BagaStudioRuntimeComponent[]
+): StructuralRoleV1[] {
+  console.log("[BAGASTUDIO STRUCTURAL BUILD]", {
+    anatomy,
+    moduleCount: anatomy.length,
+    firstModuleId: anatomy[0]?.moduleId || null,
+  });
+  const componentByPartId = new Map(
+    runtimeComponents.map((component) => [String(component.partId || component.id), component])
+  );
+  const metadataByModuleId = new Map(metadata.map((entry) => [entry.moduleId, entry]));
+  const roles: StructuralRoleV1[] = [];
+
+  anatomy.forEach((moduleAnatomy) => {
+    const moduleMetadata = metadataByModuleId.get(moduleAnatomy.moduleId);
+    const structuralRoleByPartId = new Map(
+      moduleAnatomy.structure.map((part) => [part.partId, part])
+    );
+    moduleAnatomy.interior.forEach((part) => structuralRoleByPartId.set(part.partId, part));
+
+    structuralRoleByPartId.forEach((anatomyPart, partId) => {
+      const component = componentByPartId.get(partId);
+      const bounds = component?.runtimeMetadata?.bounds || component?.bounds;
+      const width = Math.abs(Number(bounds?.width || 0));
+      const height = Math.abs(Number(bounds?.height || 0));
+      const depth = Math.abs(Number(bounds?.depth || 0));
+      const min = Array.isArray(bounds?.min) ? bounds.min : null;
+      const max = Array.isArray(bounds?.max) ? bounds.max : null;
+      const position: [number, number, number] = min && max
+        ? [
+            (Number(min[0] || 0) + Number(max[0] || 0)) / 2,
+            (Number(min[1] || 0) + Number(max[1] || 0)) / 2,
+            (Number(min[2] || 0) + Number(max[2] || 0)) / 2,
+          ]
+        : [0, 0, 0];
+      const orientation: StructuralRoleV1["orientation"] =
+        depth <= Math.min(width, height) * 0.35 ? "BACK_PLANE" :
+        height <= Math.min(width, depth) * 0.35 ? "HORIZONTAL" :
+        width <= Math.min(height, depth) * 0.35 ? "VERTICAL" :
+        "UNKNOWN";
+      const roleText = String(anatomyPart.estimatedRole || "").toLowerCase();
+      const moduleBounds = moduleMetadata?.bounds;
+      const nearMinX = Boolean(moduleBounds && min && Math.abs(Number(min[0]) - moduleBounds.min[0]) <= Math.max(moduleBounds.width * 0.08, 0.001));
+      const nearMaxX = Boolean(moduleBounds && max && Math.abs(Number(max[0]) - moduleBounds.max[0]) <= Math.max(moduleBounds.width * 0.08, 0.001));
+      const nearMinY = Boolean(moduleBounds && min && Math.abs(Number(min[1]) - moduleBounds.min[1]) <= Math.max(moduleBounds.height * 0.08, 0.001));
+      const nearMaxY = Boolean(moduleBounds && max && Math.abs(Number(max[1]) - moduleBounds.max[1]) <= Math.max(moduleBounds.height * 0.08, 0.001));
+      let role: StructuralRoleV1["role"] = "UNKNOWN";
+      let confidence = 0.25;
+      let reason = "insufficient geometry and semantic evidence";
+
+      if (/toe-kick/.test(roleText)) {
+        role = "TOE_KICK"; confidence = 0.9; reason = "Furniture Anatomy toe-kick role";
+      } else if (/stretcher/.test(roleText)) {
+        role = "STRETCHER"; confidence = 0.9; reason = "Furniture Anatomy stretcher role";
+      } else if (/back/.test(roleText) || orientation === "BACK_PLANE") {
+        role = "BACK"; confidence = /back/.test(roleText) ? 0.9 : 0.65; reason = /back/.test(roleText) ? "Furniture Anatomy back role" : "thin rear-plane geometry";
+      } else if (/shelf/.test(roleText)) {
+        role = "SHELF"; confidence = 0.9; reason = "Furniture Anatomy shelf role";
+      } else if (/partition/.test(roleText)) {
+        role = "PARTITION"; confidence = 0.9; reason = "Furniture Anatomy partition role";
+      } else if (/top/.test(roleText) || (orientation === "HORIZONTAL" && nearMaxY)) {
+        role = "TOP"; confidence = /top/.test(roleText) ? 0.9 : 0.7; reason = /top/.test(roleText) ? "Furniture Anatomy top role" : "highest horizontal panel";
+      } else if (/bottom/.test(roleText) || (orientation === "HORIZONTAL" && nearMinY)) {
+        role = "BOTTOM"; confidence = /bottom/.test(roleText) ? 0.9 : 0.7; reason = /bottom/.test(roleText) ? "Furniture Anatomy bottom role" : "lowest horizontal panel";
+      } else if (/side-panel/.test(roleText) && nearMinX) {
+        role = "LEFT_SIDE"; confidence = 0.8; reason = "vertical side panel at minimum X";
+      } else if (/side-panel/.test(roleText) && nearMaxX) {
+        role = "RIGHT_SIDE"; confidence = 0.8; reason = "vertical side panel at maximum X";
+      } else if (/side-panel/.test(roleText)) {
+        role = "PARTITION"; confidence = 0.55; reason = "side-panel semantic role without reliable X position";
+      } else if (orientation === "HORIZONTAL") {
+        role = "SHELF"; confidence = 0.45; reason = "internal horizontal panel fallback";
+      } else if (orientation === "VERTICAL") {
+        role = "PARTITION"; confidence = 0.45; reason = "internal vertical panel fallback";
+      }
+
+      roles.push({
+        partId,
+        role,
+        confidence: Number(confidence.toFixed(2)),
+        reason,
+        orientation,
+        position: position.map((value) => Number(value.toFixed(4))) as [number, number, number],
+      });
+    });
+  });
+
+  console.log("[BAGASTUDIO STRUCTURAL RESULT]", {
+    moduleCount: anatomy.length,
+    totalRoles: roles.length,
+    averageConfidence: Number(
+      (roles.reduce((total, structuralRole) => total + structuralRole.confidence, 0) / Math.max(1, roles.length)).toFixed(2)
+    ),
+  });
+  return roles;
+}
+
+function buildBagaStudioKnowledgeKernelV1(
+  runtimeComponents: BagaStudioRuntimeComponent[],
+  metadata: ImportedModuleMetadataV1[],
+  moduleRegistry: ImportedModuleRegistryEntryV1[],
+  recognition: ImportedRecognizedModuleV2[],
+  semanticGroups: ImportedSemanticGroupV1[],
+  furnitureAnatomy: ImportedFurnitureAnatomyV1[],
+  structuralRoles: StructuralRoleV1[],
+  similarity: ImportedModuleSimilarityV1[]
+): BagaStudioKnowledgeKernelV1 {
+  const recognizedModules = recognition.filter((entry) => entry.recognizedType !== "unknown-module").length;
+  const confidenceValues = [
+    ...recognition.map((entry) => entry.confidence),
+    ...structuralRoles.map((entry) => entry.confidence),
+  ];
+
+  return {
+    runtimeComponents: [...runtimeComponents],
+    metadata: [...metadata],
+    moduleRegistry: [...moduleRegistry],
+    recognition: [...recognition],
+    semanticGroups: [...semanticGroups],
+    furnitureAnatomy: [...furnitureAnatomy],
+    structuralRoles: [...structuralRoles],
+    similarity: [...similarity],
+    diagnostics: {
+      componentCount: runtimeComponents.length,
+      moduleCount: moduleRegistry.length,
+      recognizedModules,
+      unknownModules: recognition.length - recognizedModules,
+      anatomyModules: furnitureAnatomy.length,
+      structuralRolesCount: structuralRoles.length,
+      averageConfidence: Number(
+        (confidenceValues.reduce((total, confidence) => total + confidence, 0) / Math.max(1, confidenceValues.length)).toFixed(2)
+      ),
+    },
+  };
+}
+
+function buildKnowledgeCoverageV1(kernel: BagaStudioKnowledgeKernelV1): KnowledgeCoverageV1 {
+  const recognitionCoverage = kernel.diagnostics.recognizedModules > 0 ? 100 : 0;
+  const semanticCoverage = kernel.semanticGroups.length > 0 ? 100 : 0;
+  const anatomyCoverage = kernel.diagnostics.anatomyModules > 0 ? 100 : 0;
+  const structuralCoverage = Number(
+    Math.min(100, kernel.diagnostics.structuralRolesCount / Math.max(1, kernel.diagnostics.componentCount) * 100).toFixed(2)
+  );
+  const dependencyCoverage = 0;
+  const factoryCoverage = 0;
+  const overallCoverage = Number(
+    (
+      recognitionCoverage * 0.2 +
+      semanticCoverage * 0.2 +
+      anatomyCoverage * 0.2 +
+      structuralCoverage * 0.2 +
+      dependencyCoverage * 0.1 +
+      factoryCoverage * 0.1
+    ).toFixed(2)
+  );
+  const missingKnowledge: string[] = [];
+  const warnings: string[] = [];
+
+  if (recognitionCoverage === 0) missingKnowledge.push("module recognition missing");
+  if (semanticCoverage === 0) missingKnowledge.push("semantic groups missing");
+  if (anatomyCoverage === 0) missingKnowledge.push("furniture anatomy missing");
+  if (structuralCoverage < 100) missingKnowledge.push("structural roles missing");
+  missingKnowledge.push("dependency graph missing", "factory knowledge missing");
+  if (kernel.diagnostics.componentCount === 0) warnings.push("runtime components unavailable");
+  if (kernel.diagnostics.unknownModules > 0) warnings.push(`${kernel.diagnostics.unknownModules} unknown modules`);
+  if (structuralCoverage > 0 && structuralCoverage < 100) warnings.push("structural role coverage is partial");
+
+  return {
+    recognitionCoverage,
+    semanticCoverage,
+    anatomyCoverage,
+    structuralCoverage,
+    dependencyCoverage,
+    factoryCoverage,
+    overallCoverage,
+    missingKnowledge,
+    warnings,
+  };
+}
+
+function buildDependencyGraphV1(
+  runtimeComponents: BagaStudioRuntimeComponent[],
+  metadata: ImportedModuleMetadataV1[],
+  recognition: ImportedRecognizedModuleV2[],
+  semanticGroups: ImportedSemanticGroupV1[],
+  furnitureAnatomy: ImportedFurnitureAnatomyV1[],
+  structuralRoles: StructuralRoleV1[],
+  knowledgeKernel: BagaStudioKnowledgeKernelV1
+): ImportedDependencyGraphV1 {
+  const moduleByPartId = new Map<string, string>();
+  knowledgeKernel.moduleRegistry.forEach((module) => {
+    module.partIds.forEach((partId) => moduleByPartId.set(partId, module.moduleId));
+  });
+  const componentByPartId = new Map(
+    runtimeComponents.map((component) => [String(component.partId || component.id), component])
+  );
+  const structuralRoleByPartId = new Map(structuralRoles.map((role) => [role.partId, role]));
+  const edgeMap = new Map<string, ImportedDependencyGraphV1["edges"][number]>();
+  const addEdge = (
+    sourcePartId: string,
+    targetPartId: string,
+    type: ImportedDependencyNodeV1["dependencyType"],
+    confidence: number
+  ) => {
+    if (!sourcePartId || !targetPartId || sourcePartId === targetPartId) return;
+    const key = `${sourcePartId}|${targetPartId}|${type}`;
+    if (!edgeMap.has(key)) edgeMap.set(key, { sourcePartId, targetPartId, type, confidence });
+  };
+
+  runtimeComponents.forEach((component) => {
+    const partId = String(component.partId || component.id);
+    const parentPartId = String(component.parentPartId || component.runtimeMetadata?.parentPartId || "");
+    if (parentPartId) addEdge(partId, parentPartId, "attached-to", 0.85);
+  });
+
+  semanticGroups.forEach((group) => {
+    group.partIds.forEach((partId, index) => {
+      group.partIds.slice(index + 1).forEach((otherPartId) => {
+        addEdge(partId, otherPartId, "adjacent", Math.min(0.75, group.confidence));
+        addEdge(otherPartId, partId, "adjacent", Math.min(0.75, group.confidence));
+      });
+    });
+  });
+
+  furnitureAnatomy.forEach((anatomy) => {
+    const structuralPartIds = anatomy.structure.map((part) => part.partId);
+    [...anatomy.fronts, ...anatomy.interior, ...anatomy.hardware, ...anatomy.accessories].forEach((part) => {
+      const targetPartId = structuralPartIds[0];
+      if (targetPartId) addEdge(part.partId, targetPartId, part.category === "interior" ? "inside" : "attached-to", part.confidence);
+    });
+  });
+
+  structuralRoles.forEach((source) => {
+    structuralRoles.forEach((target) => {
+      if (source.partId === target.partId || moduleByPartId.get(source.partId) !== moduleByPartId.get(target.partId)) return;
+      if (source.role === "BOTTOM" && target.position[1] > source.position[1]) addEdge(target.partId, source.partId, "supported-by", 0.7);
+      if (source.position[0] < target.position[0]) addEdge(source.partId, target.partId, "left-of", 0.55);
+      if (source.position[2] < target.position[2]) addEdge(source.partId, target.partId, "behind", 0.55);
+    });
+  });
+
+  const edges = Array.from(edgeMap.values());
+  const nodes = runtimeComponents.map((component): ImportedDependencyNodeV1 => {
+    const partId = String(component.partId || component.id);
+    const outgoing = edges.filter((edge) => edge.sourcePartId === partId);
+    const incoming = edges.filter((edge) => edge.targetPartId === partId);
+    const primary = [...outgoing, ...incoming].sort((a, b) => b.confidence - a.confidence)[0];
+    return {
+      moduleId: moduleByPartId.get(partId) || "",
+      partId,
+      children: runtimeComponents
+        .filter((candidate) => String(candidate.parentPartId || candidate.runtimeMetadata?.parentPartId || "") === partId)
+        .map((candidate) => String(candidate.partId || candidate.id)),
+      parents: String(component.parentPartId || component.runtimeMetadata?.parentPartId || "")
+        ? [String(component.parentPartId || component.runtimeMetadata?.parentPartId)]
+        : [],
+      connections: Array.from(new Set([...outgoing.map((edge) => edge.targetPartId), ...incoming.map((edge) => edge.sourcePartId)])),
+      dependencyType: primary?.type || "unknown",
+      confidence: primary?.confidence || 0,
+    };
+  });
+  void metadata;
+  void recognition;
+  void componentByPartId;
+  void structuralRoleByPartId;
+
+  return {
+    nodes,
+    edges,
+    moduleCount: new Set(nodes.map((node) => node.moduleId).filter(Boolean)).size,
+    edgeCount: edges.length,
+    averageConfidence: Number(
+      (edges.reduce((total, edge) => total + edge.confidence, 0) / Math.max(1, edges.length)).toFixed(2)
+    ),
+  };
+}
+
+function buildReasoningEngineV1(
+  runtimeComponents: BagaStudioRuntimeComponent[],
+  recognition: ImportedRecognizedModuleV2[],
+  semanticGroups: ImportedSemanticGroupV1[],
+  furnitureAnatomy: ImportedFurnitureAnatomyV1[],
+  knowledgeKernel: BagaStudioKnowledgeKernelV1,
+  dependencyGraph: ImportedDependencyGraphV1
+): ImportedReasoningEngineV1 {
+  const outgoingByPartId = new Map<string, ImportedDependencyGraphV1["edges"]>();
+  dependencyGraph.edges.forEach((edge) => {
+    const outgoing = outgoingByPartId.get(edge.sourcePartId) || [];
+    outgoing.push(edge);
+    outgoingByPartId.set(edge.sourcePartId, outgoing);
+  });
+  const chains = dependencyGraph.nodes.map((node) => {
+    const visited = new Set<string>();
+    let frontier = [node.partId];
+    let propagationDepth = 0;
+    while (frontier.length > 0) {
+      const nextFrontier: string[] = [];
+      frontier.forEach((partId) => {
+        (outgoingByPartId.get(partId) || []).forEach((edge) => {
+          if (edge.targetPartId === node.partId || visited.has(edge.targetPartId)) return;
+          visited.add(edge.targetPartId);
+          nextFrontier.push(edge.targetPartId);
+        });
+      });
+      if (nextFrontier.length > 0) propagationDepth += 1;
+      frontier = nextFrontier;
+    }
+    return {
+      sourcePartId: node.partId,
+      affectedPartIds: Array.from(visited),
+      propagationDepth,
+    };
+  }).filter((chain) => chain.affectedPartIds.length > 0);
+  const chainByPartId = new Map(chains.map((chain) => [chain.sourcePartId, chain]));
+  const nodes = dependencyGraph.nodes.map((node): ImportedReasoningNodeV1 => {
+    const dependencies = outgoingByPartId.get(node.partId) || [];
+    const affectedNodes = chainByPartId.get(node.partId)?.affectedPartIds || [];
+    const confidenceValues = dependencies.map((dependency) => dependency.confidence);
+    return {
+      moduleId: node.moduleId,
+      partId: node.partId,
+      dependencyIds: dependencies.map((dependency) => dependency.targetPartId),
+      affectedNodes,
+      confidence: Number(
+        (confidenceValues.reduce((total, confidence) => total + confidence, 0) / Math.max(1, confidenceValues.length)).toFixed(2)
+      ),
+      reason: affectedNodes.length > 0
+        ? `${affectedNodes.length} nodes reachable through dependency graph`
+        : "no downstream dependency chain",
+    };
+  });
+  void runtimeComponents;
+  void recognition;
+  void semanticGroups;
+  void furnitureAnatomy;
+  void knowledgeKernel;
+
+  return {
+    nodes,
+    chains,
+    averageConfidence: Number(
+      (nodes.reduce((total, node) => total + node.confidence, 0) / Math.max(1, nodes.length)).toFixed(2)
+    ),
+    chainCount: chains.length,
+  };
 }
 
 function buildImportedAssemblyTreeV1(root: THREE.Object3D): ImportedAssemblyNodeV1 {
@@ -4697,6 +5268,10 @@ function ProductModel({
   const [selectedImportedModuleIdV1, setSelectedImportedModuleIdV1] = useState<string | null>(null);
   const [selectedImportedModuleV1, setSelectedImportedModuleV1] = useState<SelectedImportedModuleV1>(null);
   const [importedModelInspectorOpenV1, setImportedModelInspectorOpenV1] = useState(false);
+  const [bagastudioDevPanelEnabledV1, setBagastudioDevPanelEnabledV1] = useState(false);
+  const [ediAnalysisOpenV1, setEdiAnalysisOpenV1] = useState(false);
+  const [ediAnalysisPositionV1, setEdiAnalysisPositionV1] = useState({ left: 320, top: 24 });
+  const ediAnalysisDragV1 = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null);
 
   const runtimeModelFormat = useMemo(
     () => inferModelFormat(productModel, productModelFormat),
@@ -4704,6 +5279,13 @@ function ProductModel({
   );
 
   const useImportedSafeLed = isImportedModelFormat(runtimeModelFormat);
+
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    if ((window as any).__BAGASTUDIO_DEV__ === true || hostname === "localhost" || hostname === "127.0.0.1") {
+      setBagastudioDevPanelEnabledV1(true);
+    }
+  }, []);
 
   const endImportedModelDragV1 = () => {
     importedModelDragPointV1.current = null;
@@ -4795,6 +5377,43 @@ function ProductModel({
         buildStructuralFingerprintV2(fingerprint, assemblyTreeV1, semanticGroupsV1)
       );
       const recognitionV2 = buildImportedRecognitionV2(structuralFingerprintsV2, moduleFingerprintsV1, semanticGroupsV1);
+      const furnitureAnatomyV1 = buildFurnitureAnatomyV1(moduleRegistryV1, moduleMetadataV1, recognitionV2, semanticGroupsV1);
+      console.log("[BAGASTUDIO STRUCTURAL INPUT]", {
+        furnitureAnatomyLength: furnitureAnatomyV1.length,
+        metadataLength: moduleMetadataV1.length,
+        runtimeComponentsLength: analyzedComponents.length,
+        recognitionLength: recognitionV2.length,
+        semanticGroupsLength: semanticGroupsV1.length,
+      });
+      const structuralRolesV1 = buildStructuralRolesV1(furnitureAnatomyV1, moduleMetadataV1, analyzedComponents);
+      const knowledgeKernelV1 = buildBagaStudioKnowledgeKernelV1(
+        analyzedComponents,
+        moduleMetadataV1,
+        moduleRegistryV1,
+        recognitionV2,
+        semanticGroupsV1,
+        furnitureAnatomyV1,
+        structuralRolesV1,
+        moduleSimilarityV1
+      );
+      const knowledgeCoverageV1 = buildKnowledgeCoverageV1(knowledgeKernelV1);
+      const dependencyGraphV1 = buildDependencyGraphV1(
+        analyzedComponents,
+        moduleMetadataV1,
+        recognitionV2,
+        semanticGroupsV1,
+        furnitureAnatomyV1,
+        structuralRolesV1,
+        knowledgeKernelV1
+      );
+      const reasoningEngineV1 = buildReasoningEngineV1(
+        analyzedComponents,
+        recognitionV2,
+        semanticGroupsV1,
+        furnitureAnatomyV1,
+        knowledgeKernelV1,
+        dependencyGraphV1
+      );
       const moduleQueryV1 = {
         findModuleById: (moduleId: string) => findModuleByIdV1(moduleRegistryV1, moduleId),
         findModuleByPartId: (partId: string) => findModuleByPartIdV1(moduleRegistryV1, partId),
@@ -4814,6 +5433,12 @@ function ProductModel({
       object.userData.bagastudioSemanticGroupsV1 = semanticGroupsV1;
       object.userData.bagastudioStructuralFingerprintsV2 = structuralFingerprintsV2;
       object.userData.bagastudioRecognitionV2 = recognitionV2;
+      object.userData.bagastudioFurnitureAnatomyV1 = furnitureAnatomyV1;
+      object.userData.bagastudioStructuralRolesV1 = structuralRolesV1;
+      object.userData.bagastudioKnowledgeKernelV1 = knowledgeKernelV1;
+      object.userData.bagastudioKnowledgeCoverageV1 = knowledgeCoverageV1;
+      object.userData.bagastudioDependencyGraphV1 = dependencyGraphV1;
+      object.userData.bagastudioReasoningEngineV1 = reasoningEngineV1;
       object.userData.bagastudioModuleQueryV1 = moduleQueryV1;
 
       if (typeof window !== "undefined") {
@@ -4903,6 +5528,62 @@ function ProductModel({
             .sort((a, b) => b.recognitionScore - a.recognitionScore)
             .slice(0, 10),
         };
+        const anatomyPartConfidenceV1 = furnitureAnatomyV1.flatMap((anatomy) => [
+          ...anatomy.structure,
+          ...anatomy.fronts,
+          ...anatomy.interior,
+          ...anatomy.hardware,
+          ...anatomy.accessories,
+        ]);
+        const furnitureAnatomyDiagnosticsV1 = {
+          moduleCount: furnitureAnatomyV1.length,
+          averageConfidence: Number(
+            (anatomyPartConfidenceV1.reduce((total, part) => total + part.confidence, 0) / Math.max(1, anatomyPartConfidenceV1.length)).toFixed(2)
+          ),
+          structureParts: furnitureAnatomyV1.reduce((total, anatomy) => total + anatomy.statistics.structureCount, 0),
+          frontParts: furnitureAnatomyV1.reduce((total, anatomy) => total + anatomy.statistics.frontCount, 0),
+          interiorParts: furnitureAnatomyV1.reduce((total, anatomy) => total + anatomy.statistics.interiorCount, 0),
+          hardwareParts: furnitureAnatomyV1.reduce((total, anatomy) => total + anatomy.statistics.hardwareCount, 0),
+          accessoryParts: furnitureAnatomyV1.reduce((total, anatomy) => total + anatomy.statistics.accessoryCount, 0),
+        };
+        const structuralRoleCountsV1 = structuralRolesV1.reduce<Record<string, number>>((counts, structuralRole) => {
+          counts[structuralRole.role] = (counts[structuralRole.role] || 0) + 1;
+          return counts;
+        }, {});
+        const structuralRolesDiagnosticsV1 = {
+          averageConfidence: Number(
+            (structuralRolesV1.reduce((total, structuralRole) => total + structuralRole.confidence, 0) / Math.max(1, structuralRolesV1.length)).toFixed(2)
+          ),
+          roles: structuralRoleCountsV1,
+          unknownRoles: structuralRoleCountsV1.UNKNOWN || 0,
+          topConfidence: [...structuralRolesV1]
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, 10),
+        };
+        const dependencyRelationCountsV1 = dependencyGraphV1.edges.reduce<Record<string, number>>((counts, edge) => {
+          counts[edge.type] = (counts[edge.type] || 0) + 1;
+          return counts;
+        }, {});
+        const dependencyGraphDiagnosticsV1 = {
+          moduleCount: dependencyGraphV1.moduleCount,
+          edgeCount: dependencyGraphV1.edgeCount,
+          averageConfidence: dependencyGraphV1.averageConfidence,
+          topRelationTypes: Object.entries(dependencyRelationCountsV1)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10),
+        };
+        const reasoningAffectedByModuleV1 = reasoningEngineV1.nodes.reduce<Record<string, number>>((counts, node) => {
+          if (node.moduleId) counts[node.moduleId] = (counts[node.moduleId] || 0) + node.affectedNodes.length;
+          return counts;
+        }, {});
+        const reasoningEngineDiagnosticsV1 = {
+          chainCount: reasoningEngineV1.chainCount,
+          averageConfidence: reasoningEngineV1.averageConfidence,
+          maxPropagationDepth: Math.max(0, ...reasoningEngineV1.chains.map((chain) => chain.propagationDepth)),
+          topAffectedModules: Object.entries(reasoningAffectedByModuleV1)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10),
+        };
         (window as any).__bagastudioViewerRuntimeComponents = analyzedComponents;
         (window as any).__bagastudioImportedModulesV1 = importedModulesV1;
         (window as any).__bagastudioImportedGraphV1 = importedGraphV1;
@@ -4916,6 +5597,12 @@ function ProductModel({
         (window as any).__bagastudioSemanticGroupsV1 = semanticGroupsV1;
         (window as any).__bagastudioStructuralFingerprintsV2 = structuralFingerprintsV2;
         (window as any).__bagastudioRecognitionV2 = recognitionV2;
+        (window as any).__bagastudioFurnitureAnatomyV1 = furnitureAnatomyV1;
+        (window as any).__bagastudioStructuralRolesV1 = structuralRolesV1;
+        (window as any).__bagastudioKnowledgeKernelV1 = knowledgeKernelV1;
+        (window as any).__bagastudioKnowledgeCoverageV1 = knowledgeCoverageV1;
+        (window as any).__bagastudioDependencyGraphV1 = dependencyGraphV1;
+        (window as any).__bagastudioReasoningEngineV1 = reasoningEngineV1;
         (window as any).__bagastudioModuleQueryV1 = moduleQueryV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
@@ -4930,6 +5617,12 @@ function ProductModel({
         console.log("[BAGASTUDIO SEMANTIC GROUPS V1]", semanticGroupsDiagnosticsV1);
         console.log("[BAGASTUDIO STRUCTURAL FINGERPRINT V2]", structuralFingerprintDiagnosticsV2);
         console.log("[BAGASTUDIO RECOGNITION V2]", recognitionDiagnosticsV2);
+        console.log("[BAGASTUDIO FURNITURE ANATOMY V1]", furnitureAnatomyDiagnosticsV1);
+        console.log("[BAGASTUDIO STRUCTURAL ROLES V1]", structuralRolesDiagnosticsV1);
+        console.log("[BAGASTUDIO KNOWLEDGE KERNEL V1]", knowledgeKernelV1.diagnostics);
+        console.log("[BAGASTUDIO KNOWLEDGE COVERAGE V1]", knowledgeCoverageV1);
+        console.log("[BAGASTUDIO DEPENDENCY GRAPH V1]", dependencyGraphDiagnosticsV1);
+        console.log("[BAGASTUDIO REASONING ENGINE V1]", reasoningEngineDiagnosticsV1);
         console.log("[BAGASTUDIO MODULE QUERY V1]", moduleQueryV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
@@ -6515,13 +7208,13 @@ applySelectedPartLightUpV42(mesh, selectedKey);
 
   return (
     <>
-      {typeof window !== "undefined" && (window as any).__BAGASTUDIO_DEV__ === true && (
-        <Html fullscreen style={{ pointerEvents: "none" }}>
+      {false && bagastudioDevPanelEnabledV1 && typeof document !== "undefined" && createPortal(
+        <>
           <div
             style={{
-              position: "absolute",
-              left: 12,
-              bottom: 12,
+              position: "fixed",
+              left: 220,
+              bottom: 90,
               width: 280,
               border: "1px solid rgba(148, 163, 184, 0.45)",
               borderRadius: 8,
@@ -6530,7 +7223,7 @@ applySelectedPartLightUpV42(mesh, selectedKey);
               fontFamily: "monospace",
               fontSize: 11,
               pointerEvents: "auto",
-              zIndex: 1000,
+              zIndex: 99999,
             }}
           >
             <button
@@ -6558,8 +7251,109 @@ applySelectedPartLightUpV42(mesh, selectedKey);
                 ))}
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => setEdiAnalysisOpenV1(true)}
+              style={{
+                width: "calc(100% - 20px)",
+                margin: "0 10px 10px",
+                padding: "8px 10px",
+                border: "1px solid rgba(56, 189, 248, 0.45)",
+                borderRadius: 6,
+                background: "linear-gradient(135deg, rgba(14, 116, 144, 0.75), rgba(30, 64, 175, 0.75))",
+                color: "#f0f9ff",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              🧠 Analizza con EDI
+            </button>
           </div>
-        </Html>
+          {ediAnalysisOpenV1 && (() => {
+            const coverage = (window as any).__bagastudioKnowledgeCoverageV1 as KnowledgeCoverageV1 | undefined;
+            const kernel = (window as any).__bagastudioKnowledgeKernelV1 as BagaStudioKnowledgeKernelV1 | undefined;
+            const recognition = ((window as any).__bagastudioRecognitionV2 || []) as ImportedRecognizedModuleV2[];
+            const suggestions = coverage?.missingKnowledge?.length
+              ? coverage?.missingKnowledge.map((item) => `Completa: ${item}`)
+              : ["Knowledge Kernel completo per gli engine disponibili"];
+            const rows = {
+              "Knowledge Coverage": coverage?.overallCoverage,
+              Recognition: coverage?.recognitionCoverage,
+              Semantic: coverage?.semanticCoverage,
+              Anatomy: coverage?.anatomyCoverage,
+              Structural: coverage?.structuralCoverage,
+              Dependency: coverage?.dependencyCoverage,
+              Overall: coverage?.overallCoverage,
+              "Numero componenti": kernel?.diagnostics.componentCount,
+              "Numero moduli": kernel?.diagnostics.moduleCount,
+              "Moduli riconosciuti": kernel?.diagnostics.recognizedModules,
+              Confidence: kernel?.diagnostics.averageConfidence,
+            };
+
+            return (
+              <div
+                style={{
+                  position: "fixed",
+                  left: ediAnalysisPositionV1.left,
+                  top: ediAnalysisPositionV1.top,
+                  width: 360,
+                  maxHeight: "calc(100vh - 48px)",
+                  overflowY: "auto",
+                  border: "1px solid rgba(56, 189, 248, 0.5)",
+                  borderRadius: 12,
+                  background: "linear-gradient(160deg, rgba(15, 23, 42, 0.98), rgba(15, 42, 68, 0.98))",
+                  boxShadow: "0 18px 60px rgba(2, 8, 23, 0.55)",
+                  color: "#e0f2fe",
+                  pointerEvents: "auto",
+                  zIndex: 100000,
+                }}
+              >
+                <div
+                  onPointerDown={(event: any) => {
+                    ediAnalysisDragV1.current = {
+                      pointerId: event.pointerId,
+                      x: event.clientX,
+                      y: event.clientY,
+                      left: ediAnalysisPositionV1.left,
+                      top: ediAnalysisPositionV1.top,
+                    };
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                  }}
+                  onPointerMove={(event: any) => {
+                    const drag = ediAnalysisDragV1.current;
+                    if (!drag || drag.pointerId !== event.pointerId) return;
+                    setEdiAnalysisPositionV1({
+                      left: Math.max(12, drag.left + event.clientX - drag.x),
+                      top: Math.max(12, drag.top + event.clientY - drag.y),
+                    });
+                  }}
+                  onPointerUp={() => { ediAnalysisDragV1.current = null; }}
+                  onPointerCancel={() => { ediAnalysisDragV1.current = null; }}
+                  style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", cursor: "grab", borderBottom: "1px solid rgba(56, 189, 248, 0.25)" }}
+                >
+                  <strong>EDI Analysis V1</strong>
+                  <button type="button" onClick={() => setEdiAnalysisOpenV1(false)} style={{ border: 0, background: "transparent", color: "#bae6fd", cursor: "pointer" }}>Chiudi</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "7px 12px", padding: 14, fontSize: 12 }}>
+                  {Object.entries(rows).map(([label, value]) => (
+                    <div key={label} style={{ display: "contents" }}>
+                      <span style={{ color: "#94a3b8" }}>{label}</span>
+                      <strong>{value === undefined ? "n/d" : String(value)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: "0 14px 14px", fontSize: 12 }}>
+                  <strong>Missing Knowledge</strong>
+                  <div style={{ color: "#fbbf24", marginTop: 6 }}>{coverage?.missingKnowledge?.join(", ") || "Nessuno"}</div>
+                  <strong style={{ display: "block", marginTop: 12 }}>Suggerimenti</strong>
+                  <div style={{ color: "#a5f3fc", marginTop: 6 }}>{suggestions?.join(" · ") || ""}</div>
+                  <div style={{ color: "#64748b", marginTop: 12 }}>{recognition.length} risultati Recognition V2 disponibili</div>
+                </div>
+              </div>
+            );
+          })()}
+        </>,
+        document.body
       )}
       {sceneModulePreviewClonesV39.map((module: any) => (
         <group
@@ -7544,6 +8338,47 @@ function buildRuntimePlaceholderGeometry(component: any, index: number, bucketIn
       config.origin[2] - row * spacingZ,
     ] as [number, number, number],
   };
+}
+
+function EdiDevOverlayV1() {
+  const [enabled, setEnabled] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [ediOpen, setEdiOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 320, top: 24 });
+  const [wasDragged, setWasDragged] = useState(false);
+  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    setEnabled((window as any).__BAGASTUDIO_DEV__ === true || hostname === "localhost" || hostname === "127.0.0.1");
+  }, []);
+
+  if (!enabled) return null;
+  const coverage = (window as any).__bagastudioKnowledgeCoverageV1 as KnowledgeCoverageV1 | undefined;
+  const kernel = (window as any).__bagastudioKnowledgeKernelV1 as BagaStudioKnowledgeKernelV1 | undefined;
+  const recognition = ((window as any).__bagastudioRecognitionV2 || []) as ImportedRecognizedModuleV2[];
+
+  return (
+    <>
+      <div style={{ position: "fixed", left: 220, bottom: 90, width: 280, zIndex: 99999, pointerEvents: "auto", border: "1px solid rgba(148,163,184,.45)", borderRadius: 8, background: "rgba(15,23,42,.94)", color: "#e2e8f0", fontFamily: "monospace", fontSize: 11 }}>
+        <button type="button" onClick={() => setInspectorOpen((current) => !current)} style={{ width: "100%", padding: "8px 10px", border: 0, background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left" }}>
+          Imported Model Intelligence {inspectorOpen ? "-" : "+"}
+        </button>
+        {inspectorOpen && <div style={{ padding: "0 10px 10px" }}>Componenti: {kernel?.diagnostics.componentCount ?? "n/d"} · Moduli: {kernel?.diagnostics.moduleCount ?? "n/d"}</div>}
+        <button type="button" onClick={() => setEdiOpen(true)} style={{ width: "calc(100% - 20px)", margin: "0 10px 10px", padding: "8px 10px", border: "1px solid rgba(56,189,248,.45)", borderRadius: 6, background: "linear-gradient(135deg, rgba(14,116,144,.75), rgba(30,64,175,.75))", color: "#f0f9ff", cursor: "pointer", fontWeight: 700 }}>
+          🧠 Analizza con EDI
+        </button>
+      </div>
+      {ediOpen && (
+        <div style={{ position: "fixed", left: wasDragged ? position.left : "50%", top: wasDragged ? position.top : "50%", transform: wasDragged ? "none" : "translate(-50%, -50%)", width: 360, maxWidth: 520, maxHeight: "calc(100vh - 80px)", overflowY: "auto", zIndex: 100000, pointerEvents: "auto", border: "1px solid rgba(56,189,248,.5)", borderRadius: 12, background: "linear-gradient(160deg, rgba(15,23,42,.98), rgba(15,42,68,.98))", color: "#e0f2fe", boxShadow: "0 18px 60px rgba(2,8,23,.55)" }}>
+          <div onPointerDown={(event) => { const rect = event.currentTarget.parentElement?.getBoundingClientRect(); const start = rect ? { left: rect.left, top: rect.top } : position; setWasDragged(true); drag.current = { x: event.clientX, y: event.clientY, left: start.left, top: start.top }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!drag.current) return; setPosition({ left: Math.max(12, drag.current.left + event.clientX - drag.current.x), top: Math.max(12, drag.current.top + event.clientY - drag.current.y) }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", cursor: "grab", borderBottom: "1px solid rgba(56,189,248,.25)" }}>
+            <strong>EDI Analysis V1</strong><button type="button" onClick={() => setEdiOpen(false)} style={{ border: 0, background: "transparent", color: "#bae6fd", cursor: "pointer" }}>Chiudi</button>
+          </div>
+          <div style={{ padding: 14, fontSize: 12 }}>Overall: {coverage?.overallCoverage ?? "n/d"} · Recognition: {coverage?.recognitionCoverage ?? "n/d"} · Semantic: {coverage?.semanticCoverage ?? "n/d"} · Anatomy: {coverage?.anatomyCoverage ?? "n/d"} · Structural: {coverage?.structuralCoverage ?? "n/d"} · Dependency: {coverage?.dependencyCoverage ?? "n/d"}<br /><br />Moduli riconosciuti: {kernel?.diagnostics.recognizedModules ?? "n/d"} · Confidence: {kernel?.diagnostics.averageConfidence ?? "n/d"}<br /><br />Missing Knowledge: {coverage?.missingKnowledge?.join(", ") || "Nessuno"}<br /><br />{recognition.length} risultati Recognition V2 disponibili</div>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function Viewer3D({
@@ -10168,6 +11003,7 @@ productMaterials?.length
 
 </Canvas>
 
+      <EdiDevOverlayV1 />
     </div>
   );
 }
