@@ -35,6 +35,7 @@ import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
+import EdiLauncher from "./edi/launcher/EdiLauncher";
 import {
   BAGASTUDIO_DEFAULT_OPENING_VIEW_ID,
   type BagastudioCameraPresetData,
@@ -1296,6 +1297,65 @@ type ImportedReasoningEngineV1 = {
   chainCount: number;
 };
 
+type ImportedReasoningReportV1 = {
+  summary: string;
+  strengths: string[];
+  missingKnowledge: string[];
+  warnings: string[];
+  nextSuggestedActions: string[];
+  technicalStatus: "ready" | "partial" | "insufficient";
+  productionReadiness: number;
+  confidence: number;
+};
+
+type ImportedNaturalLanguageReportV1 = {
+  summary: string;
+  modelDescription: string;
+  technicalAssessment: string;
+  productionAssessment: string;
+  missingInformation: string[];
+  recommendedNextSteps: string[];
+  confidenceNarrative: string;
+};
+
+type ImportedMemoryFingerprintV1 = {
+  fingerprintId: string;
+  moduleCount: number;
+  componentCount: number;
+  recognizedModules: number;
+  recognitionConfidence: number;
+  semanticGroups: number;
+  anatomySummary: {
+    moduleCount: number;
+    recognizedParts: number;
+  };
+  reasoningSummary: string;
+  naturalSummary: string;
+  timestamp: string;
+};
+
+type ImportedDecisionReportV1 = {
+  overallStatus: "ready" | "review-required" | "blocked";
+  productionReady: boolean;
+  recommendedActions: string[];
+  blockedActions: string[];
+  warnings: string[];
+  reasoning: string;
+  confidence: number;
+  priority: "low" | "medium" | "high";
+};
+
+type ImportedPlanningReportV1 = {
+  overallGoal: string;
+  currentStep: string;
+  completedSteps: string[];
+  pendingSteps: string[];
+  blockedSteps: string[];
+  suggestedExecutionOrder: string[];
+  estimatedReadiness: number;
+  estimatedRemainingSteps: number;
+};
+
 type ImportedAssemblyNodeV1 = {
   assemblyId: string;
   name: string;
@@ -2306,6 +2366,224 @@ function buildReasoningEngineV1(
       (nodes.reduce((total, node) => total + node.confidence, 0) / Math.max(1, nodes.length)).toFixed(2)
     ),
     chainCount: chains.length,
+  };
+}
+
+function buildNaturalReasoningReportV1(
+  kernel: BagaStudioKnowledgeKernelV1,
+  coverage: KnowledgeCoverageV1,
+  dependencyGraph: ImportedDependencyGraphV1,
+  reasoningEngine: ImportedReasoningEngineV1
+): ImportedReasoningReportV1 {
+  const strengths: string[] = [];
+  if (kernel.diagnostics.componentCount > 0) strengths.push(`${kernel.diagnostics.componentCount} runtime components analyzed`);
+  if (kernel.diagnostics.recognizedModules > 0) strengths.push(`${kernel.diagnostics.recognizedModules} modules recognized`);
+  if (kernel.semanticGroups.length > 0) strengths.push(`${kernel.semanticGroups.length} semantic groups available`);
+  if (kernel.diagnostics.structuralRolesCount > 0) strengths.push(`${kernel.diagnostics.structuralRolesCount} structural roles assigned`);
+  if (dependencyGraph.edgeCount > 0) strengths.push(`${dependencyGraph.edgeCount} candidate dependencies mapped`);
+  if (reasoningEngine.chainCount > 0) strengths.push(`${reasoningEngine.chainCount} propagation chains identified`);
+
+  const missingKnowledge = [...coverage.missingKnowledge];
+  const warnings = [...coverage.warnings];
+  if (kernel.diagnostics.unknownModules > 0) warnings.push(`${kernel.diagnostics.unknownModules} modules remain unknown`);
+  if (dependencyGraph.edgeCount === 0) warnings.push("dependency graph has no candidate edges");
+  if (reasoningEngine.chainCount === 0) warnings.push("reasoning engine found no propagation chains");
+
+  const nextSuggestedActions = missingKnowledge.map((missing) => `Complete ${missing}`);
+  if (kernel.diagnostics.unknownModules > 0) nextSuggestedActions.push("Review unknown module recognition");
+  if (coverage.structuralCoverage < 100) nextSuggestedActions.push("Improve structural role classification");
+  if (dependencyGraph.edgeCount === 0) nextSuggestedActions.push("Enrich component bounds and parent hierarchy");
+
+  const productionReadiness = Number(
+    Math.min(
+      100,
+      coverage.overallCoverage * 0.7 +
+      Math.min(100, dependencyGraph.averageConfidence * 100) * 0.15 +
+      Math.min(100, reasoningEngine.averageConfidence * 100) * 0.15
+    ).toFixed(2)
+  );
+  const confidence = Number(
+    Math.min(1, (kernel.diagnostics.averageConfidence + dependencyGraph.averageConfidence + reasoningEngine.averageConfidence) / 3).toFixed(2)
+  );
+  const technicalStatus: ImportedReasoningReportV1["technicalStatus"] =
+    productionReadiness >= 75 ? "ready" : productionReadiness >= 35 ? "partial" : "insufficient";
+
+  return {
+    summary: `BagaStudio analyzed ${kernel.diagnostics.componentCount} components across ${kernel.diagnostics.moduleCount} modules. Technical knowledge is ${technicalStatus} with ${productionReadiness}% production readiness.`,
+    strengths,
+    missingKnowledge,
+    warnings: Array.from(new Set(warnings)),
+    nextSuggestedActions: Array.from(new Set(nextSuggestedActions)),
+    technicalStatus,
+    productionReadiness,
+    confidence,
+  };
+}
+
+function buildNaturalLanguageReportV1(
+  reasoningReport: ImportedReasoningReportV1
+): ImportedNaturalLanguageReportV1 {
+  const confidenceNarrative =
+    reasoningReport.confidence >= 0.8
+      ? "The available knowledge supports a high-confidence interpretation of the imported model."
+      : reasoningReport.confidence >= 0.5
+        ? "The imported model can be interpreted with moderate confidence, but some technical knowledge remains incomplete."
+        : "The current interpretation has low confidence and requires additional structural or semantic information.";
+  const technicalAssessment =
+    reasoningReport.technicalStatus === "ready"
+      ? "The model has sufficient technical knowledge for the currently supported analysis workflows."
+      : reasoningReport.technicalStatus === "partial"
+        ? "The model has a partial technical description. Existing results are useful, but unresolved knowledge limits advanced reasoning."
+        : "The model does not yet contain enough technical knowledge for reliable downstream reasoning.";
+  const productionAssessment =
+    reasoningReport.productionReadiness >= 75
+      ? `Production readiness is strong at ${reasoningReport.productionReadiness}%.`
+      : reasoningReport.productionReadiness >= 35
+        ? `Production readiness is partial at ${reasoningReport.productionReadiness}%. Additional validation is recommended.`
+        : `Production readiness is limited at ${reasoningReport.productionReadiness}%. The model requires further enrichment before production use.`;
+
+  return {
+    summary: reasoningReport.summary,
+    modelDescription: reasoningReport.strengths.length > 0
+      ? `The imported model currently provides: ${reasoningReport.strengths.join("; ")}.`
+      : "The imported model does not yet expose enough recognized technical strengths.",
+    technicalAssessment,
+    productionAssessment,
+    missingInformation: [...reasoningReport.missingKnowledge],
+    recommendedNextSteps: [...reasoningReport.nextSuggestedActions],
+    confidenceNarrative,
+  };
+}
+
+function buildMemoryFingerprintV1(
+  kernel: BagaStudioKnowledgeKernelV1,
+  reasoningReport: ImportedReasoningReportV1,
+  naturalLanguageReport: ImportedNaturalLanguageReportV1,
+  timestamp: string
+): ImportedMemoryFingerprintV1 {
+  const anatomyRecognizedParts = kernel.furnitureAnatomy.reduce(
+    (total, anatomy) => total + anatomy.statistics.totalRecognizedParts,
+    0
+  );
+  const stableFingerprintSource = [
+    kernel.diagnostics.componentCount,
+    kernel.diagnostics.moduleCount,
+    kernel.diagnostics.recognizedModules,
+    kernel.semanticGroups.length,
+    anatomyRecognizedParts,
+    reasoningReport.technicalStatus,
+    reasoningReport.productionReadiness,
+  ].join("|");
+  let fingerprintHash = 0;
+  for (let index = 0; index < stableFingerprintSource.length; index += 1) {
+    fingerprintHash = ((fingerprintHash << 5) - fingerprintHash + stableFingerprintSource.charCodeAt(index)) | 0;
+  }
+
+  return {
+    fingerprintId: `edi-memory-v1-${Math.abs(fingerprintHash).toString(36)}`,
+    moduleCount: kernel.diagnostics.moduleCount,
+    componentCount: kernel.diagnostics.componentCount,
+    recognizedModules: kernel.diagnostics.recognizedModules,
+    recognitionConfidence: Number(
+      (kernel.recognition.reduce((total, recognition) => total + recognition.confidence, 0) / Math.max(1, kernel.recognition.length)).toFixed(2)
+    ),
+    semanticGroups: kernel.semanticGroups.length,
+    anatomySummary: {
+      moduleCount: kernel.furnitureAnatomy.length,
+      recognizedParts: anatomyRecognizedParts,
+    },
+    reasoningSummary: reasoningReport.summary,
+    naturalSummary: naturalLanguageReport.summary,
+    timestamp,
+  };
+}
+
+function buildDecisionReportV1(
+  coverage: KnowledgeCoverageV1,
+  reasoningReport: ImportedReasoningReportV1,
+  naturalLanguageReport: ImportedNaturalLanguageReportV1,
+  memoryFingerprint: ImportedMemoryFingerprintV1
+): ImportedDecisionReportV1 {
+  const productionReady =
+    reasoningReport.technicalStatus === "ready" &&
+    reasoningReport.productionReadiness >= 75 &&
+    coverage.structuralCoverage >= 75;
+  const blockedActions: string[] = [];
+  if (coverage.dependencyCoverage === 0) blockedActions.push("automatic dependency-based modifications");
+  if (coverage.factoryCoverage === 0) blockedActions.push("factory-ready export");
+  if (!productionReady) blockedActions.push("unattended production execution");
+  const recommendedActions = Array.from(new Set([
+    ...reasoningReport.nextSuggestedActions,
+    ...naturalLanguageReport.recommendedNextSteps,
+  ]));
+  if (memoryFingerprint.recognizedModules < memoryFingerprint.moduleCount) {
+    recommendedActions.push("Review unrecognized imported modules");
+  }
+  const warnings = Array.from(new Set([
+    ...reasoningReport.warnings,
+    ...coverage.warnings,
+  ]));
+  const overallStatus: ImportedDecisionReportV1["overallStatus"] =
+    productionReady ? "ready" : reasoningReport.productionReadiness >= 35 ? "review-required" : "blocked";
+  const priority: ImportedDecisionReportV1["priority"] =
+    overallStatus === "blocked" ? "high" : overallStatus === "review-required" ? "medium" : "low";
+  const confidence = Number(
+    Math.min(1, (reasoningReport.confidence + memoryFingerprint.recognitionConfidence + coverage.overallCoverage / 100) / 3).toFixed(2)
+  );
+
+  return {
+    overallStatus,
+    productionReady,
+    recommendedActions: Array.from(new Set(recommendedActions)),
+    blockedActions,
+    warnings,
+    reasoning: `${naturalLanguageReport.technicalAssessment} ${naturalLanguageReport.productionAssessment}`,
+    confidence,
+    priority,
+  };
+}
+
+function buildPlanningReportV1(
+  decisionReport: ImportedDecisionReportV1,
+  memoryFingerprint: ImportedMemoryFingerprintV1,
+  naturalLanguageReport: ImportedNaturalLanguageReportV1
+): ImportedPlanningReportV1 {
+  const completedSteps: string[] = [];
+  if (memoryFingerprint.componentCount > 0) completedSteps.push("Analyze runtime components");
+  if (memoryFingerprint.moduleCount > 0) completedSteps.push("Build imported module registry");
+  if (memoryFingerprint.recognizedModules > 0) completedSteps.push("Recognize imported modules");
+  if (memoryFingerprint.semanticGroups > 0) completedSteps.push("Build semantic groups");
+  if (memoryFingerprint.anatomySummary.recognizedParts > 0) completedSteps.push("Build furniture anatomy");
+
+  const pendingSteps = Array.from(new Set([
+    ...decisionReport.recommendedActions,
+    ...naturalLanguageReport.recommendedNextSteps,
+  ]));
+  const blockedSteps = [...decisionReport.blockedActions];
+  const suggestedExecutionOrder = [
+    ...pendingSteps.filter((step) => /recogn|structural|semantic/i.test(step)),
+    ...pendingSteps.filter((step) => !/recogn|structural|semantic/i.test(step)),
+  ];
+  const currentStep = suggestedExecutionOrder[0] || (decisionReport.productionReady ? "Validate production package" : "Review available knowledge");
+  const estimatedRemainingSteps = suggestedExecutionOrder.length + blockedSteps.length;
+  const estimatedReadiness = Number(
+    Math.min(
+      100,
+      memoryFingerprint.recognitionConfidence * 30 +
+      (decisionReport.productionReady ? 40 : 0) +
+      Math.max(0, 30 - estimatedRemainingSteps * 3)
+    ).toFixed(2)
+  );
+
+  return {
+    overallGoal: "Prepare the imported model for reliable BagaStudio production workflows",
+    currentStep,
+    completedSteps,
+    pendingSteps,
+    blockedSteps,
+    suggestedExecutionOrder,
+    estimatedReadiness,
+    estimatedRemainingSteps,
   };
 }
 
@@ -5331,6 +5609,7 @@ function ProductModel({
     // Se non esiste un modello importato, il loader 3D viene saltato e restano operative
     // stanza, moduli parametrici e Scene Composer.
     if (!modelUrl) {
+      resetEdiModelIntelligenceStateV1(loadedRoot);
       if (typeof window !== "undefined") {
         (window as any).__bagastudioViewerRuntimeComponents = [];
         window.dispatchEvent(
@@ -5414,6 +5693,30 @@ function ProductModel({
         knowledgeKernelV1,
         dependencyGraphV1
       );
+      const reasoningReportV1 = buildNaturalReasoningReportV1(
+        knowledgeKernelV1,
+        knowledgeCoverageV1,
+        dependencyGraphV1,
+        reasoningEngineV1
+      );
+      const naturalLanguageReportV1 = buildNaturalLanguageReportV1(reasoningReportV1);
+      const memoryFingerprintV1 = buildMemoryFingerprintV1(
+        knowledgeKernelV1,
+        reasoningReportV1,
+        naturalLanguageReportV1,
+        new Date().toISOString()
+      );
+      const decisionReportV1 = buildDecisionReportV1(
+        knowledgeCoverageV1,
+        reasoningReportV1,
+        naturalLanguageReportV1,
+        memoryFingerprintV1
+      );
+      const planningReportV1 = buildPlanningReportV1(
+        decisionReportV1,
+        memoryFingerprintV1,
+        naturalLanguageReportV1
+      );
       const moduleQueryV1 = {
         findModuleById: (moduleId: string) => findModuleByIdV1(moduleRegistryV1, moduleId),
         findModuleByPartId: (partId: string) => findModuleByPartIdV1(moduleRegistryV1, partId),
@@ -5439,6 +5742,11 @@ function ProductModel({
       object.userData.bagastudioKnowledgeCoverageV1 = knowledgeCoverageV1;
       object.userData.bagastudioDependencyGraphV1 = dependencyGraphV1;
       object.userData.bagastudioReasoningEngineV1 = reasoningEngineV1;
+      object.userData.bagastudioReasoningReportV1 = reasoningReportV1;
+      object.userData.bagastudioNaturalLanguageReportV1 = naturalLanguageReportV1;
+      object.userData.bagastudioMemoryFingerprintV1 = memoryFingerprintV1;
+      object.userData.bagastudioDecisionReportV1 = decisionReportV1;
+      object.userData.bagastudioPlanningReportV1 = planningReportV1;
       object.userData.bagastudioModuleQueryV1 = moduleQueryV1;
 
       if (typeof window !== "undefined") {
@@ -5603,6 +5911,11 @@ function ProductModel({
         (window as any).__bagastudioKnowledgeCoverageV1 = knowledgeCoverageV1;
         (window as any).__bagastudioDependencyGraphV1 = dependencyGraphV1;
         (window as any).__bagastudioReasoningEngineV1 = reasoningEngineV1;
+        (window as any).__bagastudioReasoningReportV1 = reasoningReportV1;
+        (window as any).__bagastudioNaturalLanguageReportV1 = naturalLanguageReportV1;
+        (window as any).__bagastudioMemoryFingerprintV1 = memoryFingerprintV1;
+        (window as any).__bagastudioDecisionReportV1 = decisionReportV1;
+        (window as any).__bagastudioPlanningReportV1 = planningReportV1;
         (window as any).__bagastudioModuleQueryV1 = moduleQueryV1;
         console.log("[BAGASTUDIO IMPORTED MODULES V1]", importedModulesV1);
         console.log("[BAGASTUDIO RECOGNITION V1]", recognitionCandidatesV1);
@@ -5623,6 +5936,11 @@ function ProductModel({
         console.log("[BAGASTUDIO KNOWLEDGE COVERAGE V1]", knowledgeCoverageV1);
         console.log("[BAGASTUDIO DEPENDENCY GRAPH V1]", dependencyGraphDiagnosticsV1);
         console.log("[BAGASTUDIO REASONING ENGINE V1]", reasoningEngineDiagnosticsV1);
+        console.log("[BAGASTUDIO NATURAL REASONING V1]", reasoningReportV1);
+        console.log("[BAGASTUDIO NATURAL LANGUAGE V1]", naturalLanguageReportV1);
+        console.log("[BAGASTUDIO MEMORY FINGERPRINT V1]", memoryFingerprintV1);
+        console.log("[BAGASTUDIO DECISION ENGINE V1]", decisionReportV1);
+        console.log("[BAGASTUDIO PLANNING ENGINE V1]", planningReportV1);
         console.log("[BAGASTUDIO MODULE QUERY V1]", moduleQueryV1);
         window.dispatchEvent(
           new CustomEvent("bagastudio:viewer-components-ready", {
@@ -8340,6 +8658,39 @@ function buildRuntimePlaceholderGeometry(component: any, index: number, bucketIn
   };
 }
 
+function resetEdiModelIntelligenceStateV1(root?: THREE.Object3D | null) {
+  const keys = [
+    "bagastudioKnowledgeCoverageV1",
+    "bagastudioKnowledgeKernelV1",
+    "bagastudioRecognitionV2",
+    "bagastudioReasoningReportV1",
+    "bagastudioNaturalLanguageReportV1",
+    "bagastudioMemoryFingerprintV1",
+    "bagastudioDecisionReportV1",
+    "bagastudioPlanningReportV1",
+    "bagastudioDependencyGraphV1",
+    "bagastudioReasoningEngineV1",
+  ];
+
+  keys.forEach((key) => {
+    if (root?.userData) delete root.userData[key];
+    if (typeof window !== "undefined") delete (window as any)[`__${key}`];
+  });
+  if (typeof window !== "undefined") {
+    (window as any).__bagastudioKnowledgeCoverageV1 = {
+      recognitionCoverage: 0, semanticCoverage: 0, anatomyCoverage: 0, structuralCoverage: 0,
+      dependencyCoverage: 0, factoryCoverage: 0, overallCoverage: 0, missingKnowledge: [], warnings: [],
+    };
+    (window as any).__bagastudioKnowledgeKernelV1 = {
+      diagnostics: {
+        componentCount: 0, moduleCount: 0, recognizedModules: 0, unknownModules: 0,
+        anatomyModules: 0, structuralRolesCount: 0, averageConfidence: 0,
+      },
+    };
+    (window as any).__bagastudioRecognitionV2 = [];
+  }
+}
+
 function EdiDevOverlayV1() {
   const [enabled, setEnabled] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -8347,10 +8698,28 @@ function EdiDevOverlayV1() {
   const [position, setPosition] = useState({ left: 320, top: 24 });
   const [wasDragged, setWasDragged] = useState(false);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const closeEdiAnalysisV1 = () => {
+    setEdiOpen(false);
+    setInspectorOpen(false);
+    setWasDragged(false);
+    setPosition({ left: 320, top: 24 });
+    drag.current = null;
+  };
 
   useEffect(() => {
     const hostname = window.location.hostname;
     setEnabled((window as any).__BAGASTUDIO_DEV__ === true || hostname === "localhost" || hostname === "127.0.0.1");
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("bagastudio:return-home", closeEdiAnalysisV1);
+    return () => window.removeEventListener("bagastudio:return-home", closeEdiAnalysisV1);
+  }, []);
+
+  useEffect(() => {
+    const handleResetEdiModelIntelligenceV1 = () => resetEdiModelIntelligenceStateV1();
+    window.addEventListener("bagastudio:reset-edi-model-intelligence", handleResetEdiModelIntelligenceV1);
+    return () => window.removeEventListener("bagastudio:reset-edi-model-intelligence", handleResetEdiModelIntelligenceV1);
   }, []);
 
   if (!enabled) return null;
@@ -8360,21 +8729,37 @@ function EdiDevOverlayV1() {
 
   return (
     <>
-      <div style={{ position: "fixed", left: 220, bottom: 90, width: 280, zIndex: 99999, pointerEvents: "auto", border: "1px solid rgba(148,163,184,.45)", borderRadius: 8, background: "rgba(15,23,42,.94)", color: "#e2e8f0", fontFamily: "monospace", fontSize: 11 }}>
-        <button type="button" onClick={() => setInspectorOpen((current) => !current)} style={{ width: "100%", padding: "8px 10px", border: 0, background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left" }}>
-          Imported Model Intelligence {inspectorOpen ? "-" : "+"}
+      <div style={{ position: "fixed", right: 332, bottom: 104, zIndex: 99999, pointerEvents: "auto" }}>
+        <EdiLauncher />
+      </div>
+      {false && <div className="edi-premium-launcher-v1">
+        <button type="button" onClick={() => window.dispatchEvent(new Event("bagastudio:open-edi-workspace"))} aria-label="Apri EDI Workspace">
+          <EdiLauncher />
+          <strong>Edi</strong>
+          <style>{`
+            .edi-premium-launcher-v1>div,.edi-premium-launcher-v1>button:not(:first-child){display:none}
+            .edi-premium-launcher-v1>button:first-child{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#ecfeff;cursor:pointer;transition:transform .7s cubic-bezier(.22,1,.36,1);filter:drop-shadow(0 10px 20px rgba(2,8,23,.72))}
+            .edi-premium-launcher-v1>button:first-child:hover{transform:scale(1.08)}
+            .edi-premium-launcher-v1>button:first-child:hover .edi-v3__orbitals i{animation-duration:7s}
+            .edi-premium-launcher-v1>button:first-child:hover .edi-v3__glow{opacity:.95;filter:blur(18px)}
+            .edi-premium-launcher-v1 .edi-v3__sphere{background:radial-gradient(circle at 38% 30%,#fff 0 5%,#fde68a 9%,#38bdf8 20%,transparent 42%),conic-gradient(from 35deg,#fbbf24,#082f49,#2563eb,#f59e0b,#071a3a,#fbbf24);box-shadow:inset -8px -10px 18px #020617,inset 5px 5px 11px #ffffff77,0 0 16px #38bdf8,0 0 28px #fbbf2477}
+            .edi-premium-launcher-v1 .edi-v3__orbitals i{border-color:#fbbf24aa;box-shadow:0 0 7px #fbbf24aa}.edi-premium-launcher-v1 .edi-v3__orbitals i:nth-child(2){border-color:#38bdf8aa}
+            .edi-premium-launcher-v1 .edi-v3__glow{background:radial-gradient(circle,#fbbf24 0,#38bdf8 46%,transparent 75%);filter:blur(17px);opacity:.72}
+            .edi-premium-launcher-v1 strong{display:block;width:100%;text-align:center;font-family:Georgia,"Times New Roman",serif;font-size:17px;font-style:italic;font-weight:600;letter-spacing:.18em;text-indent:.18em;text-shadow:0 0 9px rgba(125,211,252,.38);transition:text-shadow .6s ease,color .6s ease}
+            .edi-premium-launcher-v1>button:first-child:hover strong{color:#fff;text-shadow:0 0 14px rgba(251,191,36,.7),0 0 24px rgba(56,189,248,.55)}
+          `}</style>
         </button>
         {inspectorOpen && <div style={{ padding: "0 10px 10px" }}>Componenti: {kernel?.diagnostics.componentCount ?? "n/d"} · Moduli: {kernel?.diagnostics.moduleCount ?? "n/d"}</div>}
         <button type="button" onClick={() => setEdiOpen(true)} style={{ width: "calc(100% - 20px)", margin: "0 10px 10px", padding: "8px 10px", border: "1px solid rgba(56,189,248,.45)", borderRadius: 6, background: "linear-gradient(135deg, rgba(14,116,144,.75), rgba(30,64,175,.75))", color: "#f0f9ff", cursor: "pointer", fontWeight: 700 }}>
           🧠 Analizza con EDI
         </button>
-      </div>
+      </div>}
       {ediOpen && (
         <div style={{ position: "fixed", left: wasDragged ? position.left : "50%", top: wasDragged ? position.top : "50%", transform: wasDragged ? "none" : "translate(-50%, -50%)", width: 360, maxWidth: 520, maxHeight: "calc(100vh - 80px)", overflowY: "auto", zIndex: 100000, pointerEvents: "auto", border: "1px solid rgba(56,189,248,.5)", borderRadius: 12, background: "linear-gradient(160deg, rgba(15,23,42,.98), rgba(15,42,68,.98))", color: "#e0f2fe", boxShadow: "0 18px 60px rgba(2,8,23,.55)" }}>
           <div onPointerDown={(event) => { const rect = event.currentTarget.parentElement?.getBoundingClientRect(); const start = rect ? { left: rect.left, top: rect.top } : position; setWasDragged(true); drag.current = { x: event.clientX, y: event.clientY, left: start.left, top: start.top }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!drag.current) return; setPosition({ left: Math.max(12, drag.current.left + event.clientX - drag.current.x), top: Math.max(12, drag.current.top + event.clientY - drag.current.y) }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", cursor: "grab", borderBottom: "1px solid rgba(56,189,248,.25)" }}>
-            <strong>EDI Analysis V1</strong><button type="button" onClick={() => setEdiOpen(false)} style={{ border: 0, background: "transparent", color: "#bae6fd", cursor: "pointer" }}>Chiudi</button>
+            <strong>EDI Analysis V1</strong><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setEdiOpen(false)} style={{ border: 0, background: "transparent", color: "#bae6fd", cursor: "pointer" }}>Chiudi</button>
           </div>
-          <div style={{ padding: 14, fontSize: 12 }}>Overall: {coverage?.overallCoverage ?? "n/d"} · Recognition: {coverage?.recognitionCoverage ?? "n/d"} · Semantic: {coverage?.semanticCoverage ?? "n/d"} · Anatomy: {coverage?.anatomyCoverage ?? "n/d"} · Structural: {coverage?.structuralCoverage ?? "n/d"} · Dependency: {coverage?.dependencyCoverage ?? "n/d"}<br /><br />Moduli riconosciuti: {kernel?.diagnostics.recognizedModules ?? "n/d"} · Confidence: {kernel?.diagnostics.averageConfidence ?? "n/d"}<br /><br />Missing Knowledge: {coverage?.missingKnowledge?.join(", ") || "Nessuno"}<br /><br />{recognition.length} risultati Recognition V2 disponibili</div>
+          <div style={{ padding: 14, fontSize: 12 }}>{kernel?.diagnostics.componentCount ? <>Overall: {coverage?.overallCoverage ?? 0} · Recognition: {coverage?.recognitionCoverage ?? 0} · Semantic: {coverage?.semanticCoverage ?? 0} · Anatomy: {coverage?.anatomyCoverage ?? 0} · Structural: {coverage?.structuralCoverage ?? 0} · Dependency: {coverage?.dependencyCoverage ?? 0}<br /><br />Moduli riconosciuti: {kernel?.diagnostics.recognizedModules ?? 0} · Confidence: {kernel?.diagnostics.averageConfidence ?? 0}<br /><br />Missing Knowledge: {coverage?.missingKnowledge?.join(", ") || "Nessuno"}<br /><br />{recognition.length} risultati Recognition V2 disponibili</> : <>Componenti: 0 · Moduli: 0 · Coverage: 0<br /><br />EDI è pronto. Crea o importa un progetto per avviare l’analisi completa.</>}</div>
         </div>
       )}
     </>
@@ -9326,6 +9711,21 @@ productMaterials?.length
   useEffect(() => {
     setCandidateSceneModuleStatusV42(null);
   }, [activeSceneModuleIdV38]);
+
+  useEffect(() => {
+    const handleReturnHomeV1 = () => {
+      setActiveSceneModuleIdV38(null);
+      setActiveWallSnap(null);
+      setWallCollisionNotice("");
+      setModuleCollisionNoticeV42(false);
+      setCandidateSceneModuleStatusV42(null);
+      setJoinAssistantOpenV42(false);
+      setViewerMiniTabsOpenV5(closeAllViewerMiniTabsV5());
+    };
+
+    window.addEventListener("bagastudio:return-home", handleReturnHomeV1);
+    return () => window.removeEventListener("bagastudio:return-home", handleReturnHomeV1);
+  }, []);
 
   useEffect(() => {
     if (candidateSceneModuleStatusV42 !== "join") {
@@ -10803,6 +11203,14 @@ productMaterials?.length
         </div>
       </ViewerMiniTab>
       <div className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-2xl border border-cyan-400/20 bg-slate-950/55 p-2 text-[11px] font-black text-slate-100 shadow-2xl shadow-cyan-950/30 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => emitViewerCommand("bagastudio:request-return-home")}
+          className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 uppercase tracking-wide transition hover:bg-white/20"
+          title="Torna alla Home"
+        >
+          ← Home
+        </button>
         <button
           type="button"
           onClick={() => emitViewerCommand("bagastudio:focus-selection")}

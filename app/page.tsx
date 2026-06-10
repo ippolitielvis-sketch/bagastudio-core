@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Viewer3D from "@/components/Viewer3D";
+import EdiLauncher from "@/components/edi/launcher/EdiLauncher";
 import ViewerRuntimeStatusBar from "@/components/viewer-ui/ViewerRuntimeStatusBar";
 import ViewerPremiumHeader from "@/components/viewer-ui/ViewerPremiumHeader";
 import ViewerImportWorkflowPanel from "@/components/viewer-ui/ViewerImportWorkflowPanel";
@@ -736,6 +737,7 @@ function writeRecentBagaStudioProjects(items: RecentBagaStudioProject[]) {
 }
 
 export default function HomePage() {
+  const [ediHomeOpenV1, setEdiHomeOpenV1] = useState(false);
   const product = useConfigStore((state) => state.runtimeProduct || state.product);
   const setRuntimeProduct = useConfigStore((state) => state.setRuntimeProduct);
   const setDimension = useConfigStore((state) => state.setDimension);
@@ -1255,6 +1257,7 @@ function openRecentProject(projectId: string) {
   registerRecentProject(nextName, target.project);
   setSelectedPart(null);
   setSelectedPartIds([]);
+  window.dispatchEvent(new Event("bagastudio:reset-edi-model-intelligence"));
 }
 
 function getCurrentProjectName() {
@@ -1399,7 +1402,29 @@ function handleStartEmptyRoomProjectV54() {
 
   window.dispatchEvent(new CustomEvent("bagastudio:viewer-component-cleared"));
   window.dispatchEvent(new CustomEvent("bagastudio:runtime-components-cleared"));
+  window.dispatchEvent(new Event("bagastudio:reset-edi-model-intelligence"));
 }
+
+function returnToHome() {
+  setSelectedPart(null);
+  setSelectedPartIds([]);
+  setViewerRuntimeComponents([]);
+  setViewerRuntimeMetadata(null);
+  setViewerRuntimeProduct(null);
+  setPendingModelImportV1(null);
+  setImporterUiState(null);
+  setEdiHomeOpenV1(false);
+  componentRowRefs.current = {};
+  useConfigStore.setState({ product: null, runtimeProduct: null, selectedPartId: null });
+  window.dispatchEvent(new Event("bagastudio:reset-edi-model-intelligence"));
+  window.dispatchEvent(new Event("bagastudio:return-home"));
+  window.dispatchEvent(new Event("bagastudio:reset-camera"));
+}
+
+useEffect(() => {
+  window.addEventListener("bagastudio:request-return-home", returnToHome);
+  return () => window.removeEventListener("bagastudio:request-return-home", returnToHome);
+});
 
 async function handleGenericImportFile(file: File) {
   const format = getImportFileFormat(file.name);
@@ -3944,6 +3969,26 @@ const availableAccessories = useMemo(() => {
             />
           </label>
         </div>
+
+        <div className="mt-4">
+          <EdiLauncher variant="home" onActivate={() => setEdiHomeOpenV1(true)} />
+        </div>
+
+        {ediHomeOpenV1 && (
+          <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-3xl border border-cyan-300/25 bg-[#07111c] p-6 text-left shadow-[0_24px_80px_rgba(0,0,0,0.65)]">
+              <div className="flex items-center justify-between gap-4">
+                <strong className="text-lg text-cyan-100">EDI Home V1</strong>
+                <button type="button" onClick={() => setEdiHomeOpenV1(false)} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-bold text-neutral-200 hover:bg-white/10">
+                  Chiudi
+                </button>
+              </div>
+              <p className="mt-5 text-sm leading-6 text-neutral-300">
+                EDI è pronto. Crea o importa un progetto per avviare l’analisi completa.
+              </p>
+            </div>
+          </div>
+        )}
 
         <span className="mt-5 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-100/55">
           Empty Room UX V54 · Import non obbligatorio
