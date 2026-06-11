@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1161
+- RFC-1126 to RFC-1163
 
 Architecture distinction:
 
@@ -714,6 +714,52 @@ Real Integration remains not implemented.
 - Helper Integration does not own state.
 - Helper Integration is not real integration.
 
+## 18. Integration Boundary Foundation
+
+RFC:
+
+- RFC-1163
+
+### Context
+
+EDI had preview integration through an explicit helper, but no architectural boundary existed between preview integration and a future real runtime integration.
+
+### Problem
+
+The project needed a boundary that protects RuntimeHost, RuntimeLoop, Execution, Consumption, and Preview Integration from premature coupling.
+
+### Decision
+
+Introduce `EdiIntegrationBoundary`.
+
+### Implementation
+
+`EdiIntegrationBoundary` exports:
+
+- `createEdiIntegrationBoundaryRequest`;
+- `validateEdiIntegrationBoundaryRequest`.
+
+It validates an `EdiExecutionRequest` minimally:
+
+- request present;
+- request id present;
+- mode present;
+- target domain present.
+
+### Impact
+
+EDI gained a non-invasive boundary before future real integration work.
+
+The boundary does not run real integration, does not connect to RuntimeHost, does not connect to RuntimeLoop, and does not import real engines.
+
+### Permanent Rules Born
+
+- Integration Boundary is not Real Integration.
+- Integration Boundary does not import RuntimeHost.
+- Integration Boundary does not import RuntimeLoop.
+- Integration Boundary does not import engine runtimes.
+- Integration Boundary validates without mutating request.
+
 ## Current State
 
 The EDI Execution Layer has reached Foundation Complete status.
@@ -738,7 +784,8 @@ Implemented today:
 - preview consumer wiring;
 - execution result dispatcher;
 - preview execution and consumption wiring;
-- preview execution and dispatch helper.
+- preview execution and dispatch helper;
+- integration boundary.
 
 Not implemented today:
 
@@ -754,6 +801,7 @@ Not implemented today:
 - automatic result consumption;
 - runtime result integration;
 - automatic execution and dispatch orchestration;
-- real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines.
+- real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
+- `runRealIntegration`.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.

@@ -32,6 +32,7 @@ Covered foundation:
 - Execution Result Dispatcher
 - Preview Execution And Consumption Wiring
 - Preview Execution And Dispatch Helper
+- Integration Boundary
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -543,3 +544,43 @@ Il flow resta esplicito e non introduce real integration.
 - Helper Integration non possiede stato.
 - Helper Integration non introduce lifecycle.
 - Helper Integration non è real integration.
+
+## DL-EXEC-014 — Integration Boundary Protegge Real Integration
+
+### Problema
+
+Dopo la preview integration controllata, serviva un confine esplicito verso la futura real integration senza collegare RuntimeHost, RuntimeLoop, Viewer, UI o engine reali.
+
+### Decisione
+
+Introdurre `EdiIntegrationBoundary` come foundation minimale.
+
+La boundary espone:
+
+- `createEdiIntegrationBoundaryRequest`;
+- `validateEdiIntegrationBoundaryRequest`.
+
+### Motivazione
+
+Il passaggio da Preview Integration a Real Integration deve essere protetto da un confine architetturale esplicito. La boundary consente di validare una `EdiExecutionRequest` prima di attraversare quel confine, senza alterare i contratti pubblici esistenti e senza introdurre runtime reale.
+
+### Alternative Scartate
+
+- Collegare Preview Integration direttamente a RuntimeHost.
+- Importare RuntimeHost nella preview integration.
+- Importare Preview Integration in RuntimeHost.
+- Introdurre `runRealIntegration`.
+- Collegare engine reali.
+
+### Impatto Architetturale
+
+La boundary crea un punto di controllo futuro senza cambiare Execution, Consumption, Wiring o Preview Integration.
+
+### Regole Permanenti Generate
+
+- Integration Boundary non è Real Integration.
+- Integration Boundary non importa RuntimeHost.
+- Integration Boundary non importa RuntimeLoop.
+- Integration Boundary non importa Preview Integration.
+- Integration Boundary non collega engine reali.
+- Integration Boundary valida senza mutare la request.

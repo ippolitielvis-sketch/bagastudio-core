@@ -76,6 +76,7 @@ This document covers:
 - RFC-1157: EDI Execution Result Dispatcher Foundation
 - RFC-1159: EDI Preview Execution And Consumption Wiring Foundation
 - RFC-1161: EDI Preview Execution And Dispatch Helper Foundation
+- RFC-1163: EDI Integration Boundary Foundation
 
 ## Architecture Overview
 
@@ -585,6 +586,28 @@ It does not create components, own state, retry, queue, publish events, call UI,
 
 This helper is preview integration because it connects execution and consumption for a single explicit caller-driven flow. It is not an orchestrator and it is not real integration.
 
+### EdiIntegrationBoundary
+
+`EdiIntegrationBoundary` introduces the first architectural boundary between Preview Integration and future real runtime integration.
+
+It exports:
+
+- `createEdiIntegrationBoundaryRequest`
+- `validateEdiIntegrationBoundaryRequest`
+
+The boundary accepts an `EdiExecutionRequest` compatible with the existing execution system and validates it minimally.
+
+Current validation checks:
+
+- request is present;
+- request id is present;
+- request mode is present;
+- request target domain is present.
+
+The boundary does not throw destructive errors, does not mutate the request, does not run execution, does not dispatch results, and does not connect to RuntimeHost, RuntimeLoop, Viewer, UI, or real engines.
+
+Its purpose is to protect the future transition from Preview Integration to Real Integration without collapsing the current architectural boundaries.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -625,6 +648,7 @@ Preview Integration is implemented only as an explicit helper.
 Current Preview Integration:
 
 - `runEdiPreviewExecutionAndDispatch`
+- `EdiIntegrationBoundary`
 
 It is:
 
@@ -668,7 +692,8 @@ The execution foundation is separated into:
 - preview result consumer wiring;
 - execution result dispatcher;
 - preview execution and consumption wiring;
-- preview execution and dispatch helper.
+- preview execution and dispatch helper;
+- integration boundary.
 
 Core contracts do not depend on runtime.
 
@@ -683,6 +708,8 @@ Cognitive runtime remains separate from execution runtime.
 Execution result consumers remain separate from `EdiExecutionRuntime` and are not invoked automatically.
 
 `EdiExecutionResultDispatcher` remains separate from `EdiExecutionRuntime` and `ExecutionResultConsumerRegistry`.
+
+`EdiIntegrationBoundary` remains separate from RuntimeHost, RuntimeLoop, Execution, Consumption, and Preview Integration. It validates the edge without importing real runtime owners.
 
 ## Forbidden Dependencies
 
@@ -729,6 +756,7 @@ The execution foundation must not depend on:
 - Dispatcher is not Consumer Registry.
 - Wiring Object is not Orchestrator.
 - Helper Integration is not Orchestrator.
+- Integration Boundary is not Real Integration.
 
 ## Residual Risks
 
@@ -741,6 +769,7 @@ The execution foundation must not depend on:
 - `EdiExecutionResultDispatcher` can dispatch to registered consumers, but it is not automatically connected to runtime output.
 - `PreviewExecutionAndConsumptionWiring` exposes components together, but it does not execute or dispatch.
 - `runEdiPreviewExecutionAndDispatch` connects execution and dispatch only when explicitly called.
+- `EdiIntegrationBoundary` validates requests for boundary crossing but does not connect real runtime.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -762,6 +791,7 @@ Suggested points:
 - introduced neutral execution result consumer contracts and preview consumer wiring;
 - introduced execution result dispatcher and passive execution/consumption wiring;
 - introduced first controlled preview integration helper;
+- introduced integration boundary between preview integration and future real runtime;
 - deferred product integration and real engine execution.
 
 ## Links To Decision Log
@@ -782,6 +812,7 @@ The Decision Log should record:
 - Dispatcher is not Consumer Registry.
 - Wiring Object is not Orchestrator.
 - Helper Integration is not Orchestrator.
+- Integration Boundary is not Real Integration.
 - Real engine executors are deferred.
 
 ## Recommended Next Steps
