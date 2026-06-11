@@ -77,6 +77,7 @@ This document covers:
 - RFC-1159: EDI Preview Execution And Consumption Wiring Foundation
 - RFC-1161: EDI Preview Execution And Dispatch Helper Foundation
 - RFC-1163: EDI Integration Boundary Foundation
+- RFC-1164: EDI Integration Boundary Wiring Review
 
 ## Architecture Overview
 
@@ -608,6 +609,29 @@ The boundary does not throw destructive errors, does not mutate the request, doe
 
 Its purpose is to protect the future transition from Preview Integration to Real Integration without collapsing the current architectural boundaries.
 
+#### Boundary Before Runtime Rule
+
+`EdiIntegrationBoundary` must stay before execution runtime ownership.
+
+It may be called by:
+
+- Preview Integration;
+- future Real Producer Adapters;
+- future Import Integration Adapters;
+- future Recognition Integration Adapters;
+- future Viewer Integration Adapters.
+
+It must not be called directly by:
+
+- RuntimeHost;
+- RuntimeLoop;
+- Executor;
+- Consumer.
+
+RuntimeHost and RuntimeLoop must receive `EdiExecutionRequest` instances that are already normalized and validated. They must not know where the request came from and must not import the integration boundary directly.
+
+The boundary must not become a dispatcher, a parallel runtime, a registry, or an execution/consumption owner.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -711,6 +735,8 @@ Execution result consumers remain separate from `EdiExecutionRuntime` and are no
 
 `EdiIntegrationBoundary` remains separate from RuntimeHost, RuntimeLoop, Execution, Consumption, and Preview Integration. It validates the edge without importing real runtime owners.
 
+The boundary sits before runtime. Preview Integration and future integration adapters may use it before handing a request to execution runtime components, but RuntimeHost, RuntimeLoop, Executor, and Consumer must remain unaware of it.
+
 ## Forbidden Dependencies
 
 The execution foundation must not depend on:
@@ -757,6 +783,8 @@ The execution foundation must not depend on:
 - Wiring Object is not Orchestrator.
 - Helper Integration is not Orchestrator.
 - Integration Boundary is not Real Integration.
+- Integration Boundary is before Runtime.
+- RuntimeHost and RuntimeLoop do not import Integration Boundary.
 
 ## Residual Risks
 
@@ -770,6 +798,7 @@ The execution foundation must not depend on:
 - `PreviewExecutionAndConsumptionWiring` exposes components together, but it does not execute or dispatch.
 - `runEdiPreviewExecutionAndDispatch` connects execution and dispatch only when explicitly called.
 - `EdiIntegrationBoundary` validates requests for boundary crossing but does not connect real runtime.
+- Boundary placement is documented, but no operational wiring has been introduced.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

@@ -33,6 +33,7 @@ Covered foundation:
 - Preview Execution And Consumption Wiring
 - Preview Execution And Dispatch Helper
 - Integration Boundary
+- Integration Boundary Wiring Rule
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -584,3 +585,62 @@ La boundary crea un punto di controllo futuro senza cambiare Execution, Consumpt
 - Integration Boundary non importa Preview Integration.
 - Integration Boundary non collega engine reali.
 - Integration Boundary valida senza mutare la request.
+
+## DL-EXEC-015 — Boundary Before Runtime
+
+### Problema
+
+Dopo l'introduzione della `EdiIntegrationBoundary`, serviva chiarire dove debba essere collocata nel flow futuro senza introdurre wiring operativo.
+
+Il rischio era farla diventare un runtime parallelo, un dispatcher, un registry o una dipendenza diretta di RuntimeHost e RuntimeLoop.
+
+### Decisione
+
+La Integration Boundary deve stare prima del runtime.
+
+Puo essere chiamata da:
+
+- Preview Integration;
+- futuri Real Producer Adapters;
+- futuri Import Integration Adapters;
+- futuri Recognition Integration Adapters;
+- futuri Viewer Integration Adapters.
+
+Non deve essere chiamata direttamente da:
+
+- RuntimeHost;
+- RuntimeLoop;
+- Executor;
+- Consumer.
+
+### Motivazione
+
+RuntimeHost e RuntimeLoop devono ricevere `EdiExecutionRequest` gia normalizzate e validate. Non devono conoscere la provenienza della richiesta e non devono importare la boundary.
+
+Questa separazione preserva RuntimeHost e RuntimeLoop come componenti neutrali, mentre la boundary resta un controllo di ingresso per futuri adapter di integrazione.
+
+### Alternative Scartate
+
+- Importare `EdiIntegrationBoundary` dentro RuntimeHost.
+- Importare `EdiIntegrationBoundary` dentro RuntimeLoop.
+- Far chiamare la boundary agli executor.
+- Far chiamare la boundary ai consumer.
+- Trasformare la boundary in dispatcher o registry.
+- Introdurre wiring operativo verso real integration.
+
+### Impatto Architetturale
+
+La boundary viene posizionata come pre-runtime check. Il runtime resta agnostico rispetto alla provenienza delle request.
+
+Non viene introdotto nessun collegamento operativo nuovo.
+
+### Regole Permanenti Generate
+
+- Boundary Before Runtime.
+- RuntimeHost non importa Integration Boundary.
+- RuntimeLoop non importa Integration Boundary.
+- Executor non chiama Integration Boundary.
+- Consumer non chiama Integration Boundary.
+- Integration Boundary non e dispatcher.
+- Integration Boundary non e registry.
+- Integration Boundary non e runtime parallelo.

@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1163
+- RFC-1126 to RFC-1164
 
 Architecture distinction:
 
@@ -719,6 +719,7 @@ Real Integration remains not implemented.
 RFC:
 
 - RFC-1163
+- RFC-1164
 
 ### Context
 
@@ -752,6 +753,10 @@ EDI gained a non-invasive boundary before future real integration work.
 
 The boundary does not run real integration, does not connect to RuntimeHost, does not connect to RuntimeLoop, and does not import real engines.
 
+RFC-1164 clarified placement without adding operational wiring: the boundary must stay before runtime.
+
+It may be called by Preview Integration and future integration adapters, but not by RuntimeHost, RuntimeLoop, Executor, or Consumer.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -759,6 +764,8 @@ The boundary does not run real integration, does not connect to RuntimeHost, doe
 - Integration Boundary does not import RuntimeLoop.
 - Integration Boundary does not import engine runtimes.
 - Integration Boundary validates without mutating request.
+- Integration Boundary stays before Runtime.
+- RuntimeHost and RuntimeLoop receive already validated requests.
 
 ## Current State
 
@@ -786,6 +793,15 @@ Implemented today:
 - preview execution and consumption wiring;
 - preview execution and dispatch helper;
 - integration boundary.
+
+Documented placement:
+
+- integration boundary sits before runtime;
+- Preview Integration may call it;
+- future Real Producer Adapters may call it;
+- future Import/Recognition Integration Adapters may call it;
+- future Viewer Integration Adapters may call it;
+- RuntimeHost, RuntimeLoop, Executor, and Consumer do not call it directly.
 
 Not implemented today:
 
