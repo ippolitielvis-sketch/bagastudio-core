@@ -29,6 +29,8 @@ Covered foundation:
 - Execution Result Consumer
 - Execution Result Consumer Registry
 - Preview Execution Result Consumer Wiring
+- Execution Result Dispatcher
+- Preview Execution And Consumption Wiring
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -381,3 +383,110 @@ Il consumer side completa la foundation senza trasformarsi in integration. La fu
 - Consumer Wiring non consuma risultati automaticamente.
 - Consumer Wiring non collega `EdiExecutionRuntime`.
 - Consumer Wiring non introduce UI, Viewer, RuntimeHost, RuntimeLoop o engine reali.
+
+## DL-EXEC-010 — Runtime Non È Dispatcher
+
+### Problema
+
+Dopo l'introduzione del consumer side, era possibile collegare direttamente `EdiExecutionRuntime` ai consumer, trasformando il runtime in un punto di dispatch.
+
+### Decisione
+
+Mantenere `EdiExecutionRuntime` separato da `EdiExecutionResultDispatcher`.
+
+`EdiExecutionRuntime` produce `EdiExecutionResult`.
+
+`EdiExecutionResultDispatcher` dirama un result già prodotto verso i consumer registrati.
+
+### Motivazione
+
+La produzione del result e il consumo del result sono responsabilità diverse. Separarle evita integration implicita e mantiene il runtime neutro.
+
+### Alternative Scartate
+
+- Far chiamare i consumer direttamente dal runtime.
+- Far conoscere il consumer registry al runtime.
+- Aggiungere dispatch automatico a `runExecution`.
+
+### Impatto Architetturale
+
+Execution e Consumption restano layer separati. Il caller futuro potrà decidere esplicitamente se e quando dispatchare.
+
+### Regole Permanenti Generate
+
+- Runtime non è Dispatcher.
+- Runtime non conosce consumer.
+- Runtime non consuma result.
+- Dispatch richiede passaggio esplicito.
+
+## DL-EXEC-011 — Dispatcher Non È Consumer Registry
+
+### Problema
+
+Il dispatcher aveva bisogno di accedere ai consumer disponibili, ma non doveva diventare owner dello storage o della registrazione.
+
+### Decisione
+
+Mantenere `EdiExecutionResultDispatcher` separato da `ExecutionResultConsumerRegistry`.
+
+Il dispatcher riceve un registry già costruito e usa `getConsumers()`.
+
+### Motivazione
+
+Il registry custodisce consumer. Il dispatcher invoca consumer. Separare le responsabilità evita routing, ranking, filtering e lifecycle implicito.
+
+### Alternative Scartate
+
+- Far creare il registry al dispatcher.
+- Far registrare consumer al dispatcher.
+- Inserire routing o filtering nel dispatcher.
+
+### Impatto Architetturale
+
+Il dispatcher resta stateless e può essere usato con registry differenti senza mutazioni.
+
+### Regole Permanenti Generate
+
+- Dispatcher non è Consumer Registry.
+- Dispatcher non registra consumer.
+- Dispatcher non filtra consumer.
+- Dispatcher non ranka consumer.
+
+## DL-EXEC-012 — Wiring Object Non È Orchestrator
+
+### Problema
+
+Una volta disponibili execution runtime, consumer registry e dispatcher, era necessario un punto unico di costruzione senza introdurre un orchestrator operativo.
+
+### Decisione
+
+Introdurre `PreviewExecutionAndConsumptionWiring` come wiring object passivo.
+
+Il wiring object costruisce e restituisce:
+
+- `executionRuntime`
+- `consumerRegistry`
+- `executionResultDispatcher`
+
+### Motivazione
+
+Il wiring rende ergonomica la composizione dei componenti preview, ma non deve ricevere request, eseguire request, dispatchare result o consumare result.
+
+### Alternative Scartate
+
+- Creare un orchestrator `runAndDispatch`.
+- Eseguire automaticamente request.
+- Dispatchare automaticamente result.
+- Collegare il wiring alla pipeline cognitiva.
+
+### Impatto Architetturale
+
+Execution e Consumption sono disponibili insieme senza diventare Integration.
+
+### Regole Permanenti Generate
+
+- Wiring Object non è Orchestrator.
+- Wiring Object non riceve request.
+- Wiring Object non esegue.
+- Wiring Object non dispatcha.
+- Wiring Object non consuma.

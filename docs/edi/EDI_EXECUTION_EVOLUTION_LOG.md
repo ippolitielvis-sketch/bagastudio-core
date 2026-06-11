@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1155
+- RFC-1126 to RFC-1159
 
 Architecture distinction:
 
@@ -582,6 +582,85 @@ EDI gained consumer-side wiring while keeping runtime result integration deferre
 - Consumer Wiring does not connect to `EdiExecutionRuntime`.
 - Consumer Wiring does not introduce UI, Viewer, RuntimeHost, RuntimeLoop, or engine dependencies.
 
+## 15. Dispatcher Foundation
+
+RFC:
+
+- RFC-1157
+
+### Context
+
+Execution could produce results and the consumer registry could expose consumers, but no neutral dispatch layer existed between them.
+
+### Problem
+
+EDI needed a controlled way to pass an `EdiExecutionResult` to registered consumers without making `EdiExecutionRuntime` responsible for dispatch.
+
+### Decision
+
+Introduce `EdiExecutionResultDispatcher`.
+
+### Implementation
+
+`EdiExecutionResultDispatcher` receives:
+
+- `EdiExecutionResult`
+- `EdiExecutionResultConsumerRegistry`
+
+It obtains consumers and invokes `consumer.consume(result)` in deterministic order.
+
+### Impact
+
+EDI gained a neutral dispatch boundary between result production and result consumption.
+
+### Permanent Rules Born
+
+- Runtime is not Dispatcher.
+- Dispatcher is not Consumer Registry.
+- Dispatcher does not route.
+- Dispatcher does not rank.
+- Dispatcher does not filter consumers.
+
+## 16. Execution And Consumption Wiring Foundation
+
+RFC:
+
+- RFC-1159
+
+### Context
+
+Preview execution runtime, preview consumer registry, and result dispatcher existed separately.
+
+### Problem
+
+EDI needed a single preview wiring object that exposes all three components without executing or dispatching automatically.
+
+### Decision
+
+Introduce `PreviewExecutionAndConsumptionWiring`.
+
+### Implementation
+
+`PreviewExecutionAndConsumptionWiring` constructs and returns:
+
+- `executionRuntime`
+- `consumerRegistry`
+- `executionResultDispatcher`
+
+It does not receive request, execute request, dispatch result, or consume result.
+
+### Impact
+
+EDI gained a complete passive wiring point for preview execution and consumption.
+
+### Permanent Rules Born
+
+- Wiring Object is not Orchestrator.
+- Wiring Object does not execute.
+- Wiring Object does not dispatch.
+- Wiring Object does not consume.
+- Wiring Object does not introduce Integration.
+
 ## Current State
 
 The EDI Execution Layer has reached Foundation Complete status.
@@ -603,7 +682,9 @@ Implemented today:
 - preview execution result consumer;
 - execution result consumer registry;
 - preview consumer registry population;
-- preview consumer wiring.
+- preview consumer wiring;
+- execution result dispatcher;
+- preview execution and consumption wiring.
 
 Not implemented today:
 
@@ -617,6 +698,7 @@ Not implemented today:
 - async queue;
 - product workflow activation.
 - automatic result consumption;
-- runtime result integration.
+- runtime result integration;
+- automatic execution and dispatch orchestration.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.

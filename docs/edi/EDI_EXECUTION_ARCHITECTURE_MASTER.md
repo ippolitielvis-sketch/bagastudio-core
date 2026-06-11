@@ -72,6 +72,8 @@ This document covers:
 - RFC-1153: EDI Execution Result Consumer Registry Foundation
 - RFC-1154: EDI Execution Result Consumer Registry Population Foundation
 - RFC-1155: EDI Execution Result Consumer Wiring Foundation
+- RFC-1157: EDI Execution Result Dispatcher Foundation
+- RFC-1159: EDI Preview Execution And Consumption Wiring Foundation
 
 ## Architecture Overview
 
@@ -101,8 +103,19 @@ CognitiveStateRuntime
 -> EdiExecutorSelector
 -> EdiExecutor
 -> EdiExecutionResult
+-> EdiExecutionResultDispatcher
 -> EdiExecutionResultConsumer
 ```
+
+The implemented preview wiring can be summarized as:
+
+```text
+Execution
+-> Consumption
+-> Wiring
+```
+
+Execution produces a result. Consumption defines neutral consumers for that result. Wiring builds the available preview components without running or dispatching automatically.
 
 This path is caller-driven. It does not run automatically.
 
@@ -498,6 +511,44 @@ It returns a ready-to-use `EdiExecutionResultConsumerRegistry`.
 
 This is consumer wiring, not runtime integration. It does not consume results, does not connect to `EdiExecutionRuntime`, and does not connect to UI, Viewer, RuntimeHost, RuntimeLoop, or real engines.
 
+### EdiExecutionResultDispatcher
+
+`EdiExecutionResultDispatcher` is the neutral dispatcher for execution results.
+
+It receives:
+
+- `EdiExecutionResult`
+- `EdiExecutionResultConsumerRegistry`
+
+It obtains registered consumers and invokes `consumer.consume(result)` in deterministic order.
+
+It does not:
+
+- know `EdiExecutionRuntime`;
+- create registries;
+- route results;
+- rank consumers;
+- filter consumers;
+- use async queues;
+- publish events;
+- connect to UI or engines.
+
+If a consumer throws, the dispatcher handles the error locally and continues. The current consumer contract does not produce a dispatch report.
+
+### PreviewExecutionAndConsumptionWiring
+
+`PreviewExecutionAndConsumptionWiring` is the passive wiring object for preview execution and consumption.
+
+It constructs and returns:
+
+- `executionRuntime`
+- `consumerRegistry`
+- `executionResultDispatcher`
+
+It does not receive `EdiExecutionRequest`, does not call `runExecution`, does not call `dispatchResult`, and does not consume results.
+
+This is wiring, not an orchestrator and not integration.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -525,7 +576,9 @@ Current wiring includes:
 - executor selector creation;
 - execution runtime creation;
 - preview execution result consumer registry population;
-- preview execution result consumer registry construction.
+- preview execution result consumer registry construction;
+- execution result dispatcher construction;
+- preview execution and consumption wiring.
 
 Wiring makes the preview runtime ready to use, but does not run it automatically.
 
@@ -546,6 +599,8 @@ This document does not claim that integration exists.
 
 Consumer wiring does not mean result integration. The current consumer registry can be constructed, but no implemented layer automatically passes execution results into consumers.
 
+The current `PreviewExecutionAndConsumptionWiring` object exposes components together but does not orchestrate them.
+
 ## Architectural Boundaries
 
 The execution foundation is separated into:
@@ -558,7 +613,9 @@ The execution foundation is separated into:
 - preview executors;
 - preview wiring;
 - execution result consumer contracts;
-- preview result consumer wiring.
+- preview result consumer wiring;
+- execution result dispatcher;
+- preview execution and consumption wiring.
 
 Core contracts do not depend on runtime.
 
@@ -571,6 +628,8 @@ Producer adapters remain separate from executors.
 Cognitive runtime remains separate from execution runtime.
 
 Execution result consumers remain separate from `EdiExecutionRuntime` and are not invoked automatically.
+
+`EdiExecutionResultDispatcher` remains separate from `EdiExecutionRuntime` and `ExecutionResultConsumerRegistry`.
 
 ## Forbidden Dependencies
 
@@ -613,6 +672,9 @@ The execution foundation must not depend on:
 - All runtime activation remains explicit and caller-driven.
 - Execution result consumers must remain neutral until an explicit integration RFC exists.
 - Consumer wiring must not be described as runtime integration.
+- Runtime is not Dispatcher.
+- Dispatcher is not Consumer Registry.
+- Wiring Object is not Orchestrator.
 
 ## Residual Risks
 
@@ -622,6 +684,8 @@ The execution foundation must not depend on:
 - `PreviewExecutionRuntime` is available, but it is not integrated into product UI or cognitive runtime.
 - `PreviewExecutionResultConsumerRegistry` is available, but it is not connected to `EdiExecutionRuntime`.
 - `PreviewExecutionResultConsumerRuntime` constructs a registry only and does not consume results.
+- `EdiExecutionResultDispatcher` can dispatch to registered consumers, but it is not automatically connected to runtime output.
+- `PreviewExecutionAndConsumptionWiring` exposes components together, but it does not execute or dispatch.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -641,6 +705,7 @@ Suggested points:
 - introduced six read-only preview executors;
 - introduced preview registry population and runtime wiring;
 - introduced neutral execution result consumer contracts and preview consumer wiring;
+- introduced execution result dispatcher and passive execution/consumption wiring;
 - deferred product integration and real engine execution.
 
 ## Links To Decision Log
@@ -657,6 +722,9 @@ The Decision Log should record:
 - Execution Result Consumer is neutral and side-effect free.
 - Consumer Registry is separate from Consumer Runtime.
 - Consumer Wiring is separate from Runtime Integration.
+- Runtime is not Dispatcher.
+- Dispatcher is not Consumer Registry.
+- Wiring Object is not Orchestrator.
 - Real engine executors are deferred.
 
 ## Recommended Next Steps
