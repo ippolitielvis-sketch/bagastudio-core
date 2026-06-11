@@ -9,7 +9,7 @@ import type { EdiV2LaboratoryProfile, EdiV2State, EdiV2VisualMode } from "@/comp
 const states: EdiV2State[] = ["idle", "thinking", "analyzing", "speaking", "suggestion", "warning", "success"];
 const modes: EdiV2VisualMode[] = ["prototype", "minimal", "energy", "experimental"];
 const shaderModes = EDI_V2_SHADER_REGISTRY.filter((shader) => shader.enabled && shader.visibleInLaboratory);
-const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "heartPulseSpeed" | "heartRadius" | "heartNoise" | "heartGlow" | "plasmaIntensity" | "plasmaFlowSpeed" | "plasmaNoiseScale" | "plasmaEnergyMix" | "plasmaSoftness" | "filamentDensity" | "filamentSpeed" | "filamentThickness" | "filamentGlow" | "filamentPulseStrength" | "magneticIntensity" | "fieldStrength" | "fieldSpeed" | "fieldDistortion" | "fieldThickness" | "fieldOpacity" | "particleDensity" | "particleSpeed" | "particleSize" | "particleOpacity" | "particleLife" | "knowledgeFlow" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number; max?: number }> = [
+const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "heartPulseSpeed" | "heartRadius" | "heartNoise" | "heartGlow" | "plasmaIntensity" | "plasmaFlowSpeed" | "plasmaNoiseScale" | "plasmaEnergyMix" | "plasmaSoftness" | "filamentDensity" | "filamentSpeed" | "filamentThickness" | "filamentGlow" | "filamentPulseStrength" | "magneticIntensity" | "fieldStrength" | "fieldSpeed" | "fieldDistortion" | "fieldThickness" | "fieldOpacity" | "particleDensity" | "particleSpeed" | "particleSize" | "particleOpacity" | "particleLife" | "knowledgeFlow" | "thoughtPulseStrength" | "thoughtPulseRadius" | "thoughtPulseSpeed" | "thoughtPulseWidth" | "thoughtPulseGlow" | "thoughtPulseDecay" | "communicationStrength" | "communicationRadius" | "communicationSpeed" | "communicationWidth" | "communicationGlow" | "communicationDecay" | "presence" | "presenceRadius" | "presenceSoftness" | "presenceOpacity" | "presencePulse" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number; max?: number }> = [
   { key: "bloomIntensity", label: "Bloom strength" },
   { key: "bloomRadius", label: "Bloom radius", min: 0 },
   { key: "bloomThreshold", label: "Bloom threshold", min: 0 },
@@ -40,6 +40,23 @@ const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" 
   { key: "particleLife", label: "Particle life", min: .2 },
   { key: "knowledgeFlow", label: "Knowledge flow", min: 0 },
   { key: "particleOpacity", label: "Particle opacity", min: 0 },
+  { key: "thoughtPulseStrength", label: "Pulse strength", min: 0 },
+  { key: "thoughtPulseRadius", label: "Pulse radius", min: .2 },
+  { key: "thoughtPulseSpeed", label: "Pulse speed", min: 0 },
+  { key: "thoughtPulseWidth", label: "Pulse width", min: .01 },
+  { key: "thoughtPulseGlow", label: "Pulse glow", min: 0 },
+  { key: "thoughtPulseDecay", label: "Pulse decay", min: .2 },
+  { key: "communicationStrength", label: "Communication strength", min: 0 },
+  { key: "communicationRadius", label: "Communication radius", min: .2 },
+  { key: "communicationSpeed", label: "Communication speed", min: 0 },
+  { key: "communicationWidth", label: "Communication width", min: .01 },
+  { key: "communicationGlow", label: "Communication glow", min: 0 },
+  { key: "communicationDecay", label: "Communication decay", min: .2 },
+  { key: "presence", label: "Presence", min: 0 },
+  { key: "presenceRadius", label: "Radius", min: .2 },
+  { key: "presenceSoftness", label: "Softness", min: .1 },
+  { key: "presenceOpacity", label: "Opacity", min: 0 },
+  { key: "presencePulse", label: "Pulse", min: 0 },
   { key: "distortionIntensity", label: "Distortion intensity", min: 0 },
   { key: "pulseIntensity", label: "Pulse intensity", min: 0 },
   { key: "animationSpeed", label: "Time speed", min: 0 },

@@ -4,15 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { WebGLRenderer } from "three";
 import { EdiRenderPipeline } from "./pipeline/EdiRenderPipeline";
 import { CompositePass } from "./passes/CompositePass";
+import { CommunicationPulsePass } from "./passes/CommunicationPulsePass";
 import { FieldPass } from "./passes/FieldPass";
 import { GlowPass } from "./passes/GlowPass";
 import { HeartPass } from "./passes/HeartPass";
 import { NeuralPass } from "./passes/NeuralPass";
 import { ParticlePass } from "./passes/ParticlePass";
 import { PlasmaPass } from "./passes/PlasmaPass";
+import { PresencePass } from "./passes/PresencePass";
+import { ThoughtPulsePass } from "./passes/ThoughtPulsePass";
 import { resolveEdiV2LaboratoryProfile } from "./laboratory";
 import type { EdiRenderEngineV2Props } from "./types";
 import { useEdiAnimationFrame } from "./useEdiAnimationFrame";
+import { composeEdiV2VisualState } from "./VisualStateComposer";
 
 export default function EdiRenderEngineV2({ state = "idle", size = 140, intensity = 1, reducedMotion = false, compact = false, laboratory, onFps }: EdiRenderEngineV2Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -24,7 +28,7 @@ export default function EdiRenderEngineV2({ state = "idle", size = 140, intensit
     if (!canvasRef.current) return;
     try {
       const renderer = new WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true, powerPreference: "high-performance" });
-      const pipeline = new EdiRenderPipeline([new HeartPass(), new PlasmaPass(), new NeuralPass(), new FieldPass(), new ParticlePass(), new GlowPass(), new CompositePass()], initialSizeRef.current);
+      const pipeline = new EdiRenderPipeline([new HeartPass(), new PlasmaPass(), new NeuralPass(), new FieldPass(), new ParticlePass(), new ThoughtPulsePass(), new CommunicationPulsePass(), new PresencePass(), new GlowPass(), new CompositePass()], initialSizeRef.current);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.autoClear = false;
       rendererRef.current = renderer;
@@ -43,7 +47,7 @@ export default function EdiRenderEngineV2({ state = "idle", size = 140, intensit
   const pausedTimeRef = useRef(0);
   const render = useCallback((time: number, delta: number) => {
     const renderer = rendererRef.current; const pipeline = pipelineRef.current; if (!renderer || !pipeline) return;
-    const laboratoryProfile = resolveEdiV2LaboratoryProfile(laboratory);
+    const laboratoryProfile = composeEdiV2VisualState(state, resolveEdiV2LaboratoryProfile(laboratory));
     if (!laboratoryProfile.paused) pausedTimeRef.current += delta * laboratoryProfile.animationSpeed;
     pipeline.render({ renderer, time: pausedTimeRef.current, delta: laboratoryProfile.paused ? 0 : delta, state, size, intensity, reducedMotion, compact, laboratory: laboratoryProfile });
     if (onFps && time - lastFpsRef.current > 1) { onFps(Math.round(1 / Math.max(delta, .001))); lastFpsRef.current = time; }
