@@ -7,6 +7,7 @@ import { CompositePass } from "./passes/CompositePass";
 import { FieldPass } from "./passes/FieldPass";
 import { GlowPass } from "./passes/GlowPass";
 import { HeartPass } from "./passes/HeartPass";
+import { NeuralPass } from "./passes/NeuralPass";
 import { ParticlePass } from "./passes/ParticlePass";
 import { PlasmaPass } from "./passes/PlasmaPass";
 import { resolveEdiV2LaboratoryProfile } from "./laboratory";
@@ -23,7 +24,7 @@ export default function EdiRenderEngineV2({ state = "idle", size = 140, intensit
     if (!canvasRef.current) return;
     try {
       const renderer = new WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true, powerPreference: "high-performance" });
-      const pipeline = new EdiRenderPipeline([new HeartPass(), new PlasmaPass(), new FieldPass(), new ParticlePass(), new GlowPass(), new CompositePass()], initialSizeRef.current);
+      const pipeline = new EdiRenderPipeline([new HeartPass(), new PlasmaPass(), new NeuralPass(), new FieldPass(), new ParticlePass(), new GlowPass(), new CompositePass()], initialSizeRef.current);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.autoClear = false;
       rendererRef.current = renderer;

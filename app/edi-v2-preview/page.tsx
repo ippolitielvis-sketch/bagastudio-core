@@ -9,7 +9,7 @@ import type { EdiV2LaboratoryProfile, EdiV2State, EdiV2VisualMode } from "@/comp
 const states: EdiV2State[] = ["idle", "thinking", "analyzing", "speaking", "suggestion", "warning", "success"];
 const modes: EdiV2VisualMode[] = ["prototype", "minimal", "energy", "experimental"];
 const shaderModes = EDI_V2_SHADER_REGISTRY.filter((shader) => shader.enabled && shader.visibleInLaboratory);
-const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "heartPulseSpeed" | "heartRadius" | "heartNoise" | "heartGlow" | "plasmaIntensity" | "magneticIntensity" | "particleDensity" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number }> = [
+const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" | "bloomRadius" | "bloomThreshold" | "heartIntensity" | "heartPulseSpeed" | "heartRadius" | "heartNoise" | "heartGlow" | "plasmaIntensity" | "plasmaFlowSpeed" | "plasmaNoiseScale" | "plasmaEnergyMix" | "plasmaSoftness" | "filamentDensity" | "filamentSpeed" | "filamentThickness" | "filamentGlow" | "filamentPulseStrength" | "magneticIntensity" | "fieldStrength" | "fieldSpeed" | "fieldDistortion" | "fieldThickness" | "fieldOpacity" | "particleDensity" | "distortionIntensity" | "pulseIntensity" | "animationSpeed">; label: string; min?: number }> = [
   { key: "bloomIntensity", label: "Bloom strength" },
   { key: "bloomRadius", label: "Bloom radius", min: 0 },
   { key: "bloomThreshold", label: "Bloom threshold", min: 0 },
@@ -19,7 +19,21 @@ const sliders: Array<{ key: keyof Pick<EdiV2LaboratoryProfile, "bloomIntensity" 
   { key: "heartNoise", label: "Heart noise", min: 0 },
   { key: "heartGlow", label: "Heart glow", min: 0 },
   { key: "plasmaIntensity", label: "Plasma intensity" },
+  { key: "plasmaFlowSpeed", label: "Plasma flow speed", min: 0 },
+  { key: "plasmaNoiseScale", label: "Plasma noise scale", min: .1 },
+  { key: "plasmaEnergyMix", label: "Plasma energy mix", min: 0 },
+  { key: "plasmaSoftness", label: "Plasma softness", min: .1 },
+  { key: "filamentDensity", label: "Filament density", min: 0 },
+  { key: "filamentSpeed", label: "Filament speed", min: 0 },
+  { key: "filamentThickness", label: "Filament thickness", min: .005 },
+  { key: "filamentGlow", label: "Filament glow", min: 0 },
+  { key: "filamentPulseStrength", label: "Pulse strength", min: 0 },
   { key: "magneticIntensity", label: "Magnetic intensity" },
+  { key: "fieldStrength", label: "Field strength", min: 0 },
+  { key: "fieldSpeed", label: "Field speed", min: 0 },
+  { key: "fieldDistortion", label: "Field distortion", min: 0 },
+  { key: "fieldThickness", label: "Field thickness", min: .005 },
+  { key: "fieldOpacity", label: "Field opacity", min: 0 },
   { key: "particleDensity", label: "Particle density", min: 0 },
   { key: "distortionIntensity", label: "Distortion intensity", min: 0 },
   { key: "pulseIntensity", label: "Pulse intensity", min: 0 },
