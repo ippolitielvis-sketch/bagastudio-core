@@ -31,6 +31,7 @@ Covered foundation:
 - Preview Execution Result Consumer Wiring
 - Execution Result Dispatcher
 - Preview Execution And Consumption Wiring
+- Preview Execution And Dispatch Helper
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -490,3 +491,55 @@ Execution e Consumption sono disponibili insieme senza diventare Integration.
 - Wiring Object non esegue.
 - Wiring Object non dispatcha.
 - Wiring Object non consuma.
+
+## DL-EXEC-013 — Helper Integration Non È Orchestrator
+
+### Problema
+
+Dopo la disponibilità del wiring passivo, serviva un primo helper esplicito capace di collegare execution e dispatch per una singola request senza trasformarsi in orchestrator, runtime globale o integration reale.
+
+### Decisione
+
+Introdurre `runEdiPreviewExecutionAndDispatch` come helper di preview integration controllata.
+
+Il helper riceve dall'esterno:
+
+- `EdiExecutionRequest`;
+- `EdiExecutionRuntime`;
+- `EdiExecutionResultDispatcher`;
+- `EdiExecutionResultConsumerRegistry`.
+
+Il helper esegue la request, dispatcha il result e restituisce `EdiExecutionResult`.
+
+### Motivazione
+
+Il primo livello di integration deve essere esplicito, sincrono, stateless e caller-driven. Il helper collega componenti già costruiti senza crearli, possederli o trasformarsi in lifecycle manager.
+
+### Alternative Scartate
+
+- Creare un orchestrator con stato interno.
+- Inserire dispatch dentro `EdiExecutionRuntime`.
+- Inserire execution dentro `EdiExecutionResultDispatcher`.
+- Collegare automaticamente UI, Viewer, RuntimeHost o RuntimeLoop.
+- Introdurre queue, event bus o subscription.
+
+### Impatto Architetturale
+
+EDI ottiene il primo flow preview completo:
+
+```text
+Execution
+-> Result
+-> Dispatch
+-> Consumer
+```
+
+Il flow resta esplicito e non introduce real integration.
+
+### Regole Permanenti Generate
+
+- Helper Integration non è Orchestrator.
+- Helper Integration non crea componenti.
+- Helper Integration non possiede stato.
+- Helper Integration non introduce lifecycle.
+- Helper Integration non è real integration.

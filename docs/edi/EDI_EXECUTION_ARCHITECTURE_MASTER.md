@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document is the official architecture reference for the EDI Execution Layer foundation introduced from RFC-1126 to RFC-1150.
+This document is the official architecture reference for the EDI Execution Layer foundation introduced from RFC-1126 onward.
 
 The current state is foundation and wiring only. Product integration is not implemented in this layer.
 
@@ -20,6 +20,7 @@ It documents:
 - the registry and selector;
 - the preview executors;
 - the preview execution runtime wiring.
+- the first controlled preview integration helper.
 
 It does not document real product execution, UI integration, engine integration, project mutation, command handling, or production operations.
 
@@ -74,6 +75,7 @@ This document covers:
 - RFC-1155: EDI Execution Result Consumer Wiring Foundation
 - RFC-1157: EDI Execution Result Dispatcher Foundation
 - RFC-1159: EDI Preview Execution And Consumption Wiring Foundation
+- RFC-1161: EDI Preview Execution And Dispatch Helper Foundation
 
 ## Architecture Overview
 
@@ -116,6 +118,17 @@ Execution
 ```
 
 Execution produces a result. Consumption defines neutral consumers for that result. Wiring builds the available preview components without running or dispatching automatically.
+
+The first controlled preview integration adds an explicit caller-driven helper:
+
+```text
+Foundation
+-> Wiring
+-> Preview Integration
+-> Real Integration (not implemented)
+```
+
+Preview Integration means a caller explicitly asks the helper to execute one request and dispatch the resulting `EdiExecutionResult`. Real Integration with UI, Viewer, cognitive runtime, or real engines is not implemented.
 
 This path is caller-driven. It does not run automatically.
 
@@ -549,6 +562,29 @@ It does not receive `EdiExecutionRequest`, does not call `runExecution`, does no
 
 This is wiring, not an orchestrator and not integration.
 
+### PreviewExecutionAndDispatch
+
+`PreviewExecutionAndDispatch` introduces the first controlled preview integration helper.
+
+It exports `runEdiPreviewExecutionAndDispatch`.
+
+The helper receives:
+
+- `EdiExecutionRequest`
+- `EdiExecutionRuntime`
+- `EdiExecutionResultDispatcher`
+- `EdiExecutionResultConsumerRegistry`
+
+It explicitly:
+
+1. calls `executionRuntime.runExecution({ request })`;
+2. calls `executionResultDispatcher.dispatchResult({ result, consumerRegistry })`;
+3. returns the `EdiExecutionResult`.
+
+It does not create components, own state, retry, queue, publish events, call UI, call Viewer, call RuntimeHost, call RuntimeLoop, call real engines, or mutate project state.
+
+This helper is preview integration because it connects execution and consumption for a single explicit caller-driven flow. It is not an orchestrator and it is not real integration.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -582,11 +618,27 @@ Current wiring includes:
 
 Wiring makes the preview runtime ready to use, but does not run it automatically.
 
-### Integration
+### Preview Integration
 
-Integration is not implemented in the current foundation.
+Preview Integration is implemented only as an explicit helper.
 
-Integration would include future controlled connections to:
+Current Preview Integration:
+
+- `runEdiPreviewExecutionAndDispatch`
+
+It is:
+
+- caller-driven;
+- synchronous;
+- stateless;
+- preview-only;
+- disconnected from UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, and real engines.
+
+### Real Integration
+
+Real Integration is not implemented in the current foundation.
+
+Real Integration would include future controlled connections to:
 
 - UI;
 - Viewer;
@@ -595,7 +647,7 @@ Integration would include future controlled connections to:
 - product workflows;
 - execution result consumption.
 
-This document does not claim that integration exists.
+This document does not claim that real integration exists.
 
 Consumer wiring does not mean result integration. The current consumer registry can be constructed, but no implemented layer automatically passes execution results into consumers.
 
@@ -615,7 +667,8 @@ The execution foundation is separated into:
 - execution result consumer contracts;
 - preview result consumer wiring;
 - execution result dispatcher;
-- preview execution and consumption wiring.
+- preview execution and consumption wiring;
+- preview execution and dispatch helper.
 
 Core contracts do not depend on runtime.
 
@@ -675,6 +728,7 @@ The execution foundation must not depend on:
 - Runtime is not Dispatcher.
 - Dispatcher is not Consumer Registry.
 - Wiring Object is not Orchestrator.
+- Helper Integration is not Orchestrator.
 
 ## Residual Risks
 
@@ -686,6 +740,7 @@ The execution foundation must not depend on:
 - `PreviewExecutionResultConsumerRuntime` constructs a registry only and does not consume results.
 - `EdiExecutionResultDispatcher` can dispatch to registered consumers, but it is not automatically connected to runtime output.
 - `PreviewExecutionAndConsumptionWiring` exposes components together, but it does not execute or dispatch.
+- `runEdiPreviewExecutionAndDispatch` connects execution and dispatch only when explicitly called.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -706,6 +761,7 @@ Suggested points:
 - introduced preview registry population and runtime wiring;
 - introduced neutral execution result consumer contracts and preview consumer wiring;
 - introduced execution result dispatcher and passive execution/consumption wiring;
+- introduced first controlled preview integration helper;
 - deferred product integration and real engine execution.
 
 ## Links To Decision Log
@@ -725,6 +781,7 @@ The Decision Log should record:
 - Runtime is not Dispatcher.
 - Dispatcher is not Consumer Registry.
 - Wiring Object is not Orchestrator.
+- Helper Integration is not Orchestrator.
 - Real engine executors are deferred.
 
 ## Recommended Next Steps

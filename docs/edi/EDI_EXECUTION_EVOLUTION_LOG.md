@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1159
+- RFC-1126 to RFC-1161
 
 Architecture distinction:
 
@@ -661,6 +661,59 @@ EDI gained a complete passive wiring point for preview execution and consumption
 - Wiring Object does not consume.
 - Wiring Object does not introduce Integration.
 
+## 17. Preview Integration Foundation
+
+RFC:
+
+- RFC-1161
+
+### Context
+
+Execution runtime, result dispatcher, consumer registry, and passive wiring existed as separate pieces.
+
+### Problem
+
+EDI needed a first explicit preview integration helper capable of running one execution request and dispatching the result without introducing orchestration, lifecycle, UI, Viewer, RuntimeHost, RuntimeLoop, or real engine integration.
+
+### Decision
+
+Introduce `runEdiPreviewExecutionAndDispatch`.
+
+### Implementation
+
+The helper receives:
+
+- `EdiExecutionRequest`;
+- `EdiExecutionRuntime`;
+- `EdiExecutionResultDispatcher`;
+- `EdiExecutionResultConsumerRegistry`.
+
+It:
+
+1. calls `executionRuntime.runExecution`;
+2. calls `executionResultDispatcher.dispatchResult`;
+3. returns `EdiExecutionResult`.
+
+### Impact
+
+EDI gained the first controlled preview integration flow:
+
+```text
+Execution
+-> Consumption
+-> Preview Integration
+```
+
+Real Integration remains not implemented.
+
+### Permanent Rules Born
+
+- Helper Integration is not Orchestrator.
+- Helper Integration is explicit and caller-driven.
+- Helper Integration does not create components.
+- Helper Integration does not own state.
+- Helper Integration is not real integration.
+
 ## Current State
 
 The EDI Execution Layer has reached Foundation Complete status.
@@ -684,7 +737,8 @@ Implemented today:
 - preview consumer registry population;
 - preview consumer wiring;
 - execution result dispatcher;
-- preview execution and consumption wiring.
+- preview execution and consumption wiring;
+- preview execution and dispatch helper.
 
 Not implemented today:
 
@@ -699,6 +753,7 @@ Not implemented today:
 - product workflow activation.
 - automatic result consumption;
 - runtime result integration;
-- automatic execution and dispatch orchestration.
+- automatic execution and dispatch orchestration;
+- real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.
