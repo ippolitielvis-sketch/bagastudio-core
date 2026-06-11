@@ -69,7 +69,7 @@ function normalizeCollisionArrayV1(value: unknown): any[] {
   if (Array.isArray(value)) return value.filter(Boolean);
 
   if (typeof value === "string") {
-    const parsed = parseBagaStudioJsonField(value, null);
+    const parsed = parseBagaStudioJsonField<unknown[] | null>(value, null);
     if (Array.isArray(parsed)) return parsed.filter(Boolean);
     const csvValues = parseBagaStudioCsvField(value);
     return csvValues.map((item) => ({ label: item, name: item }));
@@ -282,4 +282,3 @@ export function buildDrillingValidationV22Report(meshes: MeshConfigLike[]): Dril
     issues,
   };
 }
-

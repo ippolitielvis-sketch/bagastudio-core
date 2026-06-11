@@ -108,7 +108,7 @@ export function buildWallIntelligenceEngineV30Report(params: {
     },
   ];
 
-  const fixingTargets: WallIntelligenceV30FixingTarget[] = wallProfiles.flatMap((wall) => {
+  const fixingTargets: WallIntelligenceV30FixingTarget[] = wallProfiles.flatMap((wall): WallIntelligenceV30FixingTarget[] => {
     if (wall.wallType === "unknown") {
       return [
         {
@@ -219,4 +219,3 @@ export function buildWallIntelligenceEngineV30Report(params: {
     ],
   };
 }
-

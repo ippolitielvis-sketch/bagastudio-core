@@ -99,7 +99,7 @@ export function buildParametricEditV1Report(
   const productionByComponent = new Map<string, ProductionReadinessGateV1Item>();
   productionGateReport.items.forEach((item) => productionByComponent.set(item.componentId, item));
 
-  const csvByName = new Map<string, CsvRegenerationV1Report["rows"][number]>();
+  const csvByName = new Map<string, CsvRegenerationV1ReportLike["rows"][number]>();
   csvReport.rows.forEach((row) => csvByName.set(normalizeCsvRegenerationKey(row.name), row));
 
   const targetThickness = readCollisionNumberV1(targetThicknessValue);
