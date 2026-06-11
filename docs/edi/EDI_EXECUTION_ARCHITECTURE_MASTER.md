@@ -67,6 +67,11 @@ This document covers:
 - RFC-1147: EDI Factory Preview Executor Foundation
 - RFC-1149: EDI Executor Registry Population Foundation
 - RFC-1150: EDI Runtime Execution Wiring Foundation
+- RFC-1151: EDI Execution Result Consumer Foundation
+- RFC-1152: EDI Preview Execution Result Consumer Foundation
+- RFC-1153: EDI Execution Result Consumer Registry Foundation
+- RFC-1154: EDI Execution Result Consumer Registry Population Foundation
+- RFC-1155: EDI Execution Result Consumer Wiring Foundation
 
 ## Architecture Overview
 
@@ -96,6 +101,7 @@ CognitiveStateRuntime
 -> EdiExecutorSelector
 -> EdiExecutor
 -> EdiExecutionResult
+-> EdiExecutionResultConsumer
 ```
 
 This path is caller-driven. It does not run automatically.
@@ -218,6 +224,20 @@ It defines:
 
 Capabilities are descriptive metadata used by registry and selector layers. They do not imply validation or real execution readiness.
 
+### EdiExecutionResultConsumer
+
+`EdiExecutionResultConsumer` is the neutral result consumption contract.
+
+It defines:
+
+- id;
+- name;
+- consume function.
+
+The consume function receives `EdiExecutionResult` and returns `void`.
+
+The contract does not define UI behavior, project mutation, engine calls, event publishing, queues, routing, or automatic runtime integration.
+
 ## Runtime Builders
 
 Runtime builders compose core contracts without executing real operations.
@@ -246,7 +266,8 @@ The Execution Layer is responsible for:
 
 - executor selection;
 - execution request handling;
-- execution result production.
+- execution result production;
+- execution result consumption contract definition.
 
 The Execution Layer is not responsible for:
 
@@ -254,7 +275,8 @@ The Execution Layer is not responsible for:
 - action generation;
 - business logic;
 - real engines;
-- UI.
+- UI;
+- automatic result integration.
 
 This boundary keeps execution orchestration separate from cognitive interpretation, product runtime, and presentation concerns.
 
@@ -427,6 +449,55 @@ It returns a ready-to-use preview execution runtime.
 
 This is wiring, not integration. It does not execute automatically, subscribe to events, connect to UI, or connect to the cognitive runtime.
 
+### PreviewExecutionResultConsumer
+
+`PreviewExecutionResultConsumer` is the concrete preview consumer for execution results.
+
+It implements `EdiExecutionResultConsumer`.
+
+It is intentionally descriptive and side-effect free. It receives an `EdiExecutionResult` and performs no project mutation, UI update, engine call, event dispatch, queue operation, or runtime integration.
+
+### ExecutionResultConsumerRegistry
+
+`ExecutionResultConsumerRegistry` is the neutral registry for execution result consumers.
+
+It can:
+
+- return all registered consumers;
+- look up a consumer by id.
+
+It does not:
+
+- consume results automatically;
+- route results;
+- rank consumers;
+- filter by custom logic;
+- publish events;
+- connect to UI or engines.
+
+### PreviewExecutionResultConsumerRegistry
+
+`PreviewExecutionResultConsumerRegistry` is the official preview population point for result consumers.
+
+It exports:
+
+- `ediPreviewExecutionResultConsumers`
+- `createEdiPreviewExecutionResultConsumerRegistry`
+
+Current deterministic consumer order:
+
+1. Preview Execution Result Consumer
+
+No routing, ranking, filtering, or automatic consumption is introduced.
+
+### PreviewExecutionResultConsumerRuntime
+
+`PreviewExecutionResultConsumerRuntime` is the official wiring factory for preview result consumer registry construction.
+
+It returns a ready-to-use `EdiExecutionResultConsumerRegistry`.
+
+This is consumer wiring, not runtime integration. It does not consume results, does not connect to `EdiExecutionRuntime`, and does not connect to UI, Viewer, RuntimeHost, RuntimeLoop, or real engines.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -452,7 +523,9 @@ Current wiring includes:
 
 - preview executor registry population;
 - executor selector creation;
-- execution runtime creation.
+- execution runtime creation;
+- preview execution result consumer registry population;
+- preview execution result consumer registry construction.
 
 Wiring makes the preview runtime ready to use, but does not run it automatically.
 
@@ -471,6 +544,8 @@ Integration would include future controlled connections to:
 
 This document does not claim that integration exists.
 
+Consumer wiring does not mean result integration. The current consumer registry can be constructed, but no implemented layer automatically passes execution results into consumers.
+
 ## Architectural Boundaries
 
 The execution foundation is separated into:
@@ -481,7 +556,9 @@ The execution foundation is separated into:
 - executor selector;
 - execution runtime;
 - preview executors;
-- preview wiring.
+- preview wiring;
+- execution result consumer contracts;
+- preview result consumer wiring.
 
 Core contracts do not depend on runtime.
 
@@ -492,6 +569,8 @@ Runtime wiring does not depend on Viewer, UI, Admin, or real engines.
 Producer adapters remain separate from executors.
 
 Cognitive runtime remains separate from execution runtime.
+
+Execution result consumers remain separate from `EdiExecutionRuntime` and are not invoked automatically.
 
 ## Forbidden Dependencies
 
@@ -515,7 +594,9 @@ The execution foundation must not depend on:
 - ProjectEventBridge;
 - automatic subscriptions;
 - async queues;
-- AI/LLM classifier.
+- AI/LLM classifier;
+- automatic result routing;
+- runtime result integration.
 
 ## Permanent Rules
 
@@ -530,6 +611,8 @@ The execution foundation must not depend on:
 - No preview executor may call real engines.
 - No execution component may mutate project state in this foundation.
 - All runtime activation remains explicit and caller-driven.
+- Execution result consumers must remain neutral until an explicit integration RFC exists.
+- Consumer wiring must not be described as runtime integration.
 
 ## Residual Risks
 
@@ -537,6 +620,8 @@ The execution foundation must not depend on:
 - `EdiExecutionRuntime` currently uses the first selector candidate and intentionally does not rank.
 - Async executor support is explicitly not part of this foundation.
 - `PreviewExecutionRuntime` is available, but it is not integrated into product UI or cognitive runtime.
+- `PreviewExecutionResultConsumerRegistry` is available, but it is not connected to `EdiExecutionRuntime`.
+- `PreviewExecutionResultConsumerRuntime` constructs a registry only and does not consume results.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -555,6 +640,7 @@ Suggested points:
 - introduced executor contract, registry, selector, and execution runtime;
 - introduced six read-only preview executors;
 - introduced preview registry population and runtime wiring;
+- introduced neutral execution result consumer contracts and preview consumer wiring;
 - deferred product integration and real engine execution.
 
 ## Links To Decision Log
@@ -568,6 +654,9 @@ The Decision Log should record:
 - EdiExecutionRuntime has no domain-specific logic.
 - Preview executors are read-only and descriptive.
 - PreviewExecutionRuntime is wiring, not integration.
+- Execution Result Consumer is neutral and side-effect free.
+- Consumer Registry is separate from Consumer Runtime.
+- Consumer Wiring is separate from Runtime Integration.
 - Real engine executors are deferred.
 
 ## Recommended Next Steps
@@ -578,3 +667,4 @@ The Decision Log should record:
 4. Design how execution results should be consumed before connecting UI.
 5. Design controlled integration with the cognitive runtime.
 6. Defer real engine executors until preview behavior and boundaries are validated.
+7. Define a future explicit result consumption integration RFC before connecting consumers to runtime output.

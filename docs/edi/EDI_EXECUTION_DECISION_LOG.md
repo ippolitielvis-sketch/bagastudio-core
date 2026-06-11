@@ -26,6 +26,9 @@ Covered foundation:
 - Preview Executors
 - PreviewExecutorRegistry
 - PreviewExecutionRuntime
+- Execution Result Consumer
+- Execution Result Consumer Registry
+- Preview Execution Result Consumer Wiring
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -263,3 +266,118 @@ La foundation resta sicura, testabile e reversibile. Le future integrazioni dovr
 - Nessuna UI instruction nella foundation.
 - Nessuna execution automatica nella foundation.
 - Ogni futura execution reale richiede RFC specifica e confini espliciti.
+
+## DL-EXEC-007 — Execution Result Consumer Neutro
+
+### Problema
+
+L'Execution Layer produce `EdiExecutionResult`, ma serviva un contratto ufficiale per consumare questi risultati senza introdurre UI, RuntimeHost, RuntimeLoop, event bus o mutazioni progetto.
+
+### Decisione
+
+Introdurre `EdiExecutionResultConsumer` come contratto neutro.
+
+Il consumer:
+
+- ha id e name;
+- espone `consume(result)`;
+- riceve `EdiExecutionResult`;
+- non impone side effect.
+
+### Motivazione
+
+Il consumo del risultato deve essere modellato prima dell'integrazione reale, ma senza anticipare comportamenti UI, engine o pipeline cognitive.
+
+### Alternative Scartate
+
+- Consumare risultati direttamente dentro `EdiExecutionRuntime`.
+- Collegare subito i risultati alla UI.
+- Usare event bus o callback globali.
+- Mutare il progetto durante il consumo.
+
+### Impatto Architetturale
+
+Il result consumption diventa un contratto separato e testabile, senza accoppiarsi al runtime di esecuzione.
+
+### Regole Permanenti Generate
+
+- Il consumer è neutro.
+- Il consumer non implica UI.
+- Il consumer non implica mutazione progetto.
+- Il consumer non è Runtime Integration.
+
+## DL-EXEC-008 — Consumer Registry Separato Dal Consumer Runtime
+
+### Problema
+
+Serviva un punto per custodire consumer disponibili senza eseguirli automaticamente o introdurre routing.
+
+### Decisione
+
+Introdurre `ExecutionResultConsumerRegistry` separato dal consumer runtime/wiring.
+
+Il registry:
+
+- riceve consumer dall'esterno;
+- mantiene ordine deterministico;
+- espone elenco consumer;
+- supporta lookup by id.
+
+### Motivazione
+
+La registrazione dei consumer deve restare separata dall'eventuale consumo dei risultati. Questo evita routing prematuro, ranking e side effect.
+
+### Alternative Scartate
+
+- Eseguire automaticamente i consumer al momento della registrazione.
+- Inserire routing nel registry.
+- Inserire ranking o filtering custom.
+- Collegare registry a `EdiExecutionRuntime`.
+
+### Impatto Architetturale
+
+Il sistema può costruire un catalogo consumer stabile senza attivare alcun comportamento.
+
+### Regole Permanenti Generate
+
+- Il consumer registry non consuma risultati.
+- Il consumer registry non fa routing.
+- Il consumer registry non ranka.
+- Il consumer registry non è integration.
+
+## DL-EXEC-009 — Consumer Wiring Separato Da Runtime Integration
+
+### Problema
+
+Dopo aver creato consumer e registry, serviva un punto ufficiale di wiring preview senza collegare automaticamente i risultati prodotti da `EdiExecutionRuntime`.
+
+### Decisione
+
+Introdurre:
+
+- `PreviewExecutionResultConsumerRegistry`
+- `PreviewExecutionResultConsumerRuntime`
+
+come wiring foundation.
+
+### Motivazione
+
+Il wiring deve rendere disponibile un registry consumer pronto all'uso, ma non deve consumare risultati, collegarsi al runtime execution o attivare pipeline.
+
+### Alternative Scartate
+
+- Collegare automaticamente `EdiExecutionRuntime` ai consumer.
+- Consumare ogni result appena prodotto.
+- Collegare consumer a UI, Viewer o RuntimeHost.
+- Usare queue, event bus o subscription.
+
+### Impatto Architetturale
+
+Il consumer side completa la foundation senza trasformarsi in integration. La futura Runtime Integration dovrà essere progettata esplicitamente.
+
+### Regole Permanenti Generate
+
+- Consumer Wiring non è Runtime Integration.
+- Consumer Wiring non consuma risultati automaticamente.
+- Consumer Wiring non collega `EdiExecutionRuntime`.
+- Consumer Wiring non introduce UI, Viewer, RuntimeHost, RuntimeLoop o engine reali.

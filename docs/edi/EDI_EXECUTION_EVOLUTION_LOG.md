@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1150
+- RFC-1126 to RFC-1155
 
 Architecture distinction:
 
@@ -402,6 +402,186 @@ EDI gained execution wiring that is ready for future controlled integration.
 - Wiring does not subscribe to events.
 - Wiring does not connect to UI, Viewer, RuntimeHost, RuntimeLoop, or real engines.
 
+## 10. Execution Result Consumer Foundation
+
+RFC:
+
+- RFC-1151
+
+### Context
+
+The execution runtime could produce `EdiExecutionResult`, but there was no official contract for result consumption.
+
+### Problem
+
+EDI needed a result consumption boundary without connecting to UI, Viewer, RuntimeHost, RuntimeLoop, event bus, or project mutation.
+
+### Decision
+
+Introduce `EdiExecutionResultConsumer`.
+
+### Implementation
+
+`EdiExecutionResultConsumer` defines:
+
+- id;
+- name;
+- `consume(result)`.
+
+The consume function receives `EdiExecutionResult` and returns `void`.
+
+### Impact
+
+EDI gained a neutral contract for future result consumption without implementing runtime integration.
+
+### Permanent Rules Born
+
+- Result consumption is modeled as a contract.
+- Consumer does not imply UI.
+- Consumer does not imply project mutation.
+- Consumer does not imply runtime integration.
+
+## 11. Preview Consumer Foundation
+
+RFC:
+
+- RFC-1152
+
+### Context
+
+The result consumer contract existed, but there was no concrete preview consumer.
+
+### Problem
+
+EDI needed a concrete consumer to validate the contract while remaining descriptive and side-effect free.
+
+### Decision
+
+Introduce `PreviewExecutionResultConsumer`.
+
+### Implementation
+
+`PreviewExecutionResultConsumer` implements `EdiExecutionResultConsumer` and provides a deterministic no-op consumption function.
+
+### Impact
+
+EDI gained a concrete preview consumer without side effects, UI wiring, runtime integration, or engine dependencies.
+
+### Permanent Rules Born
+
+- Preview consumer is side-effect free.
+- Preview consumer does not mutate project state.
+- Preview consumer does not publish events.
+- Preview consumer does not integrate with UI or engines.
+
+## 12. Consumer Registry Foundation
+
+RFC:
+
+- RFC-1153
+
+### Context
+
+The preview consumer existed, but there was no neutral registry for result consumers.
+
+### Problem
+
+EDI needed a deterministic registry for available consumers without executing them automatically.
+
+### Decision
+
+Introduce `ExecutionResultConsumerRegistry`.
+
+### Implementation
+
+`ExecutionResultConsumerRegistry` receives consumer instances, stores them in deterministic order, exposes all consumers, and supports lookup by id.
+
+### Impact
+
+EDI gained a stable registry for result consumers while keeping routing and execution separate.
+
+### Permanent Rules Born
+
+- Consumer registry does not consume results.
+- Consumer registry does not route.
+- Consumer registry does not rank.
+- Consumer registry does not filter by custom logic.
+
+## 13. Consumer Registry Population Foundation
+
+RFC:
+
+- RFC-1154
+
+### Context
+
+Consumer registry existed, but no official preview population point existed.
+
+### Problem
+
+EDI needed an official deterministic population point for preview result consumers.
+
+### Decision
+
+Introduce `PreviewExecutionResultConsumerRegistry`.
+
+### Implementation
+
+`PreviewExecutionResultConsumerRegistry` exports:
+
+- `ediPreviewExecutionResultConsumers`
+- `createEdiPreviewExecutionResultConsumerRegistry`
+
+The current consumer list contains:
+
+1. Preview Execution Result Consumer
+
+### Impact
+
+EDI gained an official populated registry for preview result consumers.
+
+### Permanent Rules Born
+
+- Consumer population is deterministic.
+- Consumer population does not consume results.
+- Consumer population does not route.
+- Consumer population does not create integration.
+
+## 14. Consumer Wiring Foundation
+
+RFC:
+
+- RFC-1155
+
+### Context
+
+The preview consumer registry population existed, but no official wiring factory existed for constructing the ready-to-use consumer registry.
+
+### Problem
+
+EDI needed a preview consumer wiring point without connecting it to `EdiExecutionRuntime`.
+
+### Decision
+
+Introduce `PreviewExecutionResultConsumerRuntime`.
+
+### Implementation
+
+`PreviewExecutionResultConsumerRuntime` constructs and returns a ready-to-use `EdiExecutionResultConsumerRegistry`.
+
+It does not consume results.
+
+### Impact
+
+EDI gained consumer-side wiring while keeping runtime result integration deferred.
+
+### Permanent Rules Born
+
+- Consumer Wiring is not Runtime Integration.
+- Consumer Wiring does not consume results automatically.
+- Consumer Wiring does not connect to `EdiExecutionRuntime`.
+- Consumer Wiring does not introduce UI, Viewer, RuntimeHost, RuntimeLoop, or engine dependencies.
+
 ## Current State
 
 The EDI Execution Layer has reached Foundation Complete status.
@@ -418,7 +598,12 @@ Implemented today:
 - neutral execution runtime;
 - six preview executors;
 - preview executor registry population;
-- preview execution runtime wiring.
+- preview execution runtime wiring;
+- execution result consumer contract;
+- preview execution result consumer;
+- execution result consumer registry;
+- preview consumer registry population;
+- preview consumer wiring.
 
 Not implemented today:
 
@@ -431,5 +616,7 @@ Not implemented today:
 - plugin system;
 - async queue;
 - product workflow activation.
+- automatic result consumption;
+- runtime result integration.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.
