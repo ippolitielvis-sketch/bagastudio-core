@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1178
+- RFC-1126 to RFC-1179
 
 Architecture distinction:
 
@@ -734,6 +734,7 @@ RFC:
 - RFC-1176
 - RFC-1177
 - RFC-1178
+- RFC-1179
 
 ### Context
 
@@ -855,6 +856,14 @@ The observable result preserves execution result id, execution request id, times
 
 It does not render UI, wire Viewer, dispatch globally, mutate runtime, call RuntimeHost, call RuntimeLoop, perform real recognition, analyze geometry, or inspect scenes.
 
+RFC-1179 defined the future Recognition Observable Flow.
+
+The documented flow is Recognition Input, Recognition Producer Adapter, Recognition Boundary Pipeline, Recognition Runtime Adapter, Recognition Result Adapter, and Recognition Observable Result.
+
+The flow must remain a controlled helper, not Viewer integration, UI, global dispatch, real recognition, geometry recognition, scene recognition, RuntimeHost wiring, or RuntimeLoop wiring.
+
+The next planned RFC is `RFC-1180 - First Observable Recognition Flow Foundation`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -900,6 +909,9 @@ It does not render UI, wire Viewer, dispatch globally, mutate runtime, call Runt
 - Recognition Result Adapter is the future result exposure boundary.
 - Recognition Result Adapter produces observable data, not UI.
 - Recognition Result Adapter does not dispatch.
+- Recognition Observable Flow is helper-driven.
+- Recognition Observable Flow is not Viewer integration.
+- Recognition Observable Result is not UI.
 
 ## Current State
 
@@ -958,6 +970,7 @@ Implemented producer adapter foundation:
 - Recognition Producer Pipeline Validation is documented as a checklist;
 - `runRecognitionRuntimeAdapter` exists as the Recognition Runtime Adapter foundation;
 - `createRecognitionObservableResult` exists as the Recognition Result Adapter foundation;
+- Recognition Observable Flow is documented but not implemented yet;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -975,6 +988,7 @@ Not implemented today:
 - automatic result consumption;
 - runtime result integration;
 - automatic execution and dispatch orchestration;
+- Recognition Observable Flow helper;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
 - `runRealIntegration`.
 

@@ -48,6 +48,7 @@ Covered foundation:
 - Recognition Runtime Adapter Foundation
 - Recognition Runtime Result Adapter Boundary
 - Recognition Result Adapter Foundation
+- Recognition Observable Flow Boundary
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1332,3 +1333,54 @@ Non viene introdotta real integration.
 - Recognition Result Adapter non modifica runtime.
 - Recognition Result Adapter non conosce Viewer.
 - Recognition Result Adapter non introduce recognition reale.
+
+## DL-EXEC-030 - Recognition Observable Flow Boundary
+
+### Problema
+
+Dopo Producer Adapter, Boundary Pipeline, Runtime Adapter e Result Adapter, serviva definire il primo flow recognition osservabile completo senza trasformarlo in Viewer integration o dispatch globale.
+
+### Decisione
+
+Il primo Recognition Observable Flow dovra essere un helper controllato.
+
+Il flow documentato e:
+
+```text
+Recognition Input
+Recognition Producer Adapter
+Recognition Boundary Pipeline
+Recognition Runtime Adapter
+Recognition Result Adapter
+Recognition Observable Result
+```
+
+### Motivazione
+
+Il flow osservabile deve comporre foundation esistenti senza assumere ownership di Viewer, UI, RuntimeHost, RuntimeLoop, dispatcher globale o real recognition.
+
+### Alternative Scartate
+
+- Collegare direttamente Viewer.
+- Introdurre UI.
+- Fare dispatch globale.
+- Chiamare RuntimeHost o RuntimeLoop.
+- Unire Runtime Adapter e Result Adapter.
+- Introdurre recognition reale.
+- Analizzare geometria o scene.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+La pipeline recognition puo essere descritta end-to-end come observable flow, ma resta fuori dalla real integration.
+
+La prossima RFC operativa sara `RFC-1180 - First Observable Recognition Flow Foundation`.
+
+### Regole Permanenti Generate
+
+- Recognition Observable Flow e helper controllato.
+- Recognition Observable Flow non e Viewer integration.
+- Recognition Observable Result non e UI.
+- Recognition Observable Flow non fa dispatch globale.
+- Recognition Observable Flow non chiama RuntimeHost o RuntimeLoop.
+- Recognition Observable Flow non introduce recognition reale.

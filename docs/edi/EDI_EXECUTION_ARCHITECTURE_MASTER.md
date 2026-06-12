@@ -92,6 +92,7 @@ This document covers:
 - RFC-1176: EDI Recognition Runtime Adapter Foundation
 - RFC-1177: EDI Recognition Runtime Result Dispatch Review
 - RFC-1178: EDI Recognition Result Adapter Foundation
+- RFC-1179: EDI Recognition Observable Flow Review
 
 ## Architecture Overview
 
@@ -956,6 +957,36 @@ It preserves:
 
 It does not render UI, wire Viewer, dispatch globally, mutate runtime, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, inspect scene graph, or introduce `runRealIntegration`.
 
+### Recognition Observable Flow
+
+RFC-1179 defines the first complete recognition observable flow as a future controlled helper.
+
+The documented flow is:
+
+```text
+Recognition Input
+↓
+RecognitionProducerAdapter
+↓
+RecognitionProducerBoundaryPipeline
+↓
+RecognitionRuntimeAdapter
+↓
+RecognitionResultAdapter
+↓
+RecognitionObservableResult
+```
+
+The observable flow is not Viewer integration.
+
+The observable result is not UI.
+
+The future flow helper must not dispatch globally, render UI, wire Viewer, call RuntimeHost, call RuntimeLoop, mutate runtime, perform real recognition, analyze geometry, inspect scene graph, or introduce `runRealIntegration`.
+
+The planned next RFC is `RFC-1180 - First Observable Recognition Flow Foundation`.
+
+RFC-1180 must create a controlled helper that accepts `RecognitionProducerAdapterInput`, uses the recognition boundary pipeline, handles boundary validation failures with a controlled flow result, calls `RecognitionRuntimeAdapter` only when boundary validation succeeds, uses `RecognitionResultAdapter`, and returns `RecognitionObservableResult` or a controlled flow result.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1137,6 +1168,8 @@ The execution foundation must not depend on:
 - Recognition Result Adapter is the future result exposure boundary.
 - Recognition Result Adapter produces observable data, not UI.
 - Recognition Result Adapter does not dispatch.
+- Recognition Observable Flow is not Viewer Integration.
+- Recognition Observable Flow must stay helper-driven.
 
 ## Residual Risks
 
@@ -1162,6 +1195,7 @@ The execution foundation must not depend on:
 - Recognition Producer Pipeline Validation is documented, but no automated test framework has been introduced for it.
 - Recognition Runtime Adapter exists as a foundation, but it does not perform real recognition or dispatch.
 - Recognition Result Adapter exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
+- Recognition Observable Flow is documented but not implemented.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1218,3 +1252,4 @@ The Decision Log should record:
 7. Define a future explicit result consumption integration RFC before connecting consumers to runtime output.
 8. Define validation for Recognition Runtime Adapter once a project test pattern exists.
 9. Define validation for Recognition Result Adapter once a project test pattern exists.
+10. RFC-1180 - First Observable Recognition Flow Foundation.
