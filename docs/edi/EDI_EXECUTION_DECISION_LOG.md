@@ -71,6 +71,8 @@ Covered foundation:
 - EDI Memory Foundation Review
 - EDI Memory Entry Foundation
 - Observation to Memory Flow Review
+- EDI Understanding Foundation Review
+- EDI Understanding Artifact Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2636,6 +2638,124 @@ La prossima RFC consigliata e `RFC-1201 - EDI Understanding Foundation Review`.
 - Memory Entry non avvia Understanding, Reasoning, Proposal, Optimization, Mutation o runtime.
 - Future Understanding deve leggere Memory Entry solo tramite RFC dedicata.
 - Future Reasoning deve trattare Memory Entry come evidenza, non come trigger automatico.
+
+## DL-EXEC-053 - Understanding Is Interpreted Meaning, Not Reasoning
+
+### Problema
+
+Dopo aver validato il percorso Observation to Memory, serviva definire che cosa significhi Understanding per EDI prima di introdurre artifact di comprensione, Reasoning, Proposal, runtime, UI o storage operativo.
+
+Il rischio era confondere Understanding con osservazione grezza, memoria trattenuta, ragionamento operativo o proposta.
+
+### Decisione
+
+Definire Understanding come il layer in cui EDI interpreta osservazioni e memorie per produrre significato.
+
+Sintesi concettuale:
+
+```text
+Observation = vedo
+Memory = ricordo
+Understanding = so cosa significa
+```
+
+Understanding puo produrre classificazioni, significati, relazioni, contesto interpretato e sintesi semantiche domain-independent.
+
+Understanding non produce Proposal, Validation, Mutation, UI, runtime execution o aggiornamenti al Source of Truth.
+
+### Motivazione
+
+Observation risponde a cosa e stato visto.
+
+Memory risponde a cosa e stato conservato come conoscenza contestuale.
+
+Understanding risponde a cosa significa cio che e stato osservato e ricordato.
+
+Questa separazione protegge Product Package, Project State, Viewer, Factory e RuntimeHost/RuntimeLoop da interpretazioni che non sono ancora validate o trasformate in proposta.
+
+### Alternative Scartate
+
+- Trattare Understanding come Reasoning.
+- Trattare Understanding come Proposal.
+- Trattare Understanding come cache arricchita.
+- Far produrre mutazioni o validation decisions a Understanding.
+- Collegare Understanding direttamente a runtime, Viewer, UI o engine reali.
+- Rendere Understanding specifico di un solo dominio come Product Package, DXF, DWG, Factory o business.
+
+### Impatto Architetturale
+
+Understanding diventa il prossimo layer del Core Cognitive Loop dopo Memory.
+
+Il layer dovra restare domain-independent e potra servire Product Package, DXF, DWG, modelli 3D, ferramenta, preventivi, schede tecniche, produzione e Business Intelligence.
+
+Reasoning resta futuro e dovra ricevere Understanding come contesto interpretato, non come trigger automatico.
+
+La prossima RFC consigliata e `RFC-1202 - EDI Understanding Artifact Foundation`.
+
+### Regole Permanenti Generate
+
+- Understanding interpreta Observation e Memory.
+- Understanding non e Observation.
+- Understanding non e Memory.
+- Understanding non e Reasoning.
+- Understanding non produce Proposal, Mutation, runtime execution, UI o Source of Truth updates.
+- Understanding resta domain-independent a livello foundation.
+- Reasoning puo usare Understanding solo dopo una RFC dedicata.
+
+## DL-EXEC-054 - Understanding Artifact Is Interpreted Context, Not Reasoning
+
+### Problema
+
+Dopo aver definito Understanding come significato interpretato, serviva introdurre il primo artifact di comprensione senza trasformarlo in Reasoning, Proposal, runtime, storage o UI.
+
+### Decisione
+
+Introdurre `EdiUnderstandingArtifact` come descrittore serializzabile e non operativo.
+
+L'artifact contiene:
+
+- identity;
+- timestamp;
+- source memory references;
+- classification opzionale;
+- inferred meaning;
+- contextual notes;
+- relations;
+- traceability metadata.
+
+La factory `createEdiUnderstandingArtifact` crea un artifact da `EdiMemoryEntry[]`, conservando riferimenti serializzabili alle Memory Entry e copiando difensivamente note, relation metadata e classification metadata.
+
+### Motivazione
+
+Understanding deve poter esprimere significato, classificazioni, relazioni e contesto senza prendere decisioni operative.
+
+Il riferimento alle Memory Entry consente tracciabilita senza introdurre storage reale, retrieval engine, runtime ingestion o riferimenti mutabili.
+
+Separare Understanding Artifact da Reasoning protegge il Core Cognitive Loop da attivazioni premature.
+
+### Alternative Scartate
+
+- Far coincidere Understanding Artifact con Memory Entry.
+- Introdurre Reasoning insieme all'artifact.
+- Introdurre Proposal o decisioni operative.
+- Collegare l'artifact a runtime, Viewer, UI o engine reali.
+- Salvare riferimenti live a Memory storage o Product Package.
+
+### Impatto Architetturale
+
+RFC-1202 crea il primo contratto dati per Understanding.
+
+Il layer e pronto per una review successiva su come Reasoning potra consumare artifact di comprensione, ma non introduce Reasoning.
+
+### Regole Permanenti Generate
+
+- Understanding Artifact e un descrittore di significato interpretato.
+- Understanding Artifact non e Observation.
+- Understanding Artifact non e Memory.
+- Understanding Artifact non e Reasoning.
+- Understanding Artifact non produce Proposal, Mutation, runtime execution, Viewer output o UI.
+- Understanding Artifact conserva riferimenti serializzabili alle Memory Entry, non storage live.
+- Understanding Artifact non attiva Reasoning automaticamente.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

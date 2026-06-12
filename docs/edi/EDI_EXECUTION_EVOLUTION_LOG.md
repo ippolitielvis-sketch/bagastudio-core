@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1200.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1202.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1200
+- RFC-1126 to RFC-1202
 
 Architecture distinction:
 
@@ -1103,6 +1103,26 @@ RFC-1200 confirmed readiness for `RFC-1201 - EDI Understanding Foundation Review
 
 It did not introduce Understanding, Reasoning, Proposal, storage, retrieval, mutation, runtime wiring, Viewer, UI, or React state.
 
+RFC-1201 defined the philosophy and role of Understanding in the Core Cognitive Loop.
+
+The review clarified that Observation means EDI sees, Memory means EDI remembers, and Understanding means EDI knows what the observed and remembered evidence means.
+
+Understanding is positioned after Memory and before Reasoning. It can produce classifications, meanings, relationships, context, and semantic summaries, but it does not produce Proposal, Validation, Mutation, runtime execution, UI, Viewer output, or Source of Truth updates.
+
+Understanding remains domain-independent at foundation level. It is expected to serve future DXF, DWG, Product Package, hardware, estimates, technical sheets, production, and Business Intelligence use cases without importing real engines.
+
+RFC-1201 confirmed readiness for `RFC-1202 - EDI Understanding Artifact Foundation`.
+
+It did not introduce an Understanding artifact, Reasoning, Proposal, runtime, Viewer, UI, storage, or engine integration.
+
+RFC-1202 introduced `EdiUnderstandingArtifact` as the first data contract for the Understanding layer.
+
+The artifact is created from Memory Entries and contains identity, timestamp, source memory references, optional classification, inferred meaning, contextual notes, relations, and traceability metadata.
+
+The foundation clarified that Understanding Artifact is interpreted context. It is not Observation, not Memory, not Reasoning, not Proposal, not runtime execution, and not Source of Truth.
+
+RFC-1202 prepares future Reasoning by creating a stable interpreted context descriptor, but it does not introduce Reasoning, Proposal, storage, retrieval, runtime, Viewer, UI, React state, or engine integration.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1253,6 +1273,13 @@ It did not introduce Understanding, Reasoning, Proposal, storage, retrieval, mut
 - Memory Entry preserves contextual knowledge, not cache data.
 - Understanding may consume Memory Entry only after a dedicated RFC.
 - Reasoning must not be triggered by Memory Entry creation.
+- Understanding is interpreted meaning, not raw observation.
+- Understanding is not Memory storage.
+- Understanding is not Reasoning, Proposal, Mutation, UI, Viewer output, runtime execution, or Source of Truth.
+- Understanding remains domain-independent at foundation level.
+- Understanding Artifact is interpreted context, not reasoning result.
+- Understanding Artifact references Memory Entries, not live Memory storage.
+- Understanding Artifact does not trigger Reasoning, Proposal, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1351,7 +1378,9 @@ Implemented producer adapter foundation:
 - EDI Memory Entry Foundation exists;
 - Observation to Memory Flow is reviewed;
 - Observation Snapshot and Memory Entry separation is documented;
-- Understanding Foundation Review is the next recommended RFC;
+- Understanding Foundation Review is documented;
+- Understanding Artifact Foundation exists;
+- Understanding Artifact Review and Reasoning Foundation Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1385,7 +1414,8 @@ Not implemented today:
 - EDI proposal validation path;
 - Product Package Observation Adapter product workflow integration;
 - Memory Candidate explicit contract;
-- EDI Understanding foundation;
+- EDI Understanding artifact runtime usage;
+- Reasoning foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;
 - alignment between EdiMemoryEntry descriptor and older cognitive memory contracts;

@@ -115,6 +115,8 @@ This document covers:
 - RFC-1198: EDI Memory Foundation Review
 - RFC-1199: EDI Memory Entry Foundation
 - RFC-1200: Observation to Memory Flow Review
+- RFC-1201: EDI Understanding Foundation Review
+- RFC-1202: EDI Understanding Artifact Foundation
 
 ## Architecture Overview
 
@@ -2077,6 +2079,93 @@ Known limits remain:
 
 The next recommended RFC is `RFC-1201 - EDI Understanding Foundation Review`.
 
+### EDI Understanding Foundation Review
+
+RFC-1201 defines the philosophy and role of Understanding in the Core Cognitive Loop before introducing any Understanding artifact, Reasoning, Proposal, runtime, UI, Viewer, storage, or operational behavior.
+
+Core Cognitive Loop position:
+
+```text
+Observation
+-> Memory
+-> Understanding
+-> Reasoning
+-> Proposal
+-> Validation Support
+-> Optimization
+-> Business Intelligence
+```
+
+Understanding means that EDI can interpret retained evidence and say what it means.
+
+Conceptual distinction:
+
+- Observation: EDI sees a fact or structure.
+- Memory: EDI retains contextual knowledge about what was observed or learned.
+- Understanding: EDI forms a meaningful interpretation from observation and memory.
+
+Understanding may produce:
+
+- classifications;
+- meanings;
+- relationships;
+- contextual interpretations;
+- domain-neutral semantic summaries.
+
+Understanding does not produce:
+
+- proposals;
+- mutations;
+- validation decisions;
+- runtime execution;
+- UI output;
+- Source of Truth updates.
+
+Understanding is domain-independent at foundation level. It must be able to interpret observations and memories from Product Package, DXF, DWG, 3D models, hardware, estimates, technical sheets, production signals, and business signals without becoming owned by any one engine or UI.
+
+Observation becomes Understanding when observed evidence is interpreted as a meaningful product, project, production, business, or user context.
+
+Memory becomes Understanding when retained context is organized into an explicit meaning, relation, classification, or semantic explanation.
+
+Understanding feeds future Reasoning as interpreted context. It does not trigger Reasoning automatically.
+
+The next recommended RFC is `RFC-1202 - EDI Understanding Artifact Foundation`.
+
+### EDI Understanding Artifact Foundation
+
+RFC-1202 introduces `EdiUnderstandingArtifact` as the first data contract for the Understanding layer.
+
+The artifact represents interpreted meaning derived from one or more Memory Entries.
+
+Understanding Artifact creation path:
+
+```text
+Observation Snapshot
+-> Memory Entry
+-> createEdiUnderstandingArtifact
+-> EdiUnderstandingArtifact
+-> future Reasoning
+```
+
+The artifact contains:
+
+- identity;
+- timestamp;
+- source memory references;
+- optional classification;
+- inferred meaning;
+- contextual notes;
+- relations;
+- traceability metadata.
+
+`EdiUnderstandingArtifact` is not Observation and is not Memory.
+
+It stores source memory references by id/timestamp/source/category metadata, not live Memory storage, Product Package, Viewer, UI, runtime, or engine references.
+
+The foundation intentionally does not introduce Reasoning, Proposal, mutation, runtime execution, storage, retrieval, Viewer, UI, or React state.
+
+The artifact prepares future Reasoning by providing interpreted context, but it does not trigger Reasoning automatically.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2323,6 +2412,13 @@ The execution foundation must not depend on:
 - Memory Entry stores contextual knowledge, not cache data.
 - Understanding may consume Memory Entries only after a dedicated Understanding RFC.
 - Reasoning must not be triggered by Memory Entry creation.
+- Understanding means interpreted meaning, not raw observation and not retained memory.
+- Understanding is not Reasoning, Proposal, Validation, Mutation, UI, or runtime execution.
+- Understanding must remain domain-independent at foundation level.
+- Understanding must not become Source of Truth.
+- Understanding Artifact is a descriptor of interpreted meaning, not a reasoning result.
+- Understanding Artifact references Memory Entries, not live memory storage.
+- Understanding Artifact must not trigger Reasoning, Proposal, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Residual Risks
 
@@ -2393,6 +2489,12 @@ The execution foundation must not depend on:
 - Memory Entry has no confidence, trust, freshness, or retention model yet.
 - Relationship between `components/edi/memory/EdiMemoryEntry` and older cognitive memory contracts requires future alignment.
 - Understanding contract is not defined yet.
+- Understanding artifact shape exists as a foundation, but remains unvalidated by runtime use.
+- Understanding boundaries with Reasoning and Proposal require future RFCs.
+- Domain-specific Understanding could accidentally pull in real engines if not isolated.
+- Business and personal Understanding will require privacy and governance review before implementation.
+- Understanding Artifact exists, but no builder, classifier, reasoning consumer, storage, retrieval, or validation policy uses it yet.
+- Understanding Artifact metadata remains foundation-level and will need privacy/governance rules for business and personal contexts.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2472,3 +2574,5 @@ The Decision Log should record:
 27. RFC-1199 - EDI Memory Entry Foundation.
 28. RFC-1200 - Observation to Memory Flow Review.
 29. RFC-1201 - EDI Understanding Foundation Review.
+30. RFC-1202 - EDI Understanding Artifact Foundation.
+31. EDI Understanding Artifact Review and Reasoning Foundation Planning.
