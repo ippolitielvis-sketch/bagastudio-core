@@ -112,6 +112,7 @@ This document covers:
 - RFC-1195: Product Package Observation Snapshot Foundation
 - RFC-1196: Product Package Observation Adapter Foundation
 - RFC-1197: Product Package Observation Flow Review
+- RFC-1198: EDI Memory Foundation Review
 
 ## Architecture Overview
 
@@ -1914,6 +1915,81 @@ The next recommended RFC is `RFC-1198 - EDI Memory Foundation Review`.
 
 RFC-1197 introduces no code. It documents review status only.
 
+### EDI Memory Foundation Review
+
+RFC-1198 defines the philosophy and architecture of EDI Memory before introducing any Memory Entry, storage, database, ingestion, Viewer, UI, Reasoning, or Proposal implementation.
+
+Core Cognitive Loop:
+
+```text
+Observation
+-> Memory
+-> Understanding
+-> Reasoning
+-> Proposal
+-> Validation Support
+-> Optimization
+-> Business Intelligence
+```
+
+Memory philosophy:
+
+- Memory is not cache;
+- Memory is not Source of Truth;
+- Memory preserves useful context, patterns, decisions, errors, proposals, observations, and historical signals;
+- Memory helps EDI understand continuity across time and domains;
+- Memory is domain-independent;
+- Memory feeds Understanding and Reasoning, but does not execute mutations.
+
+What EDI may remember:
+
+- Observation Snapshots;
+- domain observations;
+- validated decisions;
+- rejected or failed attempts;
+- proposal history;
+- user preferences when explicitly allowed;
+- product/project/customer context when governance allows it;
+- documentation, quote, production, and business signals.
+
+Memory lifecycle:
+
+```text
+Observation Snapshot
+-> Memory Candidate
+-> Memory Entry
+-> Retrieval
+-> Understanding / Reasoning
+-> Knowledge Graph future
+```
+
+The lifecycle must preserve provenance, timestamp, source domain, confidence or trust metadata when introduced, and explicit ownership boundaries.
+
+Observation Snapshot vs Memory Entry vs Knowledge:
+
+- Observation Snapshot is a point-in-time read-only fact package;
+- Memory Entry is a retained, addressable, contextualized record derived from one or more observations or events;
+- Knowledge is a future higher-order structure that can link, summarize, and generalize multiple memory entries.
+
+Memory ownership:
+
+- Product Package remains Source of Truth for product meaning;
+- Project State remains Source of Truth for project state;
+- validated system data remains operational authority;
+- Memory stores useful knowledge, but does not override authoritative systems;
+- Memory must receive observations/snapshots, not live Product Package, Viewer, Factory, or runtime references.
+
+Relation with product and business domains:
+
+- Product Package can feed Memory through Observation Snapshot only;
+- DXF/DWG/model observations can later become Memory Entries through dedicated adapters;
+- project, customer, documentation, quote, production, and business signals require governance and privacy policies before retention;
+- Memory can connect observations across domains, but cannot mutate any domain.
+
+RFC-1198 concludes that EDI is ready for `RFC-1199 - EDI Memory Entry Foundation`.
+
+RFC-1198 introduces no code. It documents Memory architecture only.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2150,6 +2226,9 @@ The execution foundation must not depend on:
 - Product Package Observation Adapter must not create proposal, mutation, runtime execution, Viewer output, or Factory output.
 - Product Package Observation Flow is reviewed as one-way and read-only at foundation level.
 - Product Package Observation Snapshot may feed Memory only after a dedicated Memory RFC.
+- EDI Memory is not cache and not Source of Truth.
+- EDI Memory stores contextual knowledge derived from observations, decisions, proposals, errors, and validated signals.
+- EDI Memory feeds Understanding and Reasoning but does not mutate Product Package, Project State, Viewer, Factory, or runtime.
 
 ## Residual Risks
 
@@ -2212,6 +2291,9 @@ The execution foundation must not depend on:
 - Product Package Observation metadata still needs serializability and allowlist rules.
 - Product Package Observation Snapshot is not runtime frozen.
 - Product Package Observation traceability is still foundation-level.
+- EDI Memory Entry type is not implemented yet.
+- EDI Memory storage, database, retention, privacy, and retrieval policies are not implemented yet.
+- Memory to Reasoning flow is architecture-only.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2288,3 +2370,4 @@ The Decision Log should record:
 24. RFC-1196 - Product Package Observation Adapter Foundation.
 25. RFC-1197 - Product Package Observation Flow Review.
 26. RFC-1198 - EDI Memory Foundation Review.
+27. RFC-1199 - EDI Memory Entry Foundation.

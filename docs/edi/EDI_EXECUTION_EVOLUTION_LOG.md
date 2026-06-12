@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1197.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1198.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1197
+- RFC-1126 to RFC-1198
 
 Architecture distinction:
 
@@ -754,6 +754,7 @@ RFC:
 - RFC-1195
 - RFC-1196
 - RFC-1197
+- RFC-1198
 
 ### Context
 
@@ -1071,6 +1072,18 @@ Known risks remain: metadata needs a serializability/allowlist policy, immutable
 
 The next recommended RFC is `RFC-1198 - EDI Memory Foundation Review`.
 
+RFC-1198 defined the philosophy and architecture of EDI Memory.
+
+Memory is not cache and not Source of Truth. It is contextual knowledge that preserves useful observations, decisions, proposals, errors, validation signals, preferences when allowed, and cross-domain historical context.
+
+The conceptual lifecycle is Observation Snapshot, Memory Candidate, Memory Entry, Retrieval, Understanding / Reasoning, and future Knowledge Graph.
+
+The review clarified the difference between Observation Snapshot, Memory Entry, and future Knowledge. Observation Snapshot is point-in-time observed data. Memory Entry is retained, addressable, contextualized record. Knowledge is a future higher-order structure linking and summarizing multiple entries.
+
+Memory remains domain-independent and does not mutate Product Package, Project State, Viewer, Factory, runtime, or UI. Product Package and Project State remain Source of Truth.
+
+The next recommended RFC is `RFC-1199 - EDI Memory Entry Foundation`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1207,6 +1220,13 @@ The next recommended RFC is `RFC-1198 - EDI Memory Foundation Review`.
 - Product Package Observation Flow is Memory-ready for review, not automatic ingestion.
 - Memory must consume observation snapshots, not live Product Package references.
 - Observation metadata requires serializability and allowlist policy before Memory ingestion.
+- Memory is not cache.
+- Memory is not Source of Truth.
+- Memory stores contextual knowledge.
+- Memory is domain-independent.
+- Memory feeds Understanding and Reasoning.
+- Memory must not mutate Product Package, Project State, Viewer, Factory, or runtime.
+- Knowledge Graph remains future.
 
 ## Current State
 
@@ -1301,7 +1321,8 @@ Implemented producer adapter foundation:
 - Product Package Observation Adapter Foundation exists;
 - Product Package Observation Adapter is not called by product workflows yet;
 - Product Package Observation Flow is reviewed;
-- EDI Memory Foundation Review is the next recommended RFC;
+- EDI Memory Foundation Review is documented;
+- EDI Memory Entry Foundation is the next recommended RFC;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1335,6 +1356,10 @@ Not implemented today:
 - Product Package Observation Adapter product workflow integration;
 - EDI Memory foundation;
 - Product Package Observation metadata serializability policy;
+- EDI Memory Entry type;
+- real memory storage or database;
+- memory retention, retrieval, privacy, and governance policy;
+- Knowledge Graph;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

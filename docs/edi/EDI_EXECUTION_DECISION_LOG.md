@@ -68,6 +68,7 @@ Covered foundation:
 - Product Package Observation Snapshot Foundation
 - Product Package Observation Adapter Foundation
 - Product Package Observation Flow Review
+- EDI Memory Foundation Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2421,6 +2422,103 @@ RFC-1198 dovra decidere come EDI Observation diventa Memory senza introdurre ing
 - Metadata osservativi richiedono policy di serializzazione prima di Memory ingestion.
 - Memory non deve leggere Product Package direttamente.
 - Memory deve ricevere osservazioni/snapshot, non riferimenti Product Package live.
+
+## DL-EXEC-050 - EDI Memory Is Contextual Knowledge, Not Cache
+
+### Problema
+
+Dopo la chiusura dell'Observation Flow, serviva definire che cosa significhi Memory per EDI prima di creare un tipo `Memory Entry` o introdurre storage reale.
+
+Il rischio era trattare Memory come cache tecnica o come nuovo Source of Truth.
+
+### Decisione
+
+EDI Memory e conoscenza contestuale persistibile, domain-independent e non autoritativa.
+
+Memory puo ricordare:
+
+- osservazioni;
+- observation snapshot;
+- decisioni;
+- proposte;
+- errori;
+- rifiuti;
+- validazioni;
+- preferenze esplicite;
+- segnali di prodotto, progetto, cliente, documentazione, preventivo, produzione e business.
+
+Memory non e cache.
+
+Memory non e Source of Truth.
+
+Memory alimenta Understanding e Reasoning, ma non muta Product Package, Project State, Viewer, Factory o runtime.
+
+### Lifecycle
+
+Il lifecycle concettuale e:
+
+```text
+Observation Snapshot
+Memory Candidate
+Memory Entry
+Retrieval
+Understanding / Reasoning
+Knowledge Graph future
+```
+
+### Observation Snapshot vs Memory Entry vs Knowledge
+
+Observation Snapshot:
+
+- pacchetto read-only point-in-time;
+- rappresenta cio che e stato osservato;
+- non decide cosa conservare.
+
+Memory Entry:
+
+- record trattenuto e indirizzabile;
+- puo derivare da una o piu osservazioni, decisioni, proposal o errori;
+- deve conservare provenance, timestamp e ownership metadata.
+
+Knowledge futura:
+
+- struttura superiore;
+- collega, sintetizza e generalizza piu memory entries;
+- non viene introdotta in questa RFC.
+
+### Motivazione
+
+EDI deve ricordare segnali utili per continuita, apprendimento operativo, supporto decisionale e ragionamento.
+
+La memoria deve collegare domini diversi senza sostituire i sistemi autoritativi.
+
+Product Package resta Source of Truth prodotto. Project State resta Source of Truth progetto. I dati validati restano autorita operativa.
+
+### Alternative Scartate
+
+- Memory come cache temporanea.
+- Memory come database operativo introdotto subito.
+- Memory come Source of Truth.
+- Memory che legge Product Package live.
+- Memory che modifica Product Package o Project State.
+- Memory che avvia Reasoning, Proposal o Optimization automaticamente.
+
+### Impatto Architetturale
+
+La prossima RFC consigliata e `RFC-1199 - EDI Memory Entry Foundation`.
+
+RFC-1199 dovra creare il concetto di Memory Entry senza storage reale, database, Reasoning, Proposal, Viewer o UI.
+
+### Regole Permanenti Generate
+
+- Memory non e cache.
+- Memory non e Source of Truth.
+- Memory conserva conoscenza utile e contestuale.
+- Memory e domain-independent.
+- Memory riceve Observation Snapshot o segnali espliciti, non riferimenti live.
+- Memory alimenta Understanding e Reasoning.
+- Memory non muta Product Package, Project State, Viewer, Factory o runtime.
+- Knowledge Graph resta futuro.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
