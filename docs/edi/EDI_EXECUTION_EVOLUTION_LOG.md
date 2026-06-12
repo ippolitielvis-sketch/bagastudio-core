@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1208.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1209.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1208
+- RFC-1126 to RFC-1209
 
 Architecture distinction:
 
@@ -1183,6 +1183,14 @@ The factory `createEdiReasoningEvaluation` uses explicit timestamp input and def
 
 RFC-1208 clarified that evaluation is quality data, not Proposal, not Validation, not automatic decision-making, not mutation, not runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1209 introduced `EdiProposalArtifact` as the first data contract of the Proposal layer.
+
+The proposal artifact can represent identity, timestamp, title, description, proposal type, proposal category, rationale, expected benefits, expected risks, related Reasoning Artifact references, related Understanding Artifact references, and metadata.
+
+The factory `createEdiProposalArtifact` uses explicit timestamp input and copies related artifacts into serializable references.
+
+RFC-1209 clarified that Proposal Artifact is a proposal descriptor, not Validation, not Mutation, not automatic decision-making, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1360,6 +1368,10 @@ RFC-1208 clarified that evaluation is quality data, not Proposal, not Validation
 - Reasoning Evaluation is quality data, not Proposal or Validation.
 - Reasoning Evaluation remains independent from future Proposal and Validation.
 - Reasoning Evaluation does not trigger decisions, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Proposal Artifact is data, not a decision.
+- Proposal Artifact is not Validation, Mutation, or Source of Truth.
+- Proposal Artifact does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Proposal Artifact does not mutate Product Package or Project State.
 
 ## Current State
 
@@ -1466,7 +1478,8 @@ Implemented producer adapter foundation:
 - Reasoning Builder Foundation exists;
 - Reasoning Traceability Foundation exists;
 - Reasoning Evaluation Foundation exists;
-- Reasoning Evaluation Review and Proposal Foundation Planning is the next recommended review;
+- Proposal Artifact Foundation exists;
+- Proposal Artifact Review and Validation Support Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1506,7 +1519,9 @@ Not implemented today:
 - Reasoning evaluator;
 - Reasoning traceability consumers;
 - Reasoning evaluation consumers;
-- Proposal foundation;
+- Proposal builder;
+- Proposal validation support;
+- Proposal artifact runtime usage;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;

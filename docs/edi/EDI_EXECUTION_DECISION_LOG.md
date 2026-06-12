@@ -79,6 +79,7 @@ Covered foundation:
 - EDI Reasoning Builder Foundation
 - EDI Reasoning Traceability Foundation
 - EDI Reasoning Evaluation Foundation
+- EDI Proposal Artifact Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3099,6 +3100,64 @@ La foundation prepara future review su Proposal, Validation Support e governance
 - Reasoning Evaluation non muta Product Package o Project State.
 - Reasoning Evaluation non chiama runtime, Viewer, UI, storage o retrieval.
 - Reasoning Evaluation resta indipendente da Proposal e Validation future.
+
+## DL-EXEC-061 - Proposal Artifact Is Not Validation Or Mutation
+
+### Problema
+
+Dopo Reasoning Artifact, Traceability ed Evaluation, serviva introdurre il primo artifact del layer Proposal senza trasformarlo in Validation, decisione automatica, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiProposalArtifact` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+Il Proposal Artifact puo rappresentare:
+
+- identity;
+- timestamp;
+- title;
+- description;
+- proposal type;
+- proposal category;
+- rationale;
+- expected benefits;
+- expected risks;
+- related Reasoning Artifact references;
+- related Understanding Artifact references;
+- metadata.
+
+La factory `createEdiProposalArtifact` usa timestamp esplicito e copia in modo serializzabile benefits, risks, category metadata e related artifact references.
+
+### Motivazione
+
+EDI deve poter proporre senza diventare Source of Truth, Validation Layer o Mutation Layer.
+
+Proposal e il primo passaggio in cui Reasoning diventa una forma consultabile e discutibile, ma non autorizza modifiche.
+
+Separare Proposal da Validation e Mutation protegge Product Package, Project State e BagaStudio ownership.
+
+### Alternative Scartate
+
+- Far coincidere Proposal con Validation.
+- Far coincidere Proposal con Mutation.
+- Far eseguire Proposal da executor o runtime.
+- Collegare Proposal a Viewer, UI, storage o retrieval.
+- Rendere Proposal una decisione automatica.
+
+### Impatto Architetturale
+
+RFC-1209 apre il Proposal layer con un artifact fondazionale.
+
+La foundation prepara future review su Proposal Builder, Validation Support e Mutation Path, ma non introduce nessuno di questi comportamenti come operativo.
+
+### Regole Permanenti Generate
+
+- Proposal Artifact e un dato, non una decisione.
+- Proposal Artifact non e Validation.
+- Proposal Artifact non e Mutation.
+- Proposal Artifact non e Source of Truth.
+- Proposal Artifact non chiama executor, runtime, Viewer, UI, storage o retrieval.
+- Proposal Artifact non muta Product Package o Project State.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

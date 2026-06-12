@@ -123,6 +123,7 @@ This document covers:
 - RFC-1206: EDI Reasoning Builder Foundation
 - RFC-1207: EDI Reasoning Traceability Foundation
 - RFC-1208: EDI Reasoning Evaluation Foundation
+- RFC-1209: EDI Proposal Artifact Foundation
 
 ## Architecture Overview
 
@@ -2402,6 +2403,41 @@ The evaluation factory uses explicit timestamp input and defensively copies indi
 
 It exists so future Reasoning, Proposal, Validation Support, and governance layers can inspect quality signals without turning evaluation into a decision engine.
 
+### EDI Proposal Artifact Foundation
+
+RFC-1209 introduces `EdiProposalArtifact` as the first data contract of the Proposal layer.
+
+The proposal artifact is serializable, audit-oriented, domain-independent, and non-executive.
+
+Proposal Artifact can represent:
+
+- identity;
+- timestamp;
+- title;
+- description;
+- proposal type;
+- proposal category;
+- rationale;
+- expected benefits;
+- expected risks;
+- related Reasoning Artifact references;
+- related Understanding Artifact references;
+- metadata.
+
+Proposal creation path:
+
+```text
+explicit proposal input
+-> createEdiProposalArtifact
+-> EdiProposalArtifact
+```
+
+The factory uses explicit timestamp input and copies benefits, risks, category metadata, and related artifact references into serializable proposal data.
+
+`EdiProposalArtifact` does not validate itself, approve itself, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future Validation Support and Mutation layers can inspect a proposal without making Proposal itself authoritative.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2674,6 +2710,9 @@ The execution foundation must not depend on:
 - Reasoning Evaluation is quality data, not Proposal or Validation.
 - Reasoning Evaluation must remain independent from future Proposal and Validation.
 - Reasoning Evaluation must not trigger decision, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Proposal Artifact is not Validation, approval, or Mutation.
+- Proposal Artifact must remain serializable, audit-oriented, domain-independent, and non-executive.
+- Proposal Artifact must not call executor, runtime, Viewer, UI, storage, retrieval, or mutate Product Package / Project State.
 
 ## Residual Risks
 
@@ -2764,6 +2803,8 @@ The execution foundation must not depend on:
 - Reasoning Traceability schema is foundation-level and may need richer lineage categories after Proposal and Validation planning.
 - Reasoning Evaluation exists, but no evaluator, proposal, validation, or governance layer consumes it yet.
 - Reasoning Evaluation indicators are foundation-level and may need calibrated scales after domain-specific review.
+- Proposal Artifact exists, but no proposal builder, validation support, mutation path, executor, or UI consumes it yet.
+- Proposal categories and types are foundation-level and may need expansion after domain-specific proposal review.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2850,4 +2891,5 @@ The Decision Log should record:
 34. RFC-1206 - EDI Reasoning Builder Foundation.
 35. RFC-1207 - EDI Reasoning Traceability Foundation.
 36. RFC-1208 - EDI Reasoning Evaluation Foundation.
-37. EDI Reasoning Evaluation Review and Proposal Foundation Planning.
+37. RFC-1209 - EDI Proposal Artifact Foundation.
+38. EDI Proposal Artifact Review and Validation Support Planning.
