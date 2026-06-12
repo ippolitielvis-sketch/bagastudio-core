@@ -44,6 +44,7 @@ Covered foundation:
 - Recognition Producer Adapter Foundation
 - Recognition Producer Boundary Pipeline
 - Recognition Producer Pipeline Validation
+- Recognition Producer Runtime Wiring Boundary
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1149,3 +1150,49 @@ Il boundary-valid request resta distinto da execution.
 - Recognition Producer Pipeline Validation non produce execution result.
 - Recognition Producer Pipeline Validation non chiama runtime o dispatch.
 - Recognition Producer Pipeline Validation non introduce recognition reale.
+
+## DL-EXEC-026 - Recognition Producer Runtime Wiring Boundary
+
+### Problema
+
+Dopo la validation della pipeline pre-runtime, serviva decidere come una boundary-valid `EdiExecutionRequest` prodotta dal Recognition Producer potra entrare nel runtime di execution senza far chiamare il runtime direttamente al producer.
+
+### Decisione
+
+Il Recognition Producer non deve chiamare direttamente RuntimeHost, RuntimeLoop, PreviewExecutionAndDispatch, Executor, Consumer, Dispatcher o runtime execution.
+
+Il prossimo layer operativo futuro sara `Recognition Runtime Adapter`, distinto dal producer, dalla boundary pipeline e dai runtime host/loop.
+
+### Motivazione
+
+Il producer resta responsabile della produzione di `EdiProducerAdapterOutput`.
+
+La boundary pipeline resta responsabile della conversione e validazione pre-runtime.
+
+Il futuro runtime adapter sara responsabile solo dell'ingresso controllato nel runtime di execution e non del dispatch.
+
+### Alternative Scartate
+
+- Far chiamare `EdiExecutionRuntime` direttamente al producer.
+- Riutilizzare `PreviewExecutionAndDispatch` per il flusso Recognition.
+- Far chiamare dispatcher o consumer al producer.
+- Far chiamare RuntimeHost o RuntimeLoop al producer.
+- Introdurre recognition runtime reale.
+- Introdurre geometry recognition o scene recognition.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+Il confine tra Producer Adapter, Boundary Pipeline e futuro Runtime Adapter resta esplicito.
+
+RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch restano invariati.
+
+### Regole Permanenti Generate
+
+- Recognition Producer non chiama runtime direttamente.
+- Recognition Runtime Adapter sara un layer separato.
+- Recognition Runtime Adapter ricevera request boundary-valid.
+- Recognition Runtime Adapter non fara dispatch.
+- Recognition Runtime Adapter non chiamera RuntimeHost o RuntimeLoop.
+- Recognition Runtime Adapter non introdurra recognition reale.
+- RFC-1176 dovra creare solo la foundation del Recognition Runtime Adapter.
