@@ -1247,6 +1247,14 @@ The factory `createEdiValidationSupportEvaluation` uses explicit timestamp input
 
 RFC-1216 clarified that Validation Support Evaluation is quality data, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1217 introduced `EdiDecisionSupportArtifact` as the first data contract of the Decision Support layer.
+
+The artifact can represent decision context, validation support references, proposal references, reasoning references, understanding references, decision factors, decision options, decision tradeoffs, decision risks, decision questions, and metadata.
+
+The factory `createEdiDecisionSupportArtifact` uses explicit timestamp input and copies Validation Support, Proposal, Reasoning, and Understanding artifacts into serializable references.
+
+RFC-1217 clarified that Decision Support Artifact is support material, not approval, not rejection, not automatic decision-making, not Decision Engine, not Validation Approval, not Mutation, not executor/runtime/workflow behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1453,6 +1461,10 @@ RFC-1216 clarified that Validation Support Evaluation is quality data, not appro
 - Validation Support Evaluation is quality data, not approval, rejection, decision, or Mutation.
 - Validation Support Evaluation does not mutate Product Package or Project State.
 - Validation Support Evaluation does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Decision Support Artifact is support material, not approval, rejection, automatic decision, Decision Engine, Validation Approval, or Mutation.
+- Decision Support Artifact does not choose options or finalize decisions.
+- Decision Support Artifact does not mutate Product Package or Project State.
+- Decision Support Artifact does not call executor, runtime, workflow engine, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1567,7 +1579,8 @@ Implemented producer adapter foundation:
 - Validation Support Builder Foundation exists;
 - Validation Support Traceability Foundation exists;
 - Validation Support Evaluation Foundation exists;
-- Validation Support Evaluation Review and Mutation Boundary Planning is the next recommended review;
+- Decision Support Artifact Foundation exists;
+- Decision Support Artifact Review and Decision Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1614,6 +1627,7 @@ Not implemented today:
 - Validation support builder consumers;
 - Validation support traceability consumers;
 - Validation support evaluation consumers;
+- Decision support artifact consumers;
 - Validation support approval/rejection workflow;
 - Validation support mutation boundary;
 - Optimization foundation;

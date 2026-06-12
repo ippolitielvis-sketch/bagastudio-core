@@ -131,6 +131,7 @@ This document covers:
 - RFC-1214: EDI Validation Support Builder Foundation
 - RFC-1215: EDI Validation Support Traceability Foundation
 - RFC-1216: EDI Validation Support Evaluation Foundation
+- RFC-1217: EDI Decision Support Artifact Foundation
 
 ## Architecture Overview
 
@@ -2650,6 +2651,40 @@ The factory uses explicit timestamp input and defensively copies indicator array
 
 It exists so future Validation Support, governance, and Mutation Boundary reviews can inspect quality signals without turning evaluation into a decision engine.
 
+### EDI Decision Support Artifact Foundation
+
+RFC-1217 introduces `EdiDecisionSupportArtifact` as the first data contract of the Decision Support layer.
+
+The decision support artifact is serializable, audit-oriented, domain-independent, and non-executive.
+
+Decision Support Artifact can represent:
+
+- decision context;
+- Validation Support references;
+- Proposal references;
+- Reasoning references;
+- Understanding references;
+- decision factors;
+- decision options;
+- decision tradeoffs;
+- decision risks;
+- decision questions;
+- metadata.
+
+Decision support artifact creation path:
+
+```text
+explicit decision support input
+-> createEdiDecisionSupportArtifact
+-> EdiDecisionSupportArtifact
+```
+
+The factory uses explicit timestamp input and copies Validation Support, Proposal, Reasoning, and Understanding artifacts into serializable references.
+
+`EdiDecisionSupportArtifact` does not approve, reject, choose an option, produce a final decision, mutate Product Package or Project State, call executor, call runtime, call workflow engine, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future human or BagaStudio-owned decision workflows can inspect structured support material without making EDI authoritative.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2949,6 +2984,10 @@ The execution foundation must not depend on:
 - Validation Support Evaluation is not approval, rejection, decision, or Mutation.
 - Validation Support Evaluation must remain domain-independent and non-executive.
 - Validation Support Evaluation must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
+- Decision Support Artifact is support material.
+- Decision Support Artifact is not approval, rejection, automatic decision, Decision Engine, Validation Approval, or Mutation.
+- Decision Support Artifact must remain domain-independent and non-executive.
+- Decision Support Artifact must not choose options, finalize decisions, mutate, call executor/runtime/workflow engine, call Viewer/UI, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -3054,6 +3093,8 @@ The execution foundation must not depend on:
 - Validation Support Traceability schema is foundation-level and may need richer lineage categories after Mutation Boundary planning.
 - Validation Support Evaluation exists, but no approval workflow, rejection workflow, mutation path, governance layer, executor, runtime, UI, storage, or retrieval consumes it yet.
 - Validation Support Evaluation indicators are foundation-level and may need calibrated scales after Mutation Boundary planning.
+- Decision Support Artifact exists, but no Decision Engine, approval workflow, rejection workflow, mutation path, workflow engine, executor, runtime, UI, storage, or retrieval consumes it yet.
+- Decision Support options are descriptive and do not represent selected options or final decisions.
 - Validation Support Artifact questions and considerations are foundation-level and may need domain-specific review before product workflows.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
@@ -3149,4 +3190,5 @@ The Decision Log should record:
 42. RFC-1214 - EDI Validation Support Builder Foundation.
 43. RFC-1215 - EDI Validation Support Traceability Foundation.
 44. RFC-1216 - EDI Validation Support Evaluation Foundation.
-45. EDI Validation Support Evaluation Review and Mutation Boundary Planning.
+45. RFC-1217 - EDI Decision Support Artifact Foundation.
+46. EDI Decision Support Artifact Review and Decision Boundary Planning.

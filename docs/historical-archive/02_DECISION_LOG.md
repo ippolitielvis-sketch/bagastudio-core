@@ -291,3 +291,39 @@ EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudi
 
 # Conversazioni utilizzate
 - RFC-1216 Validation Support Evaluation Foundation
+
+## Milestone - RFC-1217 Decision Support Artifact Foundation
+
+# Contesto
+Validation Support dispone di artifact, builder, traceability ed evaluation fondazionali. Serve aprire Decision Support senza introdurre Decision Engine, approval o mutation.
+
+# Problema
+Senza un artifact dedicato, decision context, fattori, opzioni, tradeoff, rischi e domande restano mescolati con Validation Support o Proposal.
+
+# Decisione
+Introdurre `EdiDecisionSupportArtifact` come struttura dati serializzabile, auditabile, domain-independent e non esecutiva.
+
+# Motivazione
+Decision Support deve poter preparare materiale consultivo per un futuro processo BagaStudio-owned, senza scegliere opzioni o produrre decisioni finali.
+
+# Implementazione
+RFC-1217 crea `components/edi/decision/EdiDecisionSupportArtifact.ts` e documenta il Decision Support layer nei documenti EDI principali.
+
+# Evoluzione
+La roadmap passa a review di Decision Support Artifact e Decision Boundary prima di introdurre qualsiasi Decision Engine, Validation Approval o Mutation Layer.
+
+# Impatto
+EDI puo rappresentare supporto alla decisione, ma resta non autoritativo e non muta Product Package o Project State.
+
+# Regole permanenti nate
+- Decision Support Artifact e support material.
+- Decision Support Artifact non approva, non rifiuta e non decide.
+- Decision Support Artifact non seleziona opzioni e non produce decisioni finali.
+- Decision Support Artifact non muta Product Package o Project State.
+- Decision Support Artifact non chiama executor, runtime, workflow engine, Viewer, UI, storage o retrieval.
+
+# Collegamenti con altri Engine
+EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudio Validation futura.
+
+# Conversazioni utilizzate
+- RFC-1217 Decision Support Artifact Foundation

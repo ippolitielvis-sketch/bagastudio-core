@@ -222,3 +222,20 @@ Prima di introdurre approval, rejection, decisioni o Mutation, la evaluation dev
 
 # Prossimo passo consigliato
 EDI Validation Support Evaluation Review and Mutation Boundary Planning.
+
+## Roadmap - Decision Support Artifact Foundation
+
+# Contesto
+Validation Support dispone di artifact, builder, traceability ed evaluation fondazionali.
+
+# Stato raggiunto
+RFC-1217 introduce il primo artifact puro per il Decision Support Layer.
+
+# Sequenza
+Validation Support Evaluation -> Decision Support Artifact -> Decision Boundary Review futura.
+
+# Regola roadmap
+Prima di introdurre Decision Engine, Validation Approval o Mutation, Decision Support deve restare support material non autoritativo e non deve chiamare runtime, executor, workflow engine, Viewer, UI, storage o retrieval.
+
+# Prossimo passo consigliato
+EDI Decision Support Artifact Review and Decision Boundary Planning.

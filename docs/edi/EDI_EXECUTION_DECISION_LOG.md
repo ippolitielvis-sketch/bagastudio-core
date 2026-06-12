@@ -3530,6 +3530,66 @@ La foundation prepara future review su Mutation Boundary e governance, ma non in
 - Validation Support Evaluation non muta Product Package o Project State.
 - Validation Support Evaluation non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
+## DL-EXEC-069 - Decision Support Artifact Is Not Decision Engine
+
+### Problema
+
+Dopo Validation Support Artifact, Builder, Traceability ed Evaluation, serviva introdurre il primo artifact del Decision Support layer senza trasformarlo in approvazione, rifiuto, decisione automatica, Decision Engine, Validation Approval, Mutation, executor, runtime wiring, workflow engine, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiDecisionSupportArtifact` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+Il Decision Support Artifact puo rappresentare:
+
+- decision context;
+- validation support references;
+- proposal references;
+- reasoning references;
+- understanding references;
+- decision factors;
+- decision options;
+- decision tradeoffs;
+- decision risks;
+- decision questions;
+- metadata.
+
+La factory `createEdiDecisionSupportArtifact` usa timestamp esplicito e copia in modo serializzabile Validation Support, Proposal, Reasoning e Understanding references.
+
+### Motivazione
+
+Decision Support deve aiutare un futuro processo decisionale BagaStudio-owned senza diventare il processo stesso.
+
+EDI puo preparare materiale consultivo, opzioni e tradeoff, ma non deve scegliere opzioni, produrre decisioni finali o mutare Product Package / Project State.
+
+Separare supporto da Decision Engine e Mutation protegge BagaStudio ownership e il futuro Validation Approval workflow.
+
+### Alternative Scartate
+
+- Inserire approval o rejection nell'artifact.
+- Inserire selected option, final decision o decision status nell'artifact.
+- Far decidere automaticamente al Decision Support.
+- Collegare Decision Support a Mutation Layer.
+- Collegare Decision Support a executor, runtime, workflow engine, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dal supporto.
+
+### Impatto Architetturale
+
+RFC-1217 apre il Decision Support layer con un artifact fondazionale.
+
+La foundation prepara future review su Decision Boundary e Mutation Boundary, ma non introduce decisioni, approvazioni, rifiuti o mutazioni.
+
+### Regole Permanenti Generate
+
+- Decision Support Artifact e support material.
+- Decision Support Artifact non e approval.
+- Decision Support Artifact non e rejection.
+- Decision Support Artifact non produce decisioni automatiche.
+- Decision Support Artifact non e Decision Engine.
+- Decision Support Artifact non e Mutation.
+- Decision Support Artifact non muta Product Package o Project State.
+- Decision Support Artifact non chiama executor, runtime, workflow engine, Viewer, UI, storage o retrieval.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema
