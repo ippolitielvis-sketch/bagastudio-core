@@ -60,6 +60,8 @@ Covered foundation:
 - BagaStudio EDI Presentation Adapter Review
 - BagaStudio Presentation Model Foundation
 - BagaStudio Integration Readiness Review
+- BagaStudio Operational Planning
+- EDI Strategic Role Definition
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1867,6 +1869,149 @@ La roadmap viene ordinata in tre passaggi:
 - Sync/push review precede la prossima fase operativa.
 - BagaStudio operational planning precede Viewer wiring.
 - Viewer reale richiede RFC dedicata.
+
+## DL-EXEC-042 - Product State Boundary Before Viewer UI
+
+### Problema
+
+Dopo il completamento e push del ponte `EDI Observable Stack -> EdiViewerExposure -> BagaStudioPresentationModel`, serviva decidere se ripartire subito dal Viewer o se prima definire un boundary BagaStudio product-side.
+
+### Decisione
+
+Prima di introdurre Viewer UI o Viewer wiring, serve una `BagaStudio Product State Boundary Review`.
+
+La prossima RFC consigliata e `RFC-1192 - BagaStudio Product State Boundary Review`.
+
+### Motivazione
+
+Il Viewer esistente e una superficie ampia e stateful. Contiene responsabilita di scena, import, product package, runtime metadata, pannelli e controlli.
+
+Collegare subito `BagaStudioPresentationModel` al Viewer rischierebbe di trasformare il Viewer nel primo owner della capability EDI.
+
+Il boundary corretto deve chiarire prima dove vive lo stato product/project e come il presentation model viene mantenuto, derivato o passato al futuro Viewer.
+
+### Alternative Scartate
+
+- Collegare subito `BagaStudioPresentationModel` a Viewer.
+- Creare UI EDI immediata.
+- Introdurre React state per EDI.
+- Far leggere al Viewer dati EDI o EdiViewerExposure.
+- Collegare EDI a Product/Project state senza ownership review.
+
+### Impatto Architetturale
+
+EDI resta congelato come stack osservabile e data boundary.
+
+BagaStudio riparte dal confine Product/Project State, non dal rendering.
+
+Il Viewer resta consumer futuro e indiretto.
+
+### Regole Permanenti Generate
+
+- Product State Boundary precede Viewer UI.
+- Viewer non e il primo owner operativo di EDI.
+- BagaStudioPresentationModel non entra nel Viewer senza boundary product-side.
+- Product/Project state ownership deve essere chiarita prima del codice.
+- EDI Observable Stack resta congelato durante operational planning.
+
+## DL-EXEC-043 - EDI Is Strategic Intelligence, Not Source Of Truth
+
+### Problema
+
+Durante il planning operativo e emerso che EDI non puo essere descritto solo come motore recognition. Serve una definizione strategica ufficiale del ruolo EDI nell'ecosistema BagaStudio.
+
+### Decisione
+
+EDI e il layer permanente di supporto intelligente a utente, prodotto, produzione e azienda.
+
+EDI include:
+
+```text
+Observation Layer
+Proposal Layer
+Validation Support Layer
+Optimization Layer
+Memory Layer
+Business Intelligence Layer
+```
+
+EDI non e Source of Truth.
+
+Source of Truth resta:
+
+- Product Package;
+- Project State;
+- dati validati del sistema.
+
+### Motivazione
+
+EDI deve poter osservare, comprendere, ricordare, proporre, creare, validare e ottimizzare.
+
+Queste capacita devono pero restare subordinate ai dati validati del sistema. Product Package, Project State e dati validati proteggono BagaStudio da proposte non confermate, inferenze non validate o output generativi trattati come verita operativa.
+
+### Capacita Future
+
+Progettazione:
+
+- interpretazione DXF;
+- interpretazione DWG;
+- interpretazione modelli 3D;
+- comprensione ambienti, ingombri e passaggi;
+- proposta arredi, moduli e configurazioni.
+
+Produzione:
+
+- comprensione macchinari;
+- ottimizzazione tagli;
+- ottimizzazione lavorazioni;
+- ottimizzazione nesting;
+- riduzione scarti.
+
+Documentazione:
+
+- schede tecniche;
+- distinte base;
+- documentazione cliente;
+- documentazione laboratorio.
+
+Business:
+
+- marketing;
+- commerciale;
+- preventivi;
+- memoria aziendale;
+- supporto decisionale.
+
+Personale:
+
+- memoria storica;
+- preferenze;
+- pianificazione;
+- supporto alla risoluzione problemi.
+
+### Alternative Scartate
+
+- Trattare EDI come Source of Truth.
+- Trattare EDI come solo recognition.
+- Far mutare Product Package direttamente da EDI.
+- Far mutare Project State direttamente da EDI.
+- Saltare validazione umana o di sistema per proposte EDI.
+
+### Impatto Architetturale
+
+EDI diventa una capability strategica permanente, ma resta non autoritativa.
+
+Ogni proposta EDI deve attraversare boundary e validazioni esplicite prima di diventare stato prodotto, stato progetto o dato operativo.
+
+### Regole Permanenti Generate
+
+- EDI osserva, comprende, ricorda, propone, crea, valida e ottimizza.
+- EDI non e Source of Truth.
+- Product Package resta Source of Truth prodotto.
+- Project State resta Source of Truth progetto.
+- Dati validati del sistema restano autoritativi.
+- Le proposte EDI devono essere validate prima di diventare operative.
+- EDI supporta progettazione, produzione, documentazione, business e memoria personale senza bypassare validation gate.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

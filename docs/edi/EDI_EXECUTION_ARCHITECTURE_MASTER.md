@@ -104,6 +104,8 @@ This document covers:
 - RFC-1188: BagaStudio EDI Presentation Adapter Review
 - RFC-1189: BagaStudio Presentation Model Foundation
 - RFC-1190: BagaStudio Integration Readiness Review
+- RFC-1191: BagaStudio Operational Planning
+- RFC-1191B: EDI Strategic Role Definition
 
 ## Architecture Overview
 
@@ -1451,6 +1453,129 @@ Recommended next phase:
 
 RFC-1190 does not introduce code. It documents readiness only.
 
+### BagaStudio Operational Planning
+
+RFC-1191 defines the operational return path after the EDI Observable Stack and BagaStudio Presentation Model were completed and pushed.
+
+Current bridge:
+
+```text
+Recognition Observable Flow
+↓
+EdiViewModelSnapshot
+↓
+EdiViewerExposure
+↓
+BagaStudioPresentationModel
+```
+
+Operational decision:
+
+- do not jump directly to Viewer UI;
+- do not connect EDI directly to Viewer;
+- do not connect EDI directly to Project/Product state;
+- introduce a Product State / Presentation Boundary review first.
+
+The first BagaStudio area to resume is not Viewer rendering. It is the product-side boundary that decides how `BagaStudioPresentationModel` can be held, exposed, or transformed without mutating existing project/product runtime state.
+
+Observed BagaStudio surface:
+
+- `components/Viewer3D.tsx` is a large, stateful Viewer surface with product package, runtime metadata, imported model, scene, and UI responsibilities;
+- `components/viewer-ui/*` contains Viewer-facing panels and controls;
+- product/package logic also appears in admin/runtime and factory/product package files;
+- no dedicated BagaStudio documentation boundary currently exists outside the EDI docs.
+
+Frozen EDI areas:
+
+- EDI Observable Stack;
+- EdiViewModelSnapshot;
+- EdiViewerExposure;
+- BagaStudioPresentationModel shape;
+- RuntimeHost and RuntimeLoop;
+- Execution, Consumer, Preview Integration, and Recognition foundations.
+
+Before code, BagaStudio must analyze:
+
+- where product/project state is owned;
+- whether presentation data is stored, derived, or passed through;
+- how `BagaStudioPresentationModel` relates to product package/runtime metadata;
+- whether the boundary is read-only or can later request actions;
+- how Viewer receives product-side presentation data without importing EDI.
+
+Recommended next RFC:
+
+- `RFC-1192 - BagaStudio Product State Boundary Review`.
+
+RFC-1191 does not introduce code. It documents the operational sequence only.
+
+### EDI Strategic Role Definition
+
+RFC-1191B defines the strategic role of EDI in the BagaStudio ecosystem.
+
+Strategic definition:
+
+```text
+EDI =
+Observation Layer
++
+Proposal Layer
++
+Validation Support Layer
++
+Optimization Layer
++
+Memory Layer
++
+Business Intelligence Layer
+```
+
+EDI is not the Source of Truth.
+
+Source of Truth remains:
+
+- Product Package;
+- Project State;
+- validated system data.
+
+EDI mission:
+
+- observe the product, project, context, and business process;
+- understand patterns, risks, constraints, and opportunities;
+- remember useful historical signals;
+- propose alternatives and improvements;
+- create drafts, plans, documents, and candidate outputs;
+- validate as support, not authority;
+- optimize across design, production, documentation, and business workflows.
+
+Strategic future domains:
+
+- Design: DXF, DWG, 3D models, environments, clearances, passages, furniture proposals, module proposals, configuration proposals;
+- Production: machinery understanding, cut optimization, machining optimization, nesting optimization, waste reduction;
+- Documentation: technical sheets, bills of materials, customer documentation, laboratory documentation;
+- Business: marketing, sales support, estimates, company memory, decision support;
+- Personal support: historical memory, preferences, planning, problem-solving support.
+
+Relationship with Product Package:
+
+- Product Package remains validated structured product data;
+- EDI may read, interpret, explain, validate, or propose changes around it;
+- EDI must not silently overwrite it;
+- EDI proposals must pass through explicit product/project validation before becoming authoritative.
+
+Relationship with BagaStudio:
+
+- BagaStudio owns operational workflows and validated state;
+- EDI supports BagaStudio as intelligence, memory, and proposal capability;
+- EDI should remain consultable and observable before it becomes operational;
+- EDI must not bypass product, project, factory, or business validation gates.
+
+Strategic boundary:
+
+- EDI can observe, understand, remember, propose, create, validate, and optimize;
+- EDI cannot become Source of Truth by itself.
+
+RFC-1191B introduces no code. It records strategic ownership and scope.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1660,6 +1785,13 @@ The execution foundation must not depend on:
 - BagaStudio Integration Readiness is planning readiness, not product activation.
 - Sync/push review should happen before the next operational phase.
 - Viewer wiring requires a dedicated RFC after product-side planning.
+- Operational return starts with Product State / Presentation Boundary review.
+- Viewer UI must not be the first operational integration target.
+- Product/Project state ownership must be understood before wiring.
+- EDI is strategic intelligence, not Source of Truth.
+- Product Package, Project State, and validated system data remain Source of Truth.
+- EDI proposals require explicit validation before becoming authoritative.
+- EDI can support design, production, documentation, business, and personal workflows.
 
 ## Residual Risks
 
@@ -1702,6 +1834,12 @@ The execution foundation must not depend on:
 - No BagaStudio operational plan exists yet.
 - No sync/push review has been performed after RFC-1190.
 - Viewer wiring remains explicitly out of scope.
+- Product/Project state boundary is not defined yet.
+- Viewer3D is stateful and should not consume EDI directly.
+- Relationship between BagaStudioPresentationModel and product package/runtime metadata is not defined yet.
+- Strategic EDI capabilities are documented but not implemented operationally.
+- Proposal-to-validation workflow is not defined yet.
+- Business intelligence and personal memory scopes require future privacy and governance review.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -1770,3 +1908,5 @@ The Decision Log should record:
 16. Define BagaStudio EDI Presentation Adapter behavior before Viewer wiring.
 17. Perform sync/push review before starting the next operational phase.
 18. Plan BagaStudio operational integration before Viewer wiring.
+19. RFC-1192 - BagaStudio Product State Boundary Review.
+20. Define proposal-to-validation workflow for EDI outputs.

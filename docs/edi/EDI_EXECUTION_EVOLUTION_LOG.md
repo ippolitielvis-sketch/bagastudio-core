@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1190.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1191B.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1190
+- RFC-1126 to RFC-1191B
 
 Architecture distinction:
 
@@ -746,6 +746,8 @@ RFC:
 - RFC-1188
 - RFC-1189
 - RFC-1190
+- RFC-1191
+- RFC-1191B
 
 ### Context
 
@@ -979,6 +981,24 @@ The review also confirmed that real Viewer wiring is not ready yet. Missing piec
 
 Before operational BagaStudio work, the recommended next phase is sync/push review. BagaStudio operational planning should follow that verification, and Viewer exposure wiring should remain behind a dedicated RFC.
 
+RFC-1191 planned the operational return to BagaStudio after the EDI Observable Stack was completed and pushed.
+
+The review concluded that the next operational area is not Viewer UI. The next boundary to review is Product State / Presentation Boundary.
+
+The existing BagaStudio Viewer surface is stateful and already owns scene, import, product package, runtime metadata, panels, and controls. Connecting EDI directly to it would risk making Viewer the owner of EDI.
+
+The recommended next RFC is `RFC-1192 - BagaStudio Product State Boundary Review`.
+
+RFC-1191B defined the strategic role of EDI in the BagaStudio ecosystem.
+
+The decision is that EDI is not only recognition. EDI is a permanent support intelligence for user, product, production, documentation, business, and company memory.
+
+EDI is composed of Observation Layer, Proposal Layer, Validation Support Layer, Optimization Layer, Memory Layer, and Business Intelligence Layer.
+
+EDI is not Source of Truth. Product Package, Project State, and validated system data remain authoritative.
+
+EDI may observe, understand, remember, propose, create, validate, and optimize, but its proposals must pass explicit validation before becoming product, project, production, or business state.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1073,6 +1093,17 @@ Before operational BagaStudio work, the recommended next phase is sync/push revi
 - Sync/push review precedes the next operational phase.
 - BagaStudio operational planning precedes Viewer wiring.
 - Viewer wiring requires a dedicated RFC.
+- Product State Boundary precedes Viewer UI.
+- Viewer is not the first operational owner of EDI.
+- BagaStudioPresentationModel must not enter Viewer without product-side boundary review.
+- Product/Project state ownership must be clarified before code.
+- EDI Observable Stack stays frozen during operational planning.
+- EDI is strategic intelligence, not Source of Truth.
+- Product Package remains product Source of Truth.
+- Project State remains project Source of Truth.
+- Validated system data remains authoritative.
+- EDI proposals must be validated before becoming operational.
+- EDI supports design, production, documentation, business, and personal memory without bypassing validation gates.
 
 ## Current State
 
@@ -1153,6 +1184,11 @@ Implemented producer adapter foundation:
 - EDI Observable Stack is stable enough for planning;
 - BagaStudioPresentationModel is a correct BagaStudio-side boundary;
 - sync/push review is the recommended next phase;
+- BagaStudio operational planning is documented;
+- Product State / Presentation Boundary Review is the next recommended RFC;
+- EDI strategic role is documented;
+- EDI is defined as observation, proposal, validation support, optimization, memory, and business intelligence;
+- Product Package, Project State, and validated system data are documented as Source of Truth;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1178,6 +1214,9 @@ Not implemented today:
 - Viewer consumption of BagaStudio Presentation Model;
 - sync/push review after RFC-1190;
 - BagaStudio operational planning;
+- Product State / Presentation Boundary;
+- proposal-to-validation workflow for EDI outputs;
+- governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;
 - automated Observable Stack tests;
