@@ -108,6 +108,7 @@ This document covers:
 - RFC-1191B: EDI Strategic Role Definition
 - RFC-1192: BagaStudio Product State Boundary Review
 - RFC-1193: BagaStudio Product State Integration Planning
+- RFC-1194: Product Package Observation Adapter Review
 
 ## Architecture Overview
 
@@ -1742,6 +1743,47 @@ The next recommended RFC is `RFC-1194 - Product Package Observation Adapter Revi
 
 RFC-1193 introduces no code. It documents integration planning only.
 
+### Product Package Observation Adapter Review
+
+RFC-1194 defines the future Product Package Observation Adapter.
+
+The adapter is the planned boundary that allows EDI to observe Product Package without mutating it. It must produce a read-only observation snapshot, not a live reference to Viewer state, Product Package state, scene graph state, runtime globals, or Factory outputs.
+
+Planned observation boundary:
+
+```text
+Product Package
+-> Product Package Observation Adapter
+-> Product Package Observation Snapshot
+-> EDI Observation / Memory / Proposal / Optimization
+```
+
+The adapter may observe product identity, schema/version, source format, dimensions, footprint, component identifiers, component counts, materials, finishes, LED metadata, insert metadata, validation/report metadata, production readiness metadata when already validated, timestamps, and traceability identifiers.
+
+The adapter must not directly expose mutable Product Package references, live Viewer scene objects, `userData` mutation handles, window/global helpers, raw parser internals, unvalidated geometry mutation data, Factory executable instructions, customer/private/business data not explicitly selected for observation, or any object that would let EDI mutate Product Package indirectly.
+
+Read-only snapshot rule:
+
+- Product Package remains the product Source of Truth;
+- the adapter produces an immutable-style snapshot;
+- the adapter does not mutate Product Package;
+- the adapter does not call the Mutation Layer;
+- the adapter does not call Viewer, Factory, runtime, UI, or React state;
+- the adapter does not generate proposals directly;
+- the adapter does not validate product changes;
+- the adapter does not execute EDI runtime.
+
+Relationship with future EDI layers:
+
+- Memory may store the observation snapshot as historical product context;
+- Proposal may use observations as evidence, but proposal creation is a later layer;
+- Optimization may reason over observations, but cannot mutate Product Package directly;
+- any proposal generated from observations must still cross BagaStudio Validation Layer before Mutation Layer.
+
+The next recommended RFC is `RFC-1195 - Product Package Observation Snapshot Foundation`.
+
+RFC-1194 introduces no code. It documents the observation boundary only.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1966,6 +2008,10 @@ The execution foundation must not depend on:
 - Product Package observation must be adapter-mediated.
 - EDI proposal path must pass through Validation Layer before Mutation Layer.
 - Product Package can feed presentation, but Presentation Model remains non-authoritative.
+- Product Package Observation Adapter must produce read-only snapshots.
+- Product Package Observation Adapter must not expose live mutable Product Package references.
+- Product Package Observation Adapter must not call Viewer, Factory, runtime, UI, or Mutation Layer.
+- Product Package Observation Adapter does not create proposals.
 
 ## Residual Risks
 
@@ -2018,9 +2064,12 @@ The execution foundation must not depend on:
 - Product Package to Presentation Model flow is not defined yet.
 - EDI observation path over Product Package is not implemented yet.
 - EDI proposal validation path is not defined yet.
-- Product Package Observation Adapter is not defined yet.
+- Product Package Observation Adapter is defined only as a documented boundary; no snapshot type exists yet.
 - Product Package to Presentation Model generation is not implemented yet.
 - Proposal validation and mutation contracts are not implemented yet.
+- Product Package Observation Snapshot shape is not implemented yet.
+- Observable Product Package field allowlist needs a dedicated foundation.
+- Product/customer/business metadata selection requires future privacy and governance review.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2093,3 +2142,4 @@ The Decision Log should record:
 20. Define proposal-to-validation workflow for EDI outputs.
 21. RFC-1193 - BagaStudio Product State Integration Planning.
 22. RFC-1194 - Product Package Observation Adapter Review.
+23. RFC-1195 - Product Package Observation Snapshot Foundation.

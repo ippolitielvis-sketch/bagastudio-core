@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1193.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1194.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1193
+- RFC-1126 to RFC-1194
 
 Architecture distinction:
 
@@ -750,6 +750,7 @@ RFC:
 - RFC-1191B
 - RFC-1192
 - RFC-1193
+- RFC-1194
 
 ### Context
 
@@ -1023,6 +1024,20 @@ The decision is that Product Package enters EDI only through an adapter, EDI pro
 
 The next recommended RFC is `RFC-1194 - Product Package Observation Adapter Review`.
 
+RFC-1194 defined the future Product Package Observation Adapter as a read-only observation boundary.
+
+The planned path is Product Package, Product Package Observation Adapter, Product Package Observation Snapshot, and EDI Observation / Memory / Proposal / Optimization.
+
+The adapter may observe selected product identity, schema/version, source format, dimensions, footprint, component identifiers, component counts, materials, finishes, LED metadata, insert metadata, validation/report metadata, validated production readiness metadata, timestamps, and traceability identifiers.
+
+The adapter must not expose mutable Product Package references, live Viewer scene objects, `userData` mutation handles, window/global helpers, raw parser internals, unvalidated geometry mutation data, Factory executable instructions, or customer/private/business data not explicitly selected for observation.
+
+The decision is that Product Package Observation Adapter produces read-only snapshots only. It does not mutate Product Package, call Mutation Layer, call Viewer, call Factory, call runtime, create proposal, validate product changes, or execute EDI.
+
+The snapshot can later feed Memory, Proposal, and Optimization as evidence, but any resulting proposal still requires BagaStudio Validation Layer before Mutation Layer.
+
+The next recommended RFC is `RFC-1195 - Product Package Observation Snapshot Foundation`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1140,6 +1155,11 @@ The next recommended RFC is `RFC-1194 - Product Package Observation Adapter Revi
 - EDI proposals pass through Validation Layer before Mutation Layer.
 - BagaStudio owns Mutation Layer.
 - Presentation Model derives data for Viewer but is not Source of Truth.
+- Product Package Observation Adapter produces read-only snapshots.
+- Product Package Observation Adapter does not expose live mutable Product Package references.
+- Product Package Observation Adapter does not call Viewer, Factory, runtime, UI, or Mutation Layer.
+- Product Package Observation Adapter does not create proposals.
+- Product Package Observation Snapshot feeds Memory, Proposal, and Optimization only as evidence.
 
 ## Current State
 
@@ -1229,7 +1249,8 @@ Implemented producer adapter foundation:
 - ownership map across Product Package, Project State, EDI, BagaStudio, Presentation Model, Viewer, and Factory is documented;
 - Product State Integration Planning is documented;
 - Observation Path, Proposal Path, and Presentation Path are documented;
-- Product Package Observation Adapter is the next recommended RFC;
+- Product Package Observation Adapter is documented as read-only observation boundary;
+- Product Package Observation Snapshot is the next recommended RFC;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1260,7 +1281,7 @@ Not implemented today:
 - Product Package to Presentation Model flow;
 - EDI observation path over Product Package;
 - EDI proposal validation path;
-- Product Package Observation Adapter;
+- Product Package Observation Snapshot;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

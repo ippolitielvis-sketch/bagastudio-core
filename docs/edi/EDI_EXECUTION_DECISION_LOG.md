@@ -64,6 +64,7 @@ Covered foundation:
 - EDI Strategic Role Definition
 - BagaStudio Product State Boundary Review
 - BagaStudio Product State Integration Planning
+- Product Package Observation Adapter Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2154,6 +2155,66 @@ Il Product Package Observation Adapter dovra convertire dati Product Package val
 - Presentation Model deriva dati per Viewer, ma non e Source of Truth.
 - Viewer consuma Presentation Model, non Product Package mutation.
 - Factory consuma solo dati validati.
+
+## DL-EXEC-046 - Product Package Observation Uses Read-Only Snapshot
+
+### Problema
+
+Dopo aver stabilito che Product Package e il Source of Truth del prodotto, serviva definire come EDI potra osservarlo senza acquisire poteri di mutazione o dipendenze da Viewer, Factory, runtime o UI.
+
+Il codice storico contiene riferimenti Product Package vicini a Viewer state, `userData`, helper globali e report factory/layout. Questi riferimenti sono utili come evidenza architetturale, ma non devono diventare il modello di integrazione EDI.
+
+### Decisione
+
+Il futuro Product Package Observation Adapter deve produrre uno snapshot read-only.
+
+Lo snapshot e il solo oggetto che EDI potra consumare come osservazione prodotto.
+
+Il flusso documentato e:
+
+```text
+Product Package
+Product Package Observation Adapter
+Product Package Observation Snapshot
+EDI Observation / Memory / Proposal / Optimization
+```
+
+L'adapter puo osservare dati gia presenti e selezionati, come identita prodotto, schema/versione, source format, dimensioni, footprint, component ids, component count, materiali, finiture, LED metadata, insert metadata, validation/report metadata, production readiness metadata gia validati, timestamp e traceability ids.
+
+L'adapter non deve esporre riferimenti mutabili, scene graph live, `userData` mutation handles, helper globali, parser internals, dati geometrici non validati per mutation, istruzioni Factory eseguibili o dati customer/business non esplicitamente inclusi nello snapshot.
+
+### Motivazione
+
+EDI deve poter osservare, ricordare, proporre e ottimizzare, ma non deve diventare Source of Truth.
+
+Uno snapshot read-only consente a EDI di costruire memoria e ragionamento senza possedere il Product Package e senza poterlo alterare per riferimento.
+
+La separazione protegge anche BagaStudio: ogni proposal futura dovra attraversare Validation Layer e Mutation Layer prima di modificare Product Package.
+
+### Alternative Scartate
+
+- Far leggere a EDI il Product Package live.
+- Passare a EDI riferimenti Viewer o `userData`.
+- Far produrre proposal direttamente all'Observation Adapter.
+- Far validare modifiche prodotto all'Observation Adapter.
+- Far chiamare Mutation Layer, Viewer, Factory o runtime dall'Observation Adapter.
+
+### Impatto Architetturale
+
+La prossima RFC consigliata e `RFC-1195 - Product Package Observation Snapshot Foundation`.
+
+RFC-1195 dovra introdurre solo il tipo snapshot read-only e la relativa factory/foundation minima, senza mutare Product Package, senza chiamare runtime, senza creare proposal e senza collegare Viewer/UI.
+
+### Regole Permanenti Generate
+
+- Product Package Observation Adapter produce snapshot read-only.
+- Product Package Observation Adapter non espone riferimenti mutabili.
+- Product Package Observation Adapter non chiama Mutation Layer.
+- Product Package Observation Adapter non chiama Viewer, Factory, runtime, UI o React state.
+- Product Package Observation Adapter non crea proposal.
+- Product Package Observation Adapter non valida modifiche prodotto.
+- Product Package Observation Snapshot puo alimentare Memory, Proposal e Optimization solo come evidenza.
+- Ogni proposal derivata dallo snapshot deve attraversare Validation Layer prima della Mutation.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
