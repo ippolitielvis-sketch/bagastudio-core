@@ -23,6 +23,13 @@ export type EdiProducerAdapterMetadata = {
   [key: string]: unknown;
 };
 
+export type EdiProducerAdapterExecutionRequestInput = EdiExecutionRequestInput & {
+  targetDomain: EdiProducerAdapterDomain;
+  mode: EdiProducerAdapterMode;
+  payload?: EdiExecutionRequestPayload;
+  metadata?: EdiProducerAdapterMetadata;
+};
+
 export type EdiProducerAdapterInput = {
   source: EdiProducerAdapterSource;
   targetDomain: EdiProducerAdapterDomain;
@@ -35,7 +42,7 @@ export type EdiProducerAdapterOutput = {
   source: EdiProducerAdapterSource;
   targetDomain: EdiProducerAdapterDomain;
   mode: EdiProducerAdapterMode;
-  executionRequestInput: EdiExecutionRequestInput;
+  executionRequestInput: EdiProducerAdapterExecutionRequestInput;
   metadata?: EdiProducerAdapterMetadata;
 };
 

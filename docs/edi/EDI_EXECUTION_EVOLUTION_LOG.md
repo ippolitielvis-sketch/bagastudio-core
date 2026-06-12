@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1167
+- RFC-1126 to RFC-1168
 
 Architecture distinction:
 
@@ -723,6 +723,7 @@ RFC:
 - RFC-1165
 - RFC-1166
 - RFC-1167
+- RFC-1168
 
 ### Context
 
@@ -776,6 +777,10 @@ RFC-1167 introduced the Real Producer Adapter Foundation.
 
 No real Import, Recognition, Viewer, Pricing, Factory, Layout, or Join producer was introduced.
 
+RFC-1168 clarified the producer adapter to boundary contract.
+
+Producer adapters produce `executionRequestInput`. Future callers may use that input with `createEdiExecutionRequest`, and the resulting request must cross `EdiIntegrationBoundary` before runtime.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -793,6 +798,9 @@ No real Import, Recognition, Viewer, Pricing, Factory, Layout, or Join producer 
 - Producer Adapter is not Real Engine.
 - Producer Adapter stays before Integration Boundary.
 - Producer Adapter does not call RuntimeHost or RuntimeLoop.
+- Producer Adapter produces request input.
+- Producer Adapter does not call Executor or Consumer.
+- Requests produced from adapter input must cross Integration Boundary.
 
 ## Current State
 
@@ -842,6 +850,7 @@ Implemented preview wiring:
 Implemented producer adapter foundation:
 
 - `EdiProducerAdapter` contract exists;
+- `EdiProducerAdapterOutput.executionRequestInput` is compatible with future `createEdiExecutionRequest` usage;
 - no concrete real producer exists;
 - no producer is wired to Integration Boundary;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.

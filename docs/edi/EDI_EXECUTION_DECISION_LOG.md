@@ -37,6 +37,7 @@ Covered foundation:
 - Preview Integration Boundary Wiring
 - Boundary Failure Semantics
 - Real Producer Adapter Foundation
+- Producer Adapter Boundary Contract
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -801,3 +802,55 @@ Il contratto resta neutrale e non modifica il contratto pubblico `EdiExecutionRe
 - Producer Adapter vive prima della Integration Boundary.
 - Producer Adapter non chiama engine reali.
 - Producer Adapter non introduce real integration.
+
+## DL-EXEC-019 — Producer Adapter Produce Request Input
+
+### Problema
+
+`EdiProducerAdapter` doveva essere collegato concettualmente a `EdiIntegrationBoundary` senza creare producer reali o wiring operativo.
+
+Serviva chiarire che il producer adapter non produce runtime execution, ma prepara un input compatibile con la futura creazione di una `EdiExecutionRequest`.
+
+### Decisione
+
+Il producer adapter produce `executionRequestInput`.
+
+Il flow contrattuale e:
+
+- Real Engine / Viewer / Import / Recognition;
+- `EdiProducerAdapter`;
+- `executionRequestInput`;
+- `createEdiExecutionRequest`;
+- `EdiIntegrationBoundary`;
+- Runtime.
+
+### Motivazione
+
+Il runtime deve ricevere solo request gia create e validate. Il producer adapter deve restare prima della boundary e non deve conoscere RuntimeHost, RuntimeLoop, executor o consumer.
+
+`executionRequestInput` deve includere `mode` e `targetDomain`, perche la boundary li richiede per validare la request risultante.
+
+### Alternative Scartate
+
+- Far chiamare il runtime al producer adapter.
+- Far chiamare executor o consumer al producer adapter.
+- Far attraversare il runtime senza boundary.
+- Introdurre producer reali specifici.
+- Introdurre inferenza automatica di `targetDomain`.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+Il contratto tra producer adapter e boundary viene reso esplicito senza attivare real integration.
+
+`EdiExecutionRequest` resta invariata.
+
+### Regole Permanenti Generate
+
+- Producer Adapter Before Boundary.
+- Producer Adapter produce request input.
+- Producer Adapter non chiama runtime.
+- Producer Adapter non chiama executor.
+- Producer Adapter non chiama consumer.
+- Producer Adapter non inferisce automaticamente `targetDomain`.
+- Request prodotta da adapter deve attraversare Integration Boundary.
