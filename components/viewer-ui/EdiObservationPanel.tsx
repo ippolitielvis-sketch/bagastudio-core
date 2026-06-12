@@ -5,6 +5,17 @@ type EdiObservationPanelProps = {
   importedModelName?: string;
   observableComponentCount?: number;
   lastImporterEvent?: string;
+  productPackageObservationSummary?: EdiProductPackageObservationSummary;
+};
+
+export type EdiProductPackageObservationSummary = {
+  snapshotAvailable: boolean;
+  productPackageObserved: boolean;
+  componentCount: number;
+  sourceFormat?: string;
+  origin?: string;
+  nativeModuleCount?: number;
+  importedModuleCount?: number;
 };
 
 const formatAvailability = (available: boolean) => (available ? "disponibile" : "non disponibile");
@@ -103,6 +114,7 @@ export default function EdiObservationPanel({
   importedModelName,
   observableComponentCount,
   lastImporterEvent,
+  productPackageObservationSummary,
 }: EdiObservationPanelProps) {
   const componentCount =
     typeof observableComponentCount === "number" && Number.isFinite(observableComponentCount)
@@ -122,6 +134,11 @@ export default function EdiObservationPanel({
     importedModelName,
     componentCount,
   });
+  const productPackageObservation = productPackageObservationSummary ?? {
+    snapshotAvailable: false,
+    productPackageObserved: false,
+    componentCount: 0,
+  };
 
   return (
     <aside className="absolute bottom-20 right-4 z-[68] w-[320px] rounded-2xl border border-emerald-300/22 bg-slate-950/92 p-4 text-xs text-slate-100 shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl">
@@ -180,6 +197,42 @@ export default function EdiObservationPanel({
           <span className="mt-1 block truncate font-bold text-white">
             {lastImporterEvent || "non disponibile"}
           </span>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-lime-300/16 bg-lime-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-lime-200">
+          Product Package Observation
+        </span>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] font-semibold text-slate-100">
+          <div>
+            <span className="block uppercase tracking-[0.12em] text-slate-500">Product Package</span>
+            <span className="mt-0.5 block font-bold text-white">
+              {formatAvailability(productPackageObservation.productPackageObserved)}
+            </span>
+          </div>
+          <div>
+            <span className="block uppercase tracking-[0.12em] text-slate-500">Snapshot</span>
+            <span className="mt-0.5 block font-bold text-white">
+              {formatAvailability(productPackageObservation.snapshotAvailable)}
+            </span>
+          </div>
+          <div>
+            <span className="block uppercase tracking-[0.12em] text-slate-500">Componenti PP</span>
+            <span className="mt-0.5 block font-bold text-white">
+              {productPackageObservation.componentCount}
+            </span>
+          </div>
+          <div>
+            <span className="block uppercase tracking-[0.12em] text-slate-500">Origine</span>
+            <span className="mt-0.5 block truncate font-bold text-white">
+              {productPackageObservation.origin || productPackageObservation.sourceFormat || "non disponibile"}
+            </span>
+          </div>
+        </div>
+        <div className="mt-2 text-[10px] font-semibold leading-relaxed text-lime-100/90">
+          Nativi: {productPackageObservation.nativeModuleCount ?? 0} · Importati:{" "}
+          {productPackageObservation.importedModuleCount ?? 0}
         </div>
       </div>
 

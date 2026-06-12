@@ -474,3 +474,39 @@ Viewer, BagaStudio Presentation, EDI Insight futura.
 
 # Conversazioni utilizzate
 - RFC-1221 First Real Insight Foundation
+
+## Milestone - RFC-1222 Product Package Observation Summary Foundation
+
+# Contesto
+Il pannello EDI era visibile nel Viewer e mostrava osservazioni, comprensioni e insight presentation-level, ma non vedeva ancora in modo controllato i moduli nativi BagaStudio.
+
+# Problema
+Serviva collegare Product Package, Viewer runtime e Scene Composer modules al pannello senza importare EDI Core nella UI, senza creare artifact nel pannello e senza introdurre mutation.
+
+# Decisione
+Introdurre un Product Package Observation summary read-only e presentation-safe creato fuori da `EdiObservationPanel`.
+
+# Motivazione
+Il summary permette a EDI di mostrare componenti osservabili, origine nativa/importata e disponibilita snapshot senza diventare runtime, Memory, Reasoning, Proposal, Validation o Decision.
+
+# Implementazione
+RFC-1222 usa il Product Package Observation Adapter fuori dal pannello e passa a `EdiObservationPanel` solo props serializzabili.
+
+# Evoluzione
+La roadmap puo ora revieware il ponte Product Package Observation Summary prima di collegare Memory o observation flow EDI completo.
+
+# Impatto
+EDI vede anche moduli nativi in forma summary read-only, mentre Product Package e Project State restano protetti.
+
+# Regole permanenti nate
+- Product Package Observation Summary e read-only.
+- Product Package Observation Summary e presentation-safe.
+- `EdiObservationPanel` non importa EDI Core.
+- `EdiObservationPanel` non crea artifact EDI.
+- Product Package Observation Summary non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
+
+# Conversazioni utilizzate
+- RFC-1222 Product Package Observation Summary Foundation

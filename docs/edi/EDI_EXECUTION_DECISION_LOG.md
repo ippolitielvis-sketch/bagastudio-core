@@ -3786,6 +3786,45 @@ Il confine resta Viewer props -> messaggi deterministici di insight -> pannello 
 - First Real Viewer Insight non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support o Decision.
 - First Real Viewer Insight non muta Product Package o Project State.
 
+## DL-EXEC-074 - Product Package Observation Summary Is Presentation-Safe
+
+### Problema
+
+Il pannello EDI vedeva modelli importati e conteggi runtime del Viewer, ma non aveva ancora una via controllata per esporre una sintesi read-only del Product Package o dei moduli nativi BagaStudio.
+
+### Decisione
+
+Collegare il Product Package Observation al pannello tramite un summary serializzabile e presentation-safe.
+
+`ProductPackageObservationAdapter` viene usato fuori da `EdiObservationPanel`. Il pannello riceve solo props read-only e non importa EDI Core.
+
+### Motivazione
+
+Questa soluzione rende EDI capace di mostrare anche moduli nativi e snapshot osservabili senza trasformare il Viewer in runtime EDI, senza creare artifact nel pannello e senza introdurre mutation o decisioni automatiche.
+
+### Alternative Scartate
+
+- Importare EDI Core direttamente nel pannello.
+- Creare artifact EDI dentro `EdiObservationPanel`.
+- Collegare Memory, Understanding Core, Reasoning, Proposal, Validation o Decision.
+- Scrivere Product Package o Project State.
+- Interpretare semanticamente i moduli nativi.
+
+### Impatto Architetturale
+
+RFC-1222 introduce un ponte read-only tra Product Package / Viewer runtime / Scene Composer modules e il pannello EDI.
+
+Il confine diventa Product Package Observation Adapter fuori dal pannello -> summary presentation-safe -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- Product Package Observation Summary e read-only.
+- Product Package Observation Summary e presentation-safe.
+- `EdiObservationPanel` non importa EDI Core.
+- `EdiObservationPanel` non crea artifact EDI.
+- Product Package Observation Summary non muta Product Package o Project State.
+- Product Package Observation Summary non attiva Memory, Reasoning, Proposal, Validation Support, Decision Support o Decision.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

@@ -101,6 +101,7 @@ RFC EDI esplicite:
 - RFC-1219 First Real Observation Foundation
 - RFC-1220 First Real Understanding Foundation
 - RFC-1221 First Real Insight Foundation
+- RFC-1222 Product Package Observation Summary Foundation
 
 Milestone equivalenti a RFC implicite:
 - Viewer Recovery Foundation

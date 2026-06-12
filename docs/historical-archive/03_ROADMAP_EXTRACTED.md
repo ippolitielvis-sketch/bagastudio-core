@@ -307,3 +307,20 @@ Gli insight Viewer devono restare presentation-level: niente artifact EDI, nient
 
 # Prossimo passo consigliato
 First Real Insight Panel Review before EDI Core backed Reasoning, Decision Support, or Product Package Observation Flow wiring.
+
+## Roadmap - Product Package Observation Summary Foundation
+
+# Contesto
+EDI e visibile nel Viewer con osservazioni, comprensioni e insight presentation-level.
+
+# Stato raggiunto
+RFC-1222 collega un Product Package Observation summary read-only al pannello EDI.
+
+# Sequenza
+First Real Insight -> Product Package Observation Summary -> Product Package Observation Summary Review.
+
+# Regola roadmap
+Il summary deve restare presentation-safe: adapter fuori dal pannello, props serializzabili dentro il pannello, nessuna mutation, nessun runtime EDI, nessuna Memory, Reasoning, Proposal, Validation o Decision.
+
+# Prossimo passo consigliato
+Product Package Observation Summary Review before Memory-backed observation or Product Package Observation Flow integration.

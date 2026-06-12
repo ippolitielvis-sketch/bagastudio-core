@@ -34,7 +34,10 @@ import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/R
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
-import EdiObservationPanel from "./viewer-ui/EdiObservationPanel";
+import EdiObservationPanel, {
+  type EdiProductPackageObservationSummary,
+} from "./viewer-ui/EdiObservationPanel";
+import { createProductPackageObservationAdapterResult } from "./edi/observation/ProductPackageObservationAdapter";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
 import EdiLauncher from "./edi/launcher/EdiLauncher";
 import {
@@ -2937,6 +2940,153 @@ type BagaStudioProductPackage = {
   accessories: Record<string, unknown[]>;
   led: Record<string, { enabled: boolean; kelvin?: number; intensity?: number }>;
   inserts: Record<string, unknown>;
+};
+
+type ViewerProductPackageObservationSource = {
+  productPackage: Record<string, unknown>;
+  productPackageObserved: boolean;
+  origin: string;
+  nativeModuleCount: number;
+  importedModuleCount: number;
+  timestamp: number;
+};
+
+const parseViewerTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const readViewerProductPackageTimestamp = (productPackage: Record<string, unknown>) =>
+  parseViewerTimestamp(productPackage.createdAt) ??
+  parseViewerTimestamp(productPackage.updatedAt) ??
+  parseViewerTimestamp(productPackage.savedAt) ??
+  0;
+
+const buildViewerObservationComponent = (component: any, index: number) => ({
+  id: String(component?.id || component?.partId || component?.moduleId || component?.meshName || `component-${index + 1}`),
+  type: String(component?.type || component?.componentType || component?.source?.kind || "viewer-component"),
+  category: typeof component?.category === "string" ? component.category : undefined,
+  material: typeof component?.material === "string" ? component.material : component?.materialGroup,
+  quantity: typeof component?.quantity === "number" ? component.quantity : 1,
+});
+
+const resolveViewerObservationOrigin = (nativeModuleCount: number, importedModuleCount: number, fallback: string) => {
+  if (nativeModuleCount > 0 && importedModuleCount > 0) return "mista";
+  if (nativeModuleCount > 0) return "nativa";
+  if (importedModuleCount > 0) return "importata";
+  return fallback || "viewer-runtime";
+};
+
+const createViewerProductPackageObservationSource = ({
+  productPackage,
+  sceneModules,
+  runtimeComponents,
+}: {
+  productPackage?: Record<string, unknown> | null;
+  sceneModules: readonly any[];
+  runtimeComponents: readonly BagaStudioRuntimeComponent[];
+}): ViewerProductPackageObservationSource | null => {
+  const nativeModuleCount = sceneModules.filter((module) => module?.source?.kind === "parametric-module-v1").length;
+  const importedModuleCount = sceneModules.filter((module) => module?.source?.kind === "imported-product-v1").length;
+
+  if (productPackage) {
+    const sourceFormat = typeof productPackage.sourceFormat === "string" ? productPackage.sourceFormat : "product-package";
+
+    return {
+      productPackage,
+      productPackageObserved: true,
+      origin: resolveViewerObservationOrigin(nativeModuleCount, importedModuleCount, sourceFormat),
+      nativeModuleCount,
+      importedModuleCount,
+      timestamp: readViewerProductPackageTimestamp(productPackage),
+    };
+  }
+
+  const sceneComponents = sceneModules.map(buildViewerObservationComponent);
+
+  if (sceneComponents.length > 0) {
+    const origin = resolveViewerObservationOrigin(nativeModuleCount, importedModuleCount, "scene-composer");
+
+    return {
+      productPackage: {
+        schema: "bagastudio.viewerObservationSummary.v1",
+        sourceFormat: origin,
+        product: {
+          id: "viewer-scene-composer",
+          name: "Viewer Scene Composer",
+        },
+        componentCount: sceneComponents.length,
+        components: sceneComponents,
+      },
+      productPackageObserved: false,
+      origin,
+      nativeModuleCount,
+      importedModuleCount,
+      timestamp: 0,
+    };
+  }
+
+  if (runtimeComponents.length > 0) {
+    return {
+      productPackage: {
+        schema: "bagastudio.viewerRuntimeObservationSummary.v1",
+        sourceFormat: "viewer-runtime",
+        product: {
+          id: "viewer-runtime-components",
+          name: "Viewer Runtime Components",
+        },
+        componentCount: runtimeComponents.length,
+        components: runtimeComponents.map(buildViewerObservationComponent),
+      },
+      productPackageObserved: false,
+      origin: "viewer-runtime",
+      nativeModuleCount: 0,
+      importedModuleCount: 0,
+      timestamp: 0,
+    };
+  }
+
+  return null;
+};
+
+const createEdiProductPackageObservationSummary = (
+  source: ViewerProductPackageObservationSource | null,
+): EdiProductPackageObservationSummary => {
+  if (!source) {
+    return {
+      snapshotAvailable: false,
+      productPackageObserved: false,
+      componentCount: 0,
+      origin: "non disponibile",
+      nativeModuleCount: 0,
+      importedModuleCount: 0,
+    };
+  }
+
+  const observation = createProductPackageObservationAdapterResult({
+    productPackage: source.productPackage,
+    timestamp: source.timestamp,
+    metadata: {
+      source: "Viewer3D",
+      reason: "edi-panel-product-package-observation-summary",
+      origin: source.origin,
+      nativeModuleCount: source.nativeModuleCount,
+      importedModuleCount: source.importedModuleCount,
+    },
+  });
+
+  return {
+    snapshotAvailable: true,
+    productPackageObserved: source.productPackageObserved,
+    componentCount: observation.snapshot.componentCount,
+    sourceFormat: observation.snapshot.sourceFormat,
+    origin: source.origin,
+    nativeModuleCount: source.nativeModuleCount,
+    importedModuleCount: source.importedModuleCount,
+  };
 };
 
 type BagaStudioValidationIssue = {
@@ -8804,6 +8954,7 @@ productMaterials?.length
   const setRuntimeSelectedPartId = useConfigStore((state) => state.setSelectedPart);
   const [viewerMode, setViewerMode] = useState<"select" | "pan" | "orbit">("select");
   const [viewerRuntimeComponents, setViewerRuntimeComponents] = useState<BagaStudioRuntimeComponent[]>([]);
+  const [viewerProductPackage, setViewerProductPackage] = useState<Record<string, unknown> | null>(null);
   const [viewerModelEdgesEnabled, setViewerModelEdgesEnabled] = useState(modelEdgesEnabled);
   // Scene Composer Foundation V38:
   // mantiene il controllo singolo validato in V37, ma introduce la struttura dati
@@ -10451,8 +10602,10 @@ productMaterials?.length
       // Prima potevano rimanere componenti/placeholder del Product Package precedente
       // e il Viewer mostrava pezzi finti o non appartenenti al DAE caricato.
       setViewerRuntimeComponents([]);
+      setViewerProductPackage(null);
       setRuntimeSelectedPartId("");
       (window as any).__bagastudioViewerRuntimeComponents = [];
+      (window as any).__bagastudioProductPackage = null;
       (window as any).__bagastudioViewerRuntimeMergeReport = null;
 
       window.dispatchEvent(
@@ -10580,6 +10733,7 @@ productMaterials?.length
       }
       runtimeImportedModelRef.current = null;
       setRuntimeImportedModel(null);
+      setViewerProductPackage(null);
       setSceneModulesV38((current) => current.filter((module: any) => !isImportedSceneModuleV267(module)));
       setActiveSceneModuleIdV38((current) => (current === "imported-product-main" ? null : current));
       window.dispatchEvent(new CustomEvent("bagastudio:viewer-runtime-model-cleared"));
@@ -10614,6 +10768,7 @@ productMaterials?.length
         : Array.isArray(payload?.detail?.components)
         ? payload.detail.components
         : [];
+      const incomingProductPackage = payload?.productPackage || payload?.detail?.productPackage || null;
 
       const incoming = incomingComponents as BagaStudioRuntimeComponent[];
 
@@ -10625,10 +10780,21 @@ productMaterials?.length
         setViewerRuntimeComponents(incoming);
         (window as any).__bagastudioViewerRuntimeComponents = incoming;
       }
+
+      if (incomingProductPackage) {
+        setViewerProductPackage(incomingProductPackage as Record<string, unknown>);
+      }
     };
 
     const handleComponentsReady = (event: Event) => {
       applyComponents((event as CustomEvent).detail);
+    };
+
+    const handleProductPackageReady = (event: Event) => {
+      const productPackage = (event as CustomEvent).detail?.productPackage || null;
+      if (productPackage) {
+        setViewerProductPackage(productPackage as Record<string, unknown>);
+      }
     };
 
     const handleSelectComponent = (event: Event) => {
@@ -10657,6 +10823,8 @@ productMaterials?.length
     window.addEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
     window.addEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
     window.addEventListener("bagastudio:runtime-components-merged", handleComponentsReady);
+    window.addEventListener("bagastudio:product-package-imported", handleProductPackageReady);
+    window.addEventListener("bagastudio:product-package-applied", handleProductPackageReady);
     window.addEventListener("bagastudio:viewer-select-component", handleSelectComponent);
 
     const existingComponents = (window as any).__bagastudioViewerRuntimeComponents;
@@ -10664,10 +10832,21 @@ productMaterials?.length
       setViewerRuntimeComponents(existingComponents as BagaStudioRuntimeComponent[]);
     }
 
+    const existingProductPackage =
+      (window as any).__bagastudioProductPackage ||
+      (window as any).__bagastudioLastProductPackage ||
+      (window as any).bagastudioProductPackage ||
+      null;
+    if (existingProductPackage) {
+      setViewerProductPackage(existingProductPackage as Record<string, unknown>);
+    }
+
     return () => {
       window.removeEventListener("bagastudio:viewer-components-ready", handleComponentsReady);
       window.removeEventListener("bagastudio:importer-components-analyzed", handleComponentsReady);
       window.removeEventListener("bagastudio:runtime-components-merged", handleComponentsReady);
+      window.removeEventListener("bagastudio:product-package-imported", handleProductPackageReady);
+      window.removeEventListener("bagastudio:product-package-applied", handleProductPackageReady);
       window.removeEventListener("bagastudio:viewer-select-component", handleSelectComponent);
 
       delete (window as any).bagastudioGetViewerRuntimeComponents;
@@ -10708,6 +10887,15 @@ productMaterials?.length
     importedModelName ||
     (typeof effectiveProductModel === "string" ? effectiveProductModel.split("/").pop() : "") ||
     "import";
+  const ediProductPackageObservationSummary = useMemo(() => {
+    const observationSource = createViewerProductPackageObservationSource({
+      productPackage: viewerProductPackage,
+      sceneModules: sceneModulesV38,
+      runtimeComponents: viewerRuntimeComponents,
+    });
+
+    return createEdiProductPackageObservationSummary(observationSource);
+  }, [sceneModulesV38, viewerProductPackage, viewerRuntimeComponents]);
 
   // Import Calibration V23:
   // Il pannello deve comparire anche quando il DAE arriva da page.tsx come productModel,
@@ -10990,10 +11178,11 @@ productMaterials?.length
       <RoomOrientationOverlay />
 
       <EdiObservationPanel
-        productPackageAvailable={viewerRuntimeComponents.length > 0}
+        productPackageAvailable={viewerRuntimeComponents.length > 0 || ediProductPackageObservationSummary.productPackageObserved}
         importedModelName={runtimeImportedModel?.name || importedModelName || ""}
-        observableComponentCount={viewerRuntimeComponents.length}
+        observableComponentCount={Math.max(viewerRuntimeComponents.length, ediProductPackageObservationSummary.componentCount)}
         lastImporterEvent={runtimeImportedModel ? "import attivo" : ""}
+        productPackageObservationSummary={ediProductPackageObservationSummary}
       />
 
       <ViewerMiniTab

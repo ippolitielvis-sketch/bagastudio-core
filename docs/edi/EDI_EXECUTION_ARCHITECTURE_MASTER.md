@@ -136,6 +136,7 @@ This document covers:
 - RFC-1219: First Real Observation Foundation
 - RFC-1220: First Real Understanding Foundation
 - RFC-1221: First Real Insight Foundation
+- RFC-1222: Product Package Observation Summary Foundation
 
 ## Architecture Overview
 
@@ -3233,6 +3234,32 @@ Viewer presentation-safe props
 
 The Viewer-facing insight is deterministic, explainable, read-only, and presentation-safe. It gives the user a first visible interpretation note without becoming decision support, mutation, or runtime integration.
 
+## Product Package Observation Summary Foundation
+
+RFC-1222 connects Product Package Observation to the visible EDI panel through a read-only presentation summary.
+
+The Product Package Observation Adapter is called outside `EdiObservationPanel`, inside the Viewer boundary. The panel still receives only serializable props and does not import EDI Core, call EDI runtime, create EDI artifacts, write Product Package, write Project State, or trigger Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support, Decision, or Mutation.
+
+The summary shown by the panel includes:
+
+- whether a Product Package was observed;
+- whether an observation snapshot summary is available;
+- Product Package / viewer-runtime component count;
+- native/imported origin when available;
+- native module count;
+- imported module count.
+
+Permanent boundary:
+
+```text
+Product Package / Viewer runtime / Scene Composer modules
+-> ProductPackageObservationAdapter outside the panel
+-> presentation-safe summary props
+-> EdiObservationPanel
+```
+
+This is the first bridge that lets EDI visibly observe native BagaStudio modules in addition to imported models. Native modules are still observed only as read-only presentation summary data; no Product Package mutation, Project State mutation, semantic interpretation, Memory, Reasoning, Proposal, Validation, Decision, or runtime integration is introduced.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3326,4 +3353,5 @@ The Decision Log should record:
 47. RFC-1219 - First Real Observation Foundation.
 48. RFC-1220 - First Real Understanding Foundation.
 49. RFC-1221 - First Real Insight Foundation.
-50. EDI Decision Support Artifact Review and Decision Boundary Planning.
+50. RFC-1222 - Product Package Observation Summary Foundation.
+51. EDI Decision Support Artifact Review and Decision Boundary Planning.
