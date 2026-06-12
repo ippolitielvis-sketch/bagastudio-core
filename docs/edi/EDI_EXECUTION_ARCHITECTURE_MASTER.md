@@ -121,6 +121,7 @@ This document covers:
 - RFC-1204: EDI Reasoning Foundation Review
 - RFC-1205: EDI Reasoning Artifact Foundation
 - RFC-1206: EDI Reasoning Builder Foundation
+- RFC-1207: EDI Reasoning Traceability Foundation
 
 ## Architecture Overview
 
@@ -2342,6 +2343,35 @@ It also supports `buildReasoningArtifacts` for deterministic batch creation from
 
 The builder does not change the public meaning of Reasoning Artifact: it remains evaluation, not Proposal.
 
+### EDI Reasoning Traceability Foundation
+
+RFC-1207 introduces `EdiReasoningTraceability` as the dedicated audit trail data contract for Reasoning artifacts.
+
+The traceability foundation is serializable, audit-oriented, non-executive, and independent from future Proposal.
+
+Traceability can represent:
+
+- source artifact ids;
+- understanding references;
+- lineage references;
+- assumption references;
+- constraint references;
+- derivation metadata.
+
+Traceability creation path:
+
+```text
+explicit traceability input
+-> createEdiReasoningTraceability
+-> EdiReasoningTraceability
+```
+
+The traceability factory uses explicit timestamp input and defensively copies arrays and reference metadata.
+
+`EdiReasoningTraceability` does not evaluate reasoning quality, generate Proposal, validate decisions, mutate Product Package or Project State, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future Reasoning Artifact, Proposal, Validation Support, and governance layers can inspect lineage without turning traceability into execution.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2608,6 +2638,9 @@ The execution foundation must not depend on:
 - Reasoning Builder must delegate artifact creation to `createEdiReasoningArtifact`.
 - Reasoning Builder accepts explicit inputs only.
 - Reasoning Builder must not infer Proposal, validate decisions, mutate state, call runtime, or access storage/retrieval.
+- Reasoning Traceability is audit data, not evaluation logic.
+- Reasoning Traceability must remain independent from future Proposal.
+- Reasoning Traceability must not trigger Proposal, Evaluation, Validation, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Residual Risks
 
@@ -2694,6 +2727,8 @@ The execution foundation must not depend on:
 - Reasoning Artifact metadata remains foundation-level and will need privacy/governance rules for business and personal contexts.
 - Reasoning Builder exists, but no evaluator or domain adapter feeds it yet.
 - Reasoning Builder is deterministic only if callers provide deterministic inputs.
+- Reasoning Traceability exists, but no artifact, builder, proposal, or governance layer consumes it yet.
+- Reasoning Traceability schema is foundation-level and may need richer lineage categories after Proposal and Validation planning.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2778,4 +2813,5 @@ The Decision Log should record:
 32. RFC-1204 - EDI Reasoning Foundation Review.
 33. RFC-1205 - EDI Reasoning Artifact Foundation.
 34. RFC-1206 - EDI Reasoning Builder Foundation.
-35. EDI Reasoning Builder Review and Proposal Foundation Planning.
+35. RFC-1207 - EDI Reasoning Traceability Foundation.
+36. EDI Reasoning Traceability Review and Proposal Foundation Planning.

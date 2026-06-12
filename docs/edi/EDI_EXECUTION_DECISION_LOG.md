@@ -77,6 +77,7 @@ Covered foundation:
 - EDI Reasoning Foundation Review
 - EDI Reasoning Artifact Foundation
 - EDI Reasoning Builder Foundation
+- EDI Reasoning Traceability Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2991,6 +2992,59 @@ Il layer resta pronto per future review su evaluator, Proposal o Validation Supp
 - Reasoning Builder non prende decisioni automatiche.
 - Reasoning Builder non muta Product Package o Project State.
 - Reasoning Builder non chiama runtime, Viewer, UI, storage o retrieval.
+
+## DL-EXEC-059 - Reasoning Traceability Is Audit Data, Not Evaluation
+
+### Problema
+
+Dopo Reasoning Artifact e Reasoning Builder, serviva una struttura dedicata alla tracciabilita cognitiva senza introdurre Evaluation, Proposal, decisioni automatiche, mutation, runtime, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiReasoningTraceability` come contratto dati serializzabile e non esecutivo.
+
+La traceability puo rappresentare:
+
+- source artifact ids;
+- understanding references;
+- lineage references;
+- assumption references;
+- constraint references;
+- derivation metadata.
+
+La factory `createEdiReasoningTraceability` usa timestamp esplicito e copia difensivamente array e metadata dei riferimenti.
+
+### Motivazione
+
+Reasoning ha bisogno di auditability prima di Proposal.
+
+La traceability deve permettere di ispezionare origine, lineage, assumptions e constraints senza diventare evaluator, decision engine o storage layer.
+
+Separare traceability da Reasoning Artifact e Proposal mantiene il Core Cognitive Loop controllabile e verificabile.
+
+### Alternative Scartate
+
+- Inserire la traceability dentro Proposal futura.
+- Usare traceability come Evaluation.
+- Collegare traceability a runtime, Viewer, UI, storage o retrieval.
+- Usare traceability per generare decisioni automatiche.
+- Far mutare Product Package o Project State dalla traceability.
+
+### Impatto Architetturale
+
+RFC-1207 aggiunge il primo audit trail cognitivo dedicato al Reasoning layer.
+
+La foundation prepara future review su Proposal e governance, ma non introduce Proposal o Validation Support.
+
+### Regole Permanenti Generate
+
+- Reasoning Traceability e audit data.
+- Reasoning Traceability non e Evaluation.
+- Reasoning Traceability non e Proposal.
+- Reasoning Traceability non produce decisioni automatiche.
+- Reasoning Traceability non muta Product Package o Project State.
+- Reasoning Traceability non chiama runtime, Viewer, UI, storage o retrieval.
+- Reasoning Traceability resta indipendente dalla Proposal futura.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
