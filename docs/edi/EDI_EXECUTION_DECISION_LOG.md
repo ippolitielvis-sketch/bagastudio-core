@@ -38,6 +38,7 @@ Covered foundation:
 - Boundary Failure Semantics
 - Real Producer Adapter Foundation
 - Producer Adapter Boundary Contract
+- Producer Adapter Request Factory
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -854,3 +855,52 @@ Il contratto tra producer adapter e boundary viene reso esplicito senza attivare
 - Producer Adapter non chiama consumer.
 - Producer Adapter non inferisce automaticamente `targetDomain`.
 - Request prodotta da adapter deve attraversare Integration Boundary.
+
+## DL-EXEC-020 — Producer Adapter Request Factory
+
+### Problema
+
+Dopo aver definito `EdiProducerAdapterOutput.executionRequestInput`, serviva un punto neutrale per trasformare quell'output in una `EdiExecutionRequest` senza introdurre producer reali o collegamenti runtime.
+
+### Decisione
+
+Introdurre `createEdiExecutionRequestFromProducerAdapterOutput`.
+
+La factory:
+
+- riceve `EdiProducerAdapterOutput`;
+- usa il path esistente `createEdiExecutionRequest`;
+- preserva source, targetDomain, mode, payload e metadata;
+- restituisce una `EdiExecutionRequest`.
+
+### Motivazione
+
+La conversione tra adapter output e request deve essere esplicita e separata dalla boundary.
+
+Il producer adapter prepara input. La factory crea request. La boundary valida request. Il runtime riceve solo request gia validate.
+
+### Alternative Scartate
+
+- Far creare direttamente la request a producer reali specifici.
+- Far chiamare la boundary alla factory.
+- Far chiamare runtime alla factory.
+- Introdurre recovery automatico.
+- Inferire automaticamente `targetDomain`.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+EDI guadagna un conversion layer pre-boundary senza attivare integration operativa.
+
+RuntimeHost, RuntimeLoop, Executor e Consumer restano invariati.
+
+### Regole Permanenti Generate
+
+- Request Factory non e Integration.
+- Request Factory non chiama Boundary.
+- Request Factory non chiama RuntimeHost.
+- Request Factory non chiama RuntimeLoop.
+- Request Factory non chiama Executor.
+- Request Factory non chiama Consumer.
+- Request Factory non inferisce `targetDomain`.
+- Request creata dalla factory deve attraversare Integration Boundary.
