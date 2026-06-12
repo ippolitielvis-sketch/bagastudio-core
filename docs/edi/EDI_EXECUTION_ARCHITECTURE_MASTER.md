@@ -113,6 +113,7 @@ This document covers:
 - RFC-1196: Product Package Observation Adapter Foundation
 - RFC-1197: Product Package Observation Flow Review
 - RFC-1198: EDI Memory Foundation Review
+- RFC-1199: EDI Memory Entry Foundation
 
 ## Architecture Overview
 
@@ -1990,6 +1991,48 @@ RFC-1198 concludes that EDI is ready for `RFC-1199 - EDI Memory Entry Foundation
 
 RFC-1198 introduces no code. It documents Memory architecture only.
 
+### EDI Memory Entry Foundation
+
+RFC-1199 introduces `EdiMemoryEntry` as the first data contract for the Memory layer.
+
+The Memory Entry foundation is a descriptor only. It does not introduce database, storage, retrieval engine, runtime ingestion, reasoning, proposal, Viewer, UI, React state, or Knowledge Graph.
+
+Memory Entry creation path:
+
+```text
+Observation Snapshot
+-> createEdiMemoryEntryFromObservationSnapshot
+-> EdiMemoryEntry
+-> future Retrieval / Understanding / Reasoning
+```
+
+The entry contains:
+
+- identity;
+- source;
+- timestamp;
+- category;
+- summary;
+- traceability metadata;
+- serializable reference to the Observation Snapshot.
+
+The entry intentionally stores a reference to the original Observation Snapshot by id/timestamp/source metadata, not a live Product Package reference, Viewer reference, Factory reference, runtime reference, or mutable observation object.
+
+Memory Entry source values cover observation snapshots, product package observations, domain observations, decisions, proposals, errors, validations, and system signals.
+
+Memory Entry category values cover observation, decision, proposal, error, validation, preference, business, and system records.
+
+RFC-1199 prepares the Core Cognitive Loop:
+
+```text
+Observation
+-> Memory Entry
+-> Understanding
+-> Reasoning
+```
+
+The foundation does not perform Understanding or Reasoning yet. It only establishes the shape of the retained contextual record.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2229,6 +2272,9 @@ The execution foundation must not depend on:
 - EDI Memory is not cache and not Source of Truth.
 - EDI Memory stores contextual knowledge derived from observations, decisions, proposals, errors, and validated signals.
 - EDI Memory feeds Understanding and Reasoning but does not mutate Product Package, Project State, Viewer, Factory, or runtime.
+- EDI Memory Entry is a descriptor, not storage.
+- EDI Memory Entry references Observation Snapshot metadata, not live Product Package references.
+- EDI Memory Entry must not trigger retrieval, reasoning, proposal, mutation, Viewer, UI, or runtime behavior.
 
 ## Residual Risks
 
@@ -2291,7 +2337,7 @@ The execution foundation must not depend on:
 - Product Package Observation metadata still needs serializability and allowlist rules.
 - Product Package Observation Snapshot is not runtime frozen.
 - Product Package Observation traceability is still foundation-level.
-- EDI Memory Entry type is not implemented yet.
+- EDI Memory Entry foundation exists, but no storage or retrieval uses it yet.
 - EDI Memory storage, database, retention, privacy, and retrieval policies are not implemented yet.
 - Memory to Reasoning flow is architecture-only.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
@@ -2371,3 +2417,4 @@ The Decision Log should record:
 25. RFC-1197 - Product Package Observation Flow Review.
 26. RFC-1198 - EDI Memory Foundation Review.
 27. RFC-1199 - EDI Memory Entry Foundation.
+28. EDI Memory Entry Review and Memory ingestion planning.

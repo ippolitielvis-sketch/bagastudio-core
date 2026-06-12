@@ -69,6 +69,7 @@ Covered foundation:
 - Product Package Observation Adapter Foundation
 - Product Package Observation Flow Review
 - EDI Memory Foundation Review
+- EDI Memory Entry Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2519,6 +2520,61 @@ RFC-1199 dovra creare il concetto di Memory Entry senza storage reale, database,
 - Memory alimenta Understanding e Reasoning.
 - Memory non muta Product Package, Project State, Viewer, Factory o runtime.
 - Knowledge Graph resta futuro.
+
+## DL-EXEC-051 - EDI Memory Entry Is Descriptor, Not Storage
+
+### Problema
+
+Dopo aver definito la filosofia Memory, serviva introdurre il primo contratto dati `Memory Entry` senza trasformarlo in database, storage, retrieval engine, reasoning o proposal.
+
+### Decisione
+
+Introdurre `EdiMemoryEntry` come descrittore serializzabile e non operativo.
+
+La entry contiene:
+
+- identity;
+- source;
+- timestamp;
+- category;
+- summary;
+- traceability metadata;
+- reference serializzabile allo Observation Snapshot originale.
+
+La factory `createEdiMemoryEntryFromObservationSnapshot` crea una entry da `ProductPackageObservationSnapshot`, copiando metadata utili e conservando solo un riferimento serializzabile allo snapshot.
+
+### Motivazione
+
+Memory Entry deve essere il ponte dati tra Observation e futura Understanding/Reasoning.
+
+La entry non deve trattenere riferimenti live a Product Package, Viewer, Factory, runtime o UI.
+
+Separare Memory Entry da storage consente di definire il significato del ricordo prima di decidere persistenza, retention, retrieval, privacy e governance.
+
+### Alternative Scartate
+
+- Introdurre subito storage reale.
+- Introdurre subito database.
+- Usare Memory Entry come cache runtime.
+- Inserire retrieval o scoring nella factory.
+- Collegare Memory Entry a Reasoning o Proposal.
+- Salvare il Product Package live dentro Memory.
+
+### Impatto Architetturale
+
+RFC-1199 crea il contratto Memory Entry, ma non crea Memory runtime.
+
+La prossima fase dovra revisionare la entry e pianificare ingestion/retrieval senza rompere ownership e governance.
+
+### Regole Permanenti Generate
+
+- Memory Entry e un descrittore, non storage.
+- Memory Entry non e cache.
+- Memory Entry non e Source of Truth.
+- Memory Entry conserva un riferimento serializzabile allo Observation Snapshot.
+- Memory Entry non conserva Product Package live.
+- Memory Entry non attiva retrieval, reasoning, proposal o mutation.
+- Memory Entry non conosce Viewer, UI, Factory o runtime.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
