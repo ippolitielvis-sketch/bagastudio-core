@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1191B.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1193.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1191B
+- RFC-1126 to RFC-1193
 
 Architecture distinction:
 
@@ -748,6 +748,8 @@ RFC:
 - RFC-1190
 - RFC-1191
 - RFC-1191B
+- RFC-1192
+- RFC-1193
 
 ### Context
 
@@ -999,6 +1001,28 @@ EDI is not Source of Truth. Product Package, Project State, and validated system
 
 EDI may observe, understand, remember, propose, create, validate, and optimize, but its proposals must pass explicit validation before becoming product, project, production, or business state.
 
+RFC-1192 defined the BagaStudio Product State Boundary.
+
+The decision is that Product Package owns product meaning, Project State owns project state, and validated system data remains operational authority.
+
+EDI is the observation, memory, proposal, and optimization layer. It does not mutate Product Package or Project State directly.
+
+BagaStudio owns validation and mutation. Viewer is presentation. Factory is production and consumes validated data only.
+
+The next recommended RFC is `RFC-1193 - BagaStudio Product State Integration Planning`.
+
+RFC-1193 planned Product Package and EDI integration while preserving RFC-1192 ownership rules.
+
+The planned Observation Path is Product Package, Product Package Observation Adapter, and EDI.
+
+The planned Proposal Path is EDI, Proposal, BagaStudio Validation Layer, BagaStudio Mutation Layer, and Product Package.
+
+The planned Presentation Path is Product Package, BagaStudioPresentationModel, and Viewer.
+
+The decision is that Product Package enters EDI only through an adapter, EDI proposals enter mutation only through validation, and Presentation Model remains non-authoritative.
+
+The next recommended RFC is `RFC-1194 - Product Package Observation Adapter Review`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1104,6 +1128,18 @@ EDI may observe, understand, remember, propose, create, validate, and optimize, 
 - Validated system data remains authoritative.
 - EDI proposals must be validated before becoming operational.
 - EDI supports design, production, documentation, business, and personal memory without bypassing validation gates.
+- Product Package owns product meaning.
+- BagaStudio owns validation and mutation.
+- Viewer is presentation, not product authority.
+- Presentation Model is not Source of Truth.
+- Factory consumes validated production data, not raw EDI proposals.
+- Viewer must not mutate Product Package directly.
+- EDI must not mutate Product Package directly.
+- Product Package enters EDI through Observation Adapter.
+- Product Package Observation Adapter does not mutate Product Package.
+- EDI proposals pass through Validation Layer before Mutation Layer.
+- BagaStudio owns Mutation Layer.
+- Presentation Model derives data for Viewer but is not Source of Truth.
 
 ## Current State
 
@@ -1189,6 +1225,11 @@ Implemented producer adapter foundation:
 - EDI strategic role is documented;
 - EDI is defined as observation, proposal, validation support, optimization, memory, and business intelligence;
 - Product Package, Project State, and validated system data are documented as Source of Truth;
+- Product State Boundary is documented;
+- ownership map across Product Package, Project State, EDI, BagaStudio, Presentation Model, Viewer, and Factory is documented;
+- Product State Integration Planning is documented;
+- Observation Path, Proposal Path, and Presentation Path are documented;
+- Product Package Observation Adapter is the next recommended RFC;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1216,6 +1257,10 @@ Not implemented today:
 - BagaStudio operational planning;
 - Product State / Presentation Boundary;
 - proposal-to-validation workflow for EDI outputs;
+- Product Package to Presentation Model flow;
+- EDI observation path over Product Package;
+- EDI proposal validation path;
+- Product Package Observation Adapter;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

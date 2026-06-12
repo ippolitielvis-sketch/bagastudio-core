@@ -62,6 +62,8 @@ Covered foundation:
 - BagaStudio Integration Readiness Review
 - BagaStudio Operational Planning
 - EDI Strategic Role Definition
+- BagaStudio Product State Boundary Review
+- BagaStudio Product State Integration Planning
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2012,6 +2014,146 @@ Ogni proposta EDI deve attraversare boundary e validazioni esplicite prima di di
 - Dati validati del sistema restano autoritativi.
 - Le proposte EDI devono essere validate prima di diventare operative.
 - EDI supporta progettazione, produzione, documentazione, business e memoria personale senza bypassare validation gate.
+
+## DL-EXEC-044 - Product Package Owns Product Meaning
+
+### Problema
+
+Dopo aver definito EDI come intelligence strategica, serviva formalizzare il Product State Boundary: chi possiede il significato del prodotto, chi puo modificarlo, chi puo osservarlo e come Viewer, Factory e Presentation Model devono restare separati.
+
+### Decisione
+
+Il Product Package e il Source of Truth del prodotto.
+
+Project State e il Source of Truth del progetto.
+
+BagaStudio possiede Validation Layer e Mutation Layer.
+
+EDI osserva, ricorda, propone e ottimizza, ma non modifica direttamente Product Package o Project State.
+
+Viewer e Presentation Model non sono Source of Truth.
+
+Factory consuma solo dati validati.
+
+### Ownership Map
+
+```text
+Product Package -> Product Source of Truth
+Project State -> Project Source of Truth
+Validated System Data -> Operational Authority
+EDI -> Observation / Memory / Proposal / Optimization
+BagaStudio -> Validation / Mutation
+BagaStudioPresentationModel -> Presentation Boundary
+Viewer -> Presentation
+Factory -> Production
+```
+
+### Motivazione
+
+Product Package contiene significato prodotto, componenti, dimensioni, metadata e dati rilevanti per produzione.
+
+Viewer e Presentation Model servono a presentare o trasportare dati, non a definirne la verita.
+
+EDI puo generare proposte utili, ma trattarle come mutazioni dirette introdurrebbe rischio operativo e produttivo.
+
+### Alternative Scartate
+
+- EDI modifica direttamente Product Package.
+- Viewer modifica direttamente Product Package.
+- Presentation Model diventa Source of Truth.
+- Factory accetta suggerimenti EDI come istruzioni produttive validate.
+- Product Package viene derivato implicitamente da output non validati.
+
+### Impatto Architetturale
+
+La prossima RFC deve pianificare il flusso di integrazione product-state:
+
+- come Product Package alimenta Presentation Model;
+- come EDI osserva Product Package;
+- come proposal EDI attraversano Validation Layer prima della Mutation.
+
+La prossima RFC consigliata e `RFC-1193 - BagaStudio Product State Integration Planning`.
+
+### Regole Permanenti Generate
+
+- Product Package e Source of Truth prodotto.
+- Project State e Source of Truth progetto.
+- Presentation Model non e Source of Truth.
+- Viewer non e Source of Truth.
+- EDI non modifica direttamente Product Package.
+- Viewer non modifica direttamente Product Package.
+- BagaStudio Validation Layer precede Mutation Layer.
+- Factory consuma dati validati, non proposte EDI grezze.
+
+## DL-EXEC-045 - Product Package Integration Is Adapter And Validation Driven
+
+### Problema
+
+Dopo la definizione del Product State Boundary, serviva pianificare come Product Package, EDI, Validation Layer, Mutation Layer, Presentation Model e Viewer collaborano senza violare le ownership.
+
+### Decisione
+
+L'integrazione deve seguire tre path separati.
+
+Observation Path:
+
+```text
+Product Package
+Observation Adapter
+EDI
+```
+
+Proposal Path:
+
+```text
+EDI
+Proposal
+Validation Layer
+Mutation Layer
+Product Package
+```
+
+Presentation Path:
+
+```text
+Product Package
+BagaStudioPresentationModel
+Viewer
+```
+
+### Motivazione
+
+Product Package resta Source of Truth e puo essere osservato da EDI solo tramite un adapter dedicato.
+
+EDI puo proporre, ma non mutare.
+
+BagaStudio Validation Layer decide se una proposta puo avanzare. BagaStudio Mutation Layer e l'unico percorso ammesso per modificare Product Package.
+
+Presentation Model serve il Viewer, ma non diventa autoritativo.
+
+### Alternative Scartate
+
+- EDI legge Product Package e lo modifica direttamente.
+- EDI genera mutation senza Validation Layer.
+- Viewer aggiorna Product Package direttamente.
+- Presentation Model sostituisce Product Package.
+- Factory consuma proposte EDI non validate.
+
+### Impatto Architetturale
+
+La prossima RFC deve progettare il `Product Package Observation Adapter`.
+
+Il Product Package Observation Adapter dovra convertire dati Product Package validati in osservazioni EDI senza introdurre mutazione, Viewer, UI o runtime operativo.
+
+### Regole Permanenti Generate
+
+- Product Package entra in EDI tramite Observation Adapter.
+- Observation Adapter non muta Product Package.
+- Proposal EDI attraversa Validation Layer prima della Mutation.
+- Mutation Layer appartiene a BagaStudio.
+- Presentation Model deriva dati per Viewer, ma non e Source of Truth.
+- Viewer consuma Presentation Model, non Product Package mutation.
+- Factory consuma solo dati validati.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
