@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1194.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1195.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1194
+- RFC-1126 to RFC-1195
 
 Architecture distinction:
 
@@ -751,6 +751,7 @@ RFC:
 - RFC-1192
 - RFC-1193
 - RFC-1194
+- RFC-1195
 
 ### Context
 
@@ -1038,6 +1039,16 @@ The snapshot can later feed Memory, Proposal, and Optimization as evidence, but 
 
 The next recommended RFC is `RFC-1195 - Product Package Observation Snapshot Foundation`.
 
+RFC-1195 introduced `ProductPackageObservationSnapshot` as the first concrete data contract between Product Package and EDI.
+
+The snapshot is read-only, immutable-style, and serializable. It stores stable id, timestamp, optional productPackageId, optional productPackageVersion, schema, sourceFormat, status, dimension summary, footprint summary, component ids, component count, component summaries, material summaries, finish summaries, and traceability metadata.
+
+The factory `createProductPackageObservationSnapshot` creates the snapshot and defensively copies arrays and metadata without calling Product Package, RuntimeHost, RuntimeLoop, Viewer, Factory, React, Mutation Layer, or Proposal Layer.
+
+RFC-1195 does not introduce the operational Product Package Observation Adapter. It only creates the snapshot foundation that the future adapter will produce.
+
+The snapshot may later feed Memory, Reasoning, Proposal, and Optimization as evidence. It remains non-authoritative and cannot mutate Product Package.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1160,6 +1171,12 @@ The next recommended RFC is `RFC-1195 - Product Package Observation Snapshot Fou
 - Product Package Observation Adapter does not call Viewer, Factory, runtime, UI, or Mutation Layer.
 - Product Package Observation Adapter does not create proposals.
 - Product Package Observation Snapshot feeds Memory, Proposal, and Optimization only as evidence.
+- Product Package Observation Snapshot is a data contract.
+- Product Package Observation Snapshot is read-only and serializable.
+- Product Package Observation Snapshot does not contain mutation functions.
+- Product Package Observation Snapshot does not contain runtime, Viewer, Factory, or React references.
+- Product Package Observation Snapshot does not create proposals.
+- Product Package Observation Adapter remains a future operational foundation.
 
 ## Current State
 
@@ -1250,7 +1267,8 @@ Implemented producer adapter foundation:
 - Product State Integration Planning is documented;
 - Observation Path, Proposal Path, and Presentation Path are documented;
 - Product Package Observation Adapter is documented as read-only observation boundary;
-- Product Package Observation Snapshot is the next recommended RFC;
+- Product Package Observation Snapshot Foundation exists;
+- Product Package Observation Adapter implementation is the next recommended product observation step;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1281,7 +1299,7 @@ Not implemented today:
 - Product Package to Presentation Model flow;
 - EDI observation path over Product Package;
 - EDI proposal validation path;
-- Product Package Observation Snapshot;
+- Product Package Observation Adapter implementation;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

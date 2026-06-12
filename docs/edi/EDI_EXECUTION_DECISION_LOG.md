@@ -65,6 +65,7 @@ Covered foundation:
 - BagaStudio Product State Boundary Review
 - BagaStudio Product State Integration Planning
 - Product Package Observation Adapter Review
+- Product Package Observation Snapshot Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2215,6 +2216,68 @@ RFC-1195 dovra introdurre solo il tipo snapshot read-only e la relativa factory/
 - Product Package Observation Adapter non valida modifiche prodotto.
 - Product Package Observation Snapshot puo alimentare Memory, Proposal e Optimization solo come evidenza.
 - Ogni proposal derivata dallo snapshot deve attraversare Validation Layer prima della Mutation.
+
+## DL-EXEC-047 - Product Package Observation Snapshot Is Data Contract
+
+### Problema
+
+Dopo aver deciso che il Product Package Observation Adapter dovra produrre snapshot read-only, serviva introdurre il primo contratto dati concreto tra Product Package ed EDI senza creare ancora l'adapter operativo.
+
+### Decisione
+
+Introdurre `ProductPackageObservationSnapshot` come foundation serializzabile, immutable-style e read-only.
+
+Il contratto contiene solo dati osservabili:
+
+- id;
+- timestamp;
+- productPackageId;
+- productPackageVersion;
+- schema;
+- sourceFormat;
+- status;
+- dimension summary;
+- footprint summary;
+- component ids;
+- component count;
+- component summaries;
+- material summaries;
+- finish summaries;
+- metadata di tracciabilita.
+
+La factory `createProductPackageObservationSnapshot` crea il dato snapshot, applica copie difensive agli array e ai metadata principali, e non chiama Product Package, RuntimeHost, RuntimeLoop, Viewer, Factory, React, Mutation Layer o Proposal Layer.
+
+### Motivazione
+
+Il primo contratto EDI/Product Package deve essere stabile prima di introdurre l'adapter.
+
+Separare snapshot e adapter mantiene Product Package come Source of Truth e impedisce a EDI di ricevere riferimenti live o mutabili.
+
+Lo snapshot consente a Memory, Reasoning, Proposal e Optimization di lavorare su evidenza serializzabile, senza scambiare l'osservazione per una mutazione autorizzata.
+
+### Alternative Scartate
+
+- Creare subito un Product Package Observation Adapter operativo.
+- Far accettare alla foundation riferimenti Product Package live.
+- Far leggere allo snapshot Viewer state o `userData`.
+- Inserire funzioni di mutation, validation o proposal nello snapshot.
+- Collegare lo snapshot a runtime, Factory o UI.
+
+### Impatto Architetturale
+
+RFC-1195 crea il contratto dati, ma non crea il percorso operativo.
+
+La prossima fase potra introdurre un Product Package Observation Adapter Foundation che accetta Product Package come input, seleziona i campi osservabili e crea `ProductPackageObservationSnapshot`.
+
+### Regole Permanenti Generate
+
+- Product Package Observation Snapshot e un contratto dati.
+- Product Package Observation Snapshot e read-only e serializzabile.
+- Product Package Observation Snapshot non contiene funzioni di mutation.
+- Product Package Observation Snapshot non contiene riferimenti runtime, Viewer, Factory o React.
+- Product Package Observation Snapshot non crea proposal.
+- Product Package Observation Snapshot alimenta Memory, Reasoning, Proposal e Optimization solo come evidenza.
+- Product Package Observation Adapter operativo resta una RFC futura.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
