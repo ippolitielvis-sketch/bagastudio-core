@@ -82,6 +82,7 @@ Covered foundation:
 - EDI Proposal Artifact Foundation
 - EDI Proposal Builder Foundation
 - EDI Proposal Traceability Foundation
+- EDI Proposal Evaluation Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3262,6 +3263,58 @@ La foundation prepara future review su Validation Support e governance, ma non i
 - Proposal Traceability non produce decisioni automatiche.
 - Proposal Traceability non muta Product Package o Project State.
 - Proposal Traceability non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+## DL-EXEC-064 - Proposal Evaluation Is Quality Data, Not Validation Support
+
+### Problema
+
+Dopo Proposal Artifact, Proposal Builder e Proposal Traceability, serviva rappresentare la qualita di una Proposal senza introdurre Validation Support, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiProposalEvaluation` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+La evaluation puo rappresentare:
+
+- confidence indicators;
+- feasibility indicators;
+- benefit indicators;
+- risk indicators;
+- traceability completeness indicators;
+- evaluation metadata.
+
+La factory `createEdiProposalEvaluation` usa timestamp esplicito e copia difensivamente indicator arrays, notes e metadata.
+
+### Motivazione
+
+Proposal ha bisogno di segnali di qualita prima di Validation Support.
+
+La evaluation deve permettere auditability e review delle proposal senza diventare validator, approval engine, mutation path o source of truth.
+
+Separare evaluation da Validation Support mantiene il Proposal layer consultabile e non autoritativo.
+
+### Alternative Scartate
+
+- Usare evaluation come Validation Support.
+- Usare evaluation come approval.
+- Far prendere decisioni automatiche alla evaluation.
+- Collegare evaluation a executor, runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dalla evaluation.
+
+### Impatto Architetturale
+
+RFC-1212 aggiunge il primo quality descriptor cognitivo dedicato al Proposal layer.
+
+La foundation prepara future review su Validation Support e governance, ma non introduce nessuno di questi layer come comportamento operativo.
+
+### Regole Permanenti Generate
+
+- Proposal Evaluation e quality data.
+- Proposal Evaluation non e Validation Support.
+- Proposal Evaluation non e approval.
+- Proposal Evaluation non produce decisioni automatiche.
+- Proposal Evaluation non muta Product Package o Project State.
+- Proposal Evaluation non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

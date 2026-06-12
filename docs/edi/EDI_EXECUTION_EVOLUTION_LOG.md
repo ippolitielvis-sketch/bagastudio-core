@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1211.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1212.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1211
+- RFC-1126 to RFC-1212
 
 Architecture distinction:
 
@@ -1207,6 +1207,14 @@ The factory `createEdiProposalTraceability` uses explicit timestamp input and de
 
 RFC-1211 clarified that Proposal Traceability is audit data, not Validation, not Mutation, not approval, not automatic decision-making, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1212 introduced `EdiProposalEvaluation` as the dedicated quality descriptor for Proposal artifacts.
+
+The evaluation foundation can represent confidence indicators, feasibility indicators, benefit indicators, risk indicators, traceability completeness indicators, and evaluation metadata.
+
+The factory `createEdiProposalEvaluation` uses explicit timestamp input and defensively copies indicator arrays, notes, and metadata.
+
+RFC-1212 clarified that Proposal Evaluation is quality data, not Validation Support, not approval, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1395,6 +1403,10 @@ RFC-1211 clarified that Proposal Traceability is audit data, not Validation, not
 - Proposal Traceability does not produce decisions.
 - Proposal Traceability does not mutate Product Package or Project State.
 - Proposal Traceability does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Proposal Evaluation is quality data, not Validation Support or approval.
+- Proposal Evaluation does not produce decisions.
+- Proposal Evaluation does not mutate Product Package or Project State.
+- Proposal Evaluation does not call executor, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1504,7 +1516,8 @@ Implemented producer adapter foundation:
 - Proposal Artifact Foundation exists;
 - Proposal Builder Foundation exists;
 - Proposal Traceability Foundation exists;
-- Proposal Traceability Review and Validation Support Planning is the next recommended review;
+- Proposal Evaluation Foundation exists;
+- Proposal Evaluation Review and Validation Support Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1547,6 +1560,7 @@ Not implemented today:
 - Proposal validation support;
 - Proposal artifact runtime usage;
 - Proposal traceability consumers;
+- Proposal evaluation consumers;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;
