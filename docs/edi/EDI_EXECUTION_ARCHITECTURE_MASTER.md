@@ -90,6 +90,7 @@ This document covers:
 - RFC-1174: EDI Recognition Producer Pipeline Validation Review
 - RFC-1175: EDI Recognition Producer Runtime Wiring Review
 - RFC-1176: EDI Recognition Runtime Adapter Foundation
+- RFC-1177: EDI Recognition Runtime Result Dispatch Review
 
 ## Architecture Overview
 
@@ -898,6 +899,34 @@ The execution runtime is injected explicitly. The adapter does not create or imp
 
 It does not dispatch, call Consumer, call RuntimeHost, call RuntimeLoop, analyze geometry, inspect scene graph, perform real recognition, or introduce `runRealIntegration`.
 
+### Recognition Result Adapter Boundary
+
+RFC-1177 defines the future result exposure boundary for recognition execution results.
+
+`RecognitionRuntimeAdapter` returns `EdiExecutionResult`. It must not expose that result directly to Viewer, UI, RuntimeHost, RuntimeLoop, or product workflows.
+
+The future layer is `Recognition Result Adapter`, planned for RFC-1178.
+
+The planned flow is:
+
+```text
+RecognitionProducerAdapter
+↓
+RecognitionProducerBoundaryPipeline
+↓
+RecognitionRuntimeAdapter
+↓
+EdiExecutionResult
+↓
+Recognition Result Adapter
+```
+
+The future Result Adapter may receive `EdiExecutionResult` and transform it into an observable recognition result shape.
+
+It must not render UI, wire Viewer, mutate runtime, call RuntimeHost, call RuntimeLoop, call dispatcher, or introduce real recognition.
+
+Runtime Adapter and Result Adapter stay separate: Runtime Adapter enters execution runtime, while Result Adapter exposes execution output for later layers.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1075,6 +1104,8 @@ The execution foundation must not depend on:
 - Recognition Runtime Adapter must not dispatch.
 - Recognition Runtime Adapter receives boundary-valid requests only.
 - Recognition Runtime Adapter uses injected EdiExecutionRuntime.
+- Recognition Runtime Adapter does not expose results directly to Viewer.
+- Recognition Result Adapter is the future result exposure boundary.
 
 ## Residual Risks
 
@@ -1099,6 +1130,7 @@ The execution foundation must not depend on:
 - Recognition Producer Boundary Pipeline exists, but it remains pre-runtime and does not dispatch or execute.
 - Recognition Producer Pipeline Validation is documented, but no automated test framework has been introduced for it.
 - Recognition Runtime Adapter exists as a foundation, but it does not perform real recognition or dispatch.
+- Recognition Result Adapter is planned but not implemented.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1154,3 +1186,4 @@ The Decision Log should record:
 6. Defer real engine executors until preview behavior and boundaries are validated.
 7. Define a future explicit result consumption integration RFC before connecting consumers to runtime output.
 8. Define validation for Recognition Runtime Adapter once a project test pattern exists.
+9. RFC-1178 - Recognition Result Adapter Foundation.

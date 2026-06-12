@@ -46,6 +46,7 @@ Covered foundation:
 - Recognition Producer Pipeline Validation
 - Recognition Producer Runtime Wiring Boundary
 - Recognition Runtime Adapter Foundation
+- Recognition Runtime Result Adapter Boundary
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1242,3 +1243,46 @@ Il confine tra Producer Adapter, Boundary Pipeline, Runtime Adapter, Execution R
 - Recognition Runtime Adapter non chiama Consumer.
 - Recognition Runtime Adapter non chiama RuntimeHost o RuntimeLoop.
 - Recognition Runtime Adapter non introduce recognition reale.
+
+## DL-EXEC-028 - Recognition Runtime Result Adapter Boundary
+
+### Problema
+
+Dopo l'introduzione di `RecognitionRuntimeAdapter`, serviva definire come un `EdiExecutionResult` recognition potra essere esposto ai layer successivi senza collegare Viewer, UI, RuntimeHost, RuntimeLoop o dispatch reale.
+
+### Decisione
+
+Il risultato prodotto dal Recognition Runtime Adapter non deve essere esposto direttamente al Viewer o ai workflow di prodotto.
+
+Il prossimo layer futuro sara `Recognition Result Adapter`, distinto dal Runtime Adapter.
+
+### Motivazione
+
+Il Runtime Adapter deve restare responsabile solo dell'ingresso nel runtime di execution.
+
+Il Result Adapter avra il compito futuro di ricevere `EdiExecutionResult` e trasformarlo in una forma osservabile, senza rendering, UI wiring o mutazione runtime.
+
+### Alternative Scartate
+
+- Far esporre risultati direttamente al Viewer dal Runtime Adapter.
+- Far chiamare RuntimeHost o RuntimeLoop al Result Adapter.
+- Far chiamare dispatcher reale in questa fase.
+- Trasformare il Runtime Adapter in orchestrator.
+- Introdurre UI o Viewer wiring.
+- Introdurre recognition reale.
+
+### Impatto Architetturale
+
+Viene preservata la separazione tra runtime execution e result exposure.
+
+La prossima RFC operativa sara `RFC-1178 - Recognition Result Adapter Foundation`.
+
+### Regole Permanenti Generate
+
+- Runtime Adapter non espone direttamente risultati al Viewer.
+- Result Adapter e separato da Runtime Adapter.
+- Result Adapter ricevera `EdiExecutionResult`.
+- Result Adapter non renderizza UI.
+- Result Adapter non chiama RuntimeHost o RuntimeLoop.
+- Result Adapter non introduce dispatch reale.
+- Result Adapter non introduce recognition reale.
