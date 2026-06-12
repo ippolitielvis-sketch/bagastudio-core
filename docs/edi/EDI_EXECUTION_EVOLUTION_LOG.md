@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1204.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1205.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1204
+- RFC-1126 to RFC-1205
 
 Architecture distinction:
 
@@ -1151,6 +1151,14 @@ RFC-1204 confirmed readiness for `RFC-1205 - EDI Reasoning Artifact Foundation`.
 
 It did not introduce Reasoning artifact, Proposal, Optimization, runtime, Viewer, UI, storage, retrieval, or engine integration.
 
+RFC-1205 introduced `EdiReasoningArtifact` as the first data contract for the Reasoning layer.
+
+The artifact is created from Understanding Artifacts and contains identity, timestamp, source understanding references, alternatives, constraints, consequences, tradeoffs, assumptions, risks, rationale, and traceability metadata.
+
+The foundation clarified that Reasoning Artifact is evaluation and consequence modeling. It is not Understanding, not Proposal, not Validation Support, not Optimization execution, not runtime execution, and not Source of Truth.
+
+RFC-1205 prepares future Proposal by creating a stable evaluated consequence descriptor, but it does not introduce Proposal, Validation Support, Optimization, mutation, runtime, Viewer, UI, React state, storage, retrieval, or engine integration.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1315,6 +1323,9 @@ It did not introduce Reasoning artifact, Proposal, Optimization, runtime, Viewer
 - Reasoning evaluates consequences, alternatives, constraints, tradeoffs, and assumptions.
 - Reasoning is not Proposal, Validation Layer, Optimization execution, runtime, Viewer, or UI.
 - Reasoning does not mutate Product Package, Project State, Viewer, Factory, runtime, or Source of Truth.
+- Reasoning Artifact is evaluation, not Proposal.
+- Reasoning Artifact references Understanding Artifacts, not live Understanding storage.
+- Reasoning Artifact does not trigger Proposal, Validation, Optimization, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1417,7 +1428,8 @@ Implemented producer adapter foundation:
 - Understanding Artifact Foundation exists;
 - Understanding to Reasoning Boundary Review is documented;
 - Reasoning Foundation Review is documented;
-- Reasoning Artifact Foundation is the next recommended RFC;
+- Reasoning Artifact Foundation exists;
+- Reasoning Artifact Review and Proposal Foundation Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1453,7 +1465,7 @@ Not implemented today:
 - Memory Candidate explicit contract;
 - EDI Understanding artifact runtime usage;
 - Reasoning foundation;
-- Reasoning output contract;
+- Reasoning artifact runtime usage;
 - Proposal foundation;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;

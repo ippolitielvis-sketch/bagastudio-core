@@ -119,6 +119,7 @@ This document covers:
 - RFC-1202: EDI Understanding Artifact Foundation
 - RFC-1203: Understanding to Reasoning Boundary Review
 - RFC-1204: EDI Reasoning Foundation Review
+- RFC-1205: EDI Reasoning Artifact Foundation
 
 ## Architecture Overview
 
@@ -2268,6 +2269,43 @@ Reasoning prepares Proposal by organizing alternatives, rationale, constraints, 
 
 The next recommended RFC is `RFC-1205 - EDI Reasoning Artifact Foundation`.
 
+### EDI Reasoning Artifact Foundation
+
+RFC-1205 introduces `EdiReasoningArtifact` as the first data contract for the Reasoning layer.
+
+The artifact represents evaluated consequences derived from one or more Understanding Artifacts.
+
+Reasoning Artifact creation path:
+
+```text
+EdiUnderstandingArtifact
+-> createEdiReasoningArtifact
+-> EdiReasoningArtifact
+-> future Proposal
+```
+
+The artifact contains:
+
+- identity;
+- timestamp;
+- source understanding references;
+- alternatives;
+- constraints;
+- consequences;
+- tradeoffs;
+- assumptions;
+- risks;
+- rationale;
+- traceability metadata.
+
+`EdiReasoningArtifact` is not Understanding and is not Proposal.
+
+It stores source understanding references by id/timestamp/inferred meaning metadata, not live Understanding storage, Product Package, Viewer, UI, runtime, engine, Proposal, Validation, or Mutation references.
+
+The foundation intentionally does not introduce Proposal, Validation Support, Optimization, mutation, runtime execution, storage, retrieval, Viewer, UI, or React state.
+
+The artifact prepares future Proposal by organizing rationale, alternatives, constraints, consequences, assumptions, tradeoffs, and risks. It does not create Proposal automatically.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2528,6 +2566,9 @@ The execution foundation must not depend on:
 - Reasoning is not Proposal, Validation, Optimization execution, runtime, Viewer, or UI.
 - Reasoning must remain domain-independent at foundation level.
 - Reasoning must not mutate Product Package, Project State, Presentation Model, Viewer, Factory, or runtime.
+- Reasoning Artifact is a descriptor of evaluated consequences, not a Proposal.
+- Reasoning Artifact references Understanding Artifacts, not live understanding storage.
+- Reasoning Artifact must not trigger Proposal, Validation, Optimization, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Residual Risks
 
@@ -2607,9 +2648,11 @@ The execution foundation must not depend on:
 - Understanding to Reasoning transition is documented but has no contract yet.
 - Reasoning output shape is not defined yet.
 - Proposal readiness is architecture-only and requires Reasoning first.
-- Reasoning artifact shape is not defined yet.
+- Reasoning artifact shape exists as a foundation, but remains unvalidated by runtime use.
 - Reasoning could become implicit Proposal if output boundaries are not preserved.
 - Domain-specific Reasoning may pull in real engines if future adapters are not isolated.
+- Reasoning Artifact exists, but no builder, evaluator, proposal consumer, storage, retrieval, or validation policy uses it yet.
+- Reasoning Artifact metadata remains foundation-level and will need privacy/governance rules for business and personal contexts.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2693,3 +2736,4 @@ The Decision Log should record:
 31. RFC-1203 - Understanding to Reasoning Boundary Review.
 32. RFC-1204 - EDI Reasoning Foundation Review.
 33. RFC-1205 - EDI Reasoning Artifact Foundation.
+34. EDI Reasoning Artifact Review and Proposal Foundation Planning.

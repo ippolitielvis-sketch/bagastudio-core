@@ -75,6 +75,7 @@ Covered foundation:
 - EDI Understanding Artifact Foundation
 - Understanding to Reasoning Boundary Review
 - EDI Reasoning Foundation Review
+- EDI Reasoning Artifact Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2880,6 +2881,66 @@ La prossima RFC consigliata e `RFC-1205 - EDI Reasoning Artifact Foundation`.
 - Reasoning non e Optimization execution.
 - Reasoning non muta Product Package, Project State, Viewer, Factory o runtime.
 - Reasoning prepara Proposal solo come readiness architetturale.
+
+## DL-EXEC-057 - Reasoning Artifact Is Evaluation, Not Proposal
+
+### Problema
+
+Dopo aver definito Reasoning, serviva introdurre il primo artifact dati senza trasformarlo in Proposal, Validation Support, Optimization, runtime o mutation.
+
+Il rischio era che alternative, vincoli, conseguenze e rationale venissero trattati come proposta operativa o decisione automatica.
+
+### Decisione
+
+Introdurre `EdiReasoningArtifact` come descrittore serializzabile e non operativo.
+
+L'artifact contiene:
+
+- identity;
+- timestamp;
+- source understanding references;
+- alternatives;
+- constraints;
+- consequences;
+- tradeoffs;
+- assumptions;
+- risks;
+- rationale;
+- traceability metadata.
+
+La factory `createEdiReasoningArtifact` crea un artifact da `EdiUnderstandingArtifact[]`, conservando riferimenti serializzabili agli Understanding Artifact e copiando difensivamente alternative, vincoli, conseguenze, rischi, tradeoff, assumptions e metadata.
+
+### Motivazione
+
+Reasoning deve poter rappresentare valutazioni e conseguenze senza diventare Proposal.
+
+Il riferimento agli Understanding Artifact consente tracciabilita senza introdurre storage reale, retrieval engine, runtime ingestion o riferimenti mutabili.
+
+Separare Reasoning Artifact da Proposal protegge BagaStudio Validation Layer e Mutation Layer.
+
+### Alternative Scartate
+
+- Far coincidere Reasoning Artifact con Proposal.
+- Introdurre Validation Support insieme all'artifact.
+- Introdurre Optimization execution.
+- Collegare l'artifact a runtime, Viewer, UI o engine reali.
+- Salvare riferimenti live a Understanding storage o Product Package.
+
+### Impatto Architetturale
+
+RFC-1205 crea il primo contratto dati per Reasoning.
+
+Il layer e pronto per una review successiva su come Proposal potra consumare artifact di ragionamento, ma non introduce Proposal.
+
+### Regole Permanenti Generate
+
+- Reasoning Artifact e un descrittore di valutazioni e conseguenze.
+- Reasoning Artifact non e Understanding.
+- Reasoning Artifact non e Proposal.
+- Reasoning Artifact non produce decisione automatica.
+- Reasoning Artifact non produce Mutation, Validation Support, Optimization execution, Viewer output o UI.
+- Reasoning Artifact conserva riferimenti serializzabili agli Understanding Artifact, non storage live.
+- Reasoning Artifact non attiva Proposal automaticamente.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
