@@ -53,6 +53,7 @@ Covered foundation:
 - Observable Recognition Flow Review
 - Viewer Exposure Via View Model Snapshot
 - EDI View Model Snapshot Foundation
+- EDI View Model Snapshot Validation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1531,6 +1532,48 @@ Non viene introdotto Viewer wiring.
 - EDI View Model Snapshot non renderizza UI.
 - EDI View Model Snapshot non chiama runtime.
 - EDI View Model Snapshot non contiene real recognition logic.
+
+## DL-EXEC-035 - EDI View Model Snapshot Validation
+
+### Problema
+
+Dopo l'introduzione di `EdiViewModelSnapshot`, serviva validare se il modello fosse sufficiente come boundary verso futuro Viewer e se esponesse troppi dettagli runtime.
+
+### Decisione
+
+Validare `EdiViewModelSnapshot` come boundary corretto tra EDI observable data e futura Viewer Exposure Foundation.
+
+Non vengono applicate modifiche ai tipi in RFC-1184.
+
+### Motivazione
+
+Lo snapshot contiene dati sufficienti per una prima esposizione leggibile: id, timestamp, execution result id, execution request id, mode, status e metadata.
+
+Non espone l'oggetto `EdiExecutionResult` originale, quindi evita di trasferire al Viewer dettagli runtime non necessari.
+
+### Alternative Scartate
+
+- Aggiungere subito sezioni memory/reasoning/feedback/planning.
+- Esporre `RecognitionObservableResult` direttamente al Viewer.
+- Inserire l'oggetto runtime originale nello snapshot.
+- Introdurre React state.
+- Introdurre Viewer wiring.
+- Collegare runtime o dispatch.
+
+### Impatto Architetturale
+
+Lo snapshot e maturo abbastanza per pianificare `RFC-1185 - Viewer Exposure Foundation`.
+
+Le sezioni memory, reasoning, feedback e planning restano future extension.
+
+### Regole Permanenti Generate
+
+- EDI View Model Snapshot e boundary validato verso Viewer.
+- Viewer Exposure Foundation dovra leggere solo EDI View Model Snapshot.
+- Snapshot non espone l'oggetto execution result originale.
+- Snapshot resta immutable-style.
+- Memory, reasoning, feedback e planning sono sezioni future.
+- Nessun Viewer/UI/React state viene introdotto da questa validation.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
