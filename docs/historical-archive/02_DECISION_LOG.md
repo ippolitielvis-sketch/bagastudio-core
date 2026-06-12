@@ -327,3 +327,40 @@ EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudi
 
 # Conversazioni utilizzate
 - RFC-1217 Decision Support Artifact Foundation
+
+## Milestone - RFC-1218 First Visible EDI Panel Foundation
+
+# Contesto
+EDI dispone di molte foundation cognitive e dati, ma non era ancora visibile nel Viewer.
+
+# Problema
+Serviva rendere EDI percepibile dall'utente senza collegare Viewer a EDI Core, runtime, observation flow reale, Validation, Decision Support o Mutation Layer.
+
+# Decisione
+Introdurre `EdiObservationPanel` come primo pannello EDI visibile, read-only e passivo.
+
+# Motivazione
+Il pannello massimizza il risultato visibile e minimizza il lavoro, usando solo dati gia disponibili nel Viewer.
+
+# Implementazione
+RFC-1218 crea `components/viewer-ui/EdiObservationPanel.tsx` e lo renderizza passivamente in `components/Viewer3D.tsx`.
+
+# Evoluzione
+La roadmap puo passare a una review del primo pannello visibile prima di collegare Product Package observation flow o EDI Core.
+
+# Impatto
+EDI diventa visibile nel Viewer, ma resta non autoritativo e non operativo.
+
+# Regole permanenti nate
+- First Visible EDI Panel e read-only.
+- First Visible EDI Panel non importa EDI Core.
+- First Visible EDI Panel non chiama runtime EDI.
+- First Visible EDI Panel non crea artifact EDI.
+- First Visible EDI Panel non muta Product Package o Project State.
+- First Visible EDI Panel non introduce action, apply, execute o commit.
+
+# Collegamenti con altri Engine
+Viewer, BagaStudio Presentation, EDI Cognitive.
+
+# Conversazioni utilizzate
+- RFC-1218 First Visible EDI Panel Foundation

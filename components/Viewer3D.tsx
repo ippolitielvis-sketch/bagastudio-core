@@ -34,6 +34,7 @@ import PremiumRoomEnvironment, { type RoomEnvironmentSettings } from "./viewer/R
 import SceneComposerPanel from "./viewer/SceneComposerPanel";
 import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
+import EdiObservationPanel from "./viewer-ui/EdiObservationPanel";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
 import EdiLauncher from "./edi/launcher/EdiLauncher";
 import {
@@ -10988,6 +10989,13 @@ productMaterials?.length
 
       <RoomOrientationOverlay />
 
+      <EdiObservationPanel
+        productPackageAvailable={viewerRuntimeComponents.length > 0}
+        importedModelName={runtimeImportedModel?.name || importedModelName || ""}
+        observableComponentCount={viewerRuntimeComponents.length}
+        lastImporterEvent={runtimeImportedModel ? "import attivo" : ""}
+      />
+
       <ViewerMiniTab
         id="room"
         label="Stanza"
@@ -11411,7 +11419,7 @@ productMaterials?.length
 
 </Canvas>
 
-      <EdiDevOverlayV1 />
+      {false && <EdiDevOverlayV1 />}
     </div>
   );
 }

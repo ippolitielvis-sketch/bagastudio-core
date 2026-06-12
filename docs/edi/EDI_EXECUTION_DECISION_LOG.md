@@ -3590,6 +3590,68 @@ La foundation prepara future review su Decision Boundary e Mutation Boundary, ma
 - Decision Support Artifact non muta Product Package o Project State.
 - Decision Support Artifact non chiama executor, runtime, workflow engine, Viewer, UI, storage o retrieval.
 
+## DL-EXEC-070 - First Visible EDI Panel Is Read-Only Viewer Surface
+
+### Problema
+
+EDI doveva diventare visibile nel Viewer senza trasformare la visibilita in integrazione runtime, mutation, decisione automatica o coupling diretto con EDI Core.
+
+### Decisione
+
+Introdurre `EdiObservationPanel` come primo pannello EDI visibile, read-only e passivo.
+
+Prima dell'introduzione del pannello e stata verificata la vecchia UI EDI nel Viewer:
+
+- `EdiLauncher` veniva renderizzato dal dev overlay;
+- `EDI Analysis V1` leggeva diagnostiche da runtime globals `window.__bagastudio...`;
+- il launcher usava local storage per la posizione;
+- il dev overlay poteva creare doppia presenza EDI nel Viewer.
+
+La decisione e sostituzione controllata: disattivare il render di `EdiDevOverlayV1` e rendere visibile solo `EdiObservationPanel`.
+
+Il pannello viene renderizzato da `Viewer3D` usando solo dati gia disponibili nel Viewer:
+
+- Product Package disponibile / non disponibile;
+- modello importato, se disponibile;
+- componenti osservabili;
+- ultimo evento import, se disponibile;
+- modalita read-only;
+- azioni: nessuna;
+- nota: nessuna mutation, nessuna decisione.
+
+### Motivazione
+
+Questa scelta rende EDI visibile subito, ma non collega Viewer a EDI Core, runtime, observation flow reale, Validation, Decision Support o Mutation Layer.
+
+Il Viewer resta presentation layer. EDI resta osservatore e non diventa controller del Viewer o Source of Truth.
+
+### Alternative Scartate
+
+- Far leggere al Viewer artifact EDI interni.
+- Importare EDI Core in `Viewer3D`.
+- Collegare il pannello a EDI runtime.
+- Creare Observation Snapshot o altri artifact dalla UI.
+- Aggiungere action, apply, execute o commit.
+- Collegare Validation Support o Decision Support al pannello.
+- Lasciare attivi contemporaneamente legacy EDI Analysis e nuovo EDI Observation Panel.
+
+### Impatto Architetturale
+
+RFC-1218 introduce la prima presenza visibile di EDI senza real integration.
+
+Il pannello e reversibile, minimale e non autoritativo.
+
+### Regole Permanenti Generate
+
+- First Visible EDI Panel e UI read-only.
+- First Visible EDI Panel non importa EDI Core.
+- First Visible EDI Panel non chiama EDI runtime.
+- First Visible EDI Panel non crea artifact EDI.
+- First Visible EDI Panel non muta Product Package o Project State.
+- First Visible EDI Panel non introduce decisioni automatiche, action, apply, execute o commit.
+- First Visible EDI Panel non usa storage o retrieval.
+- Legacy EDI dev overlay non deve essere renderizzato insieme al primo pannello ufficiale.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

@@ -239,3 +239,20 @@ Prima di introdurre Decision Engine, Validation Approval o Mutation, Decision Su
 
 # Prossimo passo consigliato
 EDI Decision Support Artifact Review and Decision Boundary Planning.
+
+## Roadmap - First Visible EDI Panel Foundation
+
+# Contesto
+EDI e stato definito come capability osservabile, ma non aveva ancora una presenza visibile nel Viewer.
+
+# Stato raggiunto
+RFC-1218 introduce un pannello EDI read-only nel Viewer.
+
+# Sequenza
+Decision Support Artifact -> First Visible EDI Panel -> First Visible EDI Panel Review.
+
+# Regola roadmap
+La prima presenza visibile di EDI deve restare passiva: niente EDI Core import nel Viewer, niente runtime, niente artifact creation, niente mutation e niente decisione automatica.
+
+# Prossimo passo consigliato
+First Visible EDI Panel Review before Product Package Observation Flow wiring.

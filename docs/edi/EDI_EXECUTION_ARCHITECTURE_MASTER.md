@@ -132,6 +132,7 @@ This document covers:
 - RFC-1215: EDI Validation Support Traceability Foundation
 - RFC-1216: EDI Validation Support Evaluation Foundation
 - RFC-1217: EDI Decision Support Artifact Foundation
+- RFC-1218: First Visible EDI Panel Foundation
 
 ## Architecture Overview
 
@@ -3102,6 +3103,59 @@ The execution foundation must not depend on:
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
+## First Visible EDI Panel Foundation
+
+RFC-1218 introduces the first visible EDI surface inside the Viewer.
+
+The foundation creates a read-only `EdiObservationPanel` rendered passively by `Viewer3D`.
+
+Before introducing the panel, the legacy Viewer EDI surface was reviewed:
+
+- `EdiLauncher` was rendered by the development overlay;
+- `EDI Analysis V1` read diagnostic data from `window.__bagastudio...` runtime globals;
+- the launcher stored position in browser local storage;
+- the legacy surface was development-oriented and could conflict visually and semantically with a first official EDI panel.
+
+RFC-1218 therefore uses controlled replacement: the legacy `EdiDevOverlayV1` render path is disabled in `Viewer3D`, while its code remains untouched and reversible. The new visible surface is `EdiObservationPanel` only.
+
+This panel is deliberately not an EDI Core integration. It does not import EDI Core, does not call EDI runtime, does not create EDI artifacts, does not mutate Product Package, does not mutate Project State, and does not introduce approval, rejection, decision, action, apply, execute, commit, storage, or retrieval behavior.
+
+Visible data shown by the panel:
+
+- EDI title;
+- observer active state;
+- read-only mode;
+- Product Package availability;
+- imported model name when already available in Viewer state;
+- observable component count when already available in Viewer state;
+- last import event fallback when already available;
+- no actions;
+- no mutation / no decision note.
+
+The panel is a visibility foundation only. It maximizes user-visible feedback while preserving the documented separation between Viewer, EDI Core, Runtime, Validation, Decision Support, and Mutation layers.
+
+Permanent boundary:
+
+```text
+Viewer existing state
+-> EdiObservationPanel props
+-> read-only visual surface
+```
+
+Not introduced:
+
+- EDI Core import into Viewer;
+- EDI runtime call;
+- EDI artifact creation;
+- Product Package observation flow wiring;
+- legacy EDI Analysis runtime globals;
+- launcher storage/retrieval path;
+- Product Package write;
+- Project State write;
+- Validation approval;
+- Decision Engine;
+- Mutation Layer.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3191,4 +3245,5 @@ The Decision Log should record:
 43. RFC-1215 - EDI Validation Support Traceability Foundation.
 44. RFC-1216 - EDI Validation Support Evaluation Foundation.
 45. RFC-1217 - EDI Decision Support Artifact Foundation.
-46. EDI Decision Support Artifact Review and Decision Boundary Planning.
+46. RFC-1218 - First Visible EDI Panel Foundation.
+47. EDI Decision Support Artifact Review and Decision Boundary Planning.

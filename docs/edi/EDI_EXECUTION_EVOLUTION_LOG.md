@@ -1580,10 +1580,12 @@ Implemented producer adapter foundation:
 - Validation Support Traceability Foundation exists;
 - Validation Support Evaluation Foundation exists;
 - Decision Support Artifact Foundation exists;
+- First Visible EDI Panel Foundation exists;
+- EDI is visible in the Viewer through a read-only panel fed only by existing Viewer state;
 - Decision Support Artifact Review and Decision Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
-- no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
+- no RuntimeHost, RuntimeLoop, Executor, Consumer, EDI Core, EDI runtime, or engine real integration was added.
 
 Not implemented today:
 
@@ -1602,6 +1604,7 @@ Not implemented today:
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
 - real Viewer wiring;
 - final Viewer UI;
+- EDI Core backed Viewer integration;
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
 - Viewer consumption of BagaStudio Presentation Model;
