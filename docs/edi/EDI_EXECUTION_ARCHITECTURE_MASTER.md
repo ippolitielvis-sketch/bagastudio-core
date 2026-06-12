@@ -91,6 +91,7 @@ This document covers:
 - RFC-1175: EDI Recognition Producer Runtime Wiring Review
 - RFC-1176: EDI Recognition Runtime Adapter Foundation
 - RFC-1177: EDI Recognition Runtime Result Dispatch Review
+- RFC-1178: EDI Recognition Result Adapter Foundation
 
 ## Architecture Overview
 
@@ -927,6 +928,34 @@ It must not render UI, wire Viewer, mutate runtime, call RuntimeHost, call Runti
 
 Runtime Adapter and Result Adapter stay separate: Runtime Adapter enters execution runtime, while Result Adapter exposes execution output for later layers.
 
+### RecognitionResultAdapter
+
+`RecognitionResultAdapter` introduces the recognition-specific observable result foundation.
+
+It exports:
+
+- `RecognitionObservableMetadata`;
+- `RecognitionObservableResult`;
+- `createRecognitionObservableResult`;
+- `recognitionResultAdapter`.
+
+`EdiExecutionResult` is the execution runtime result descriptor.
+
+`RecognitionObservableResult` is a recognition-specific observable shape derived from that descriptor.
+
+It preserves:
+
+- execution result id;
+- execution request id;
+- timestamp;
+- mode;
+- status;
+- executor id;
+- metadata;
+- original execution result.
+
+It does not render UI, wire Viewer, dispatch globally, mutate runtime, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, inspect scene graph, or introduce `runRealIntegration`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1106,6 +1135,8 @@ The execution foundation must not depend on:
 - Recognition Runtime Adapter uses injected EdiExecutionRuntime.
 - Recognition Runtime Adapter does not expose results directly to Viewer.
 - Recognition Result Adapter is the future result exposure boundary.
+- Recognition Result Adapter produces observable data, not UI.
+- Recognition Result Adapter does not dispatch.
 
 ## Residual Risks
 
@@ -1130,7 +1161,7 @@ The execution foundation must not depend on:
 - Recognition Producer Boundary Pipeline exists, but it remains pre-runtime and does not dispatch or execute.
 - Recognition Producer Pipeline Validation is documented, but no automated test framework has been introduced for it.
 - Recognition Runtime Adapter exists as a foundation, but it does not perform real recognition or dispatch.
-- Recognition Result Adapter is planned but not implemented.
+- Recognition Result Adapter exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1186,4 +1217,4 @@ The Decision Log should record:
 6. Defer real engine executors until preview behavior and boundaries are validated.
 7. Define a future explicit result consumption integration RFC before connecting consumers to runtime output.
 8. Define validation for Recognition Runtime Adapter once a project test pattern exists.
-9. RFC-1178 - Recognition Result Adapter Foundation.
+9. Define validation for Recognition Result Adapter once a project test pattern exists.

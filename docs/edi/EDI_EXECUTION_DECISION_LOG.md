@@ -47,6 +47,7 @@ Covered foundation:
 - Recognition Producer Runtime Wiring Boundary
 - Recognition Runtime Adapter Foundation
 - Recognition Runtime Result Adapter Boundary
+- Recognition Result Adapter Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1286,3 +1287,48 @@ La prossima RFC operativa sara `RFC-1178 - Recognition Result Adapter Foundation
 - Result Adapter non chiama RuntimeHost o RuntimeLoop.
 - Result Adapter non introduce dispatch reale.
 - Result Adapter non introduce recognition reale.
+
+## DL-EXEC-029 - Recognition Result Adapter Foundation
+
+### Problema
+
+Serviva introdurre una forma recognition-specific osservabile derivata da `EdiExecutionResult`, senza collegare Viewer, UI, dispatcher globale, RuntimeHost o RuntimeLoop.
+
+### Decisione
+
+Introdurre `RecognitionResultAdapter` come foundation minimale.
+
+L'adapter espone `createRecognitionObservableResult`, riceve `EdiExecutionResult` e produce `RecognitionObservableResult`.
+
+### Motivazione
+
+`EdiExecutionResult` resta il descrittore generico del runtime di execution.
+
+`RecognitionObservableResult` rappresenta una forma osservabile specifica per Recognition, utile per futuri layer successivi senza introdurre rendering o integrazione prodotto.
+
+### Alternative Scartate
+
+- Esportare direttamente `EdiExecutionResult` verso Viewer o UI.
+- Usare dispatcher globale.
+- Chiamare Consumer.
+- Mutare runtime.
+- Chiamare RuntimeHost o RuntimeLoop.
+- Introdurre recognition reale.
+- Analizzare geometria o scene.
+
+### Impatto Architetturale
+
+La result exposure recognition diventa un layer dati separato dal runtime adapter e dalla UI.
+
+Non viene introdotta real integration.
+
+### Regole Permanenti Generate
+
+- Recognition Result Adapter riceve `EdiExecutionResult`.
+- Recognition Result Adapter produce `RecognitionObservableResult`.
+- Recognition Result Adapter preserva id, mode, status e metadata utili.
+- Recognition Result Adapter non renderizza UI.
+- Recognition Result Adapter non fa dispatch.
+- Recognition Result Adapter non modifica runtime.
+- Recognition Result Adapter non conosce Viewer.
+- Recognition Result Adapter non introduce recognition reale.
