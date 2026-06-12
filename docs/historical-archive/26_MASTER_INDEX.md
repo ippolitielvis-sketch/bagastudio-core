@@ -94,6 +94,7 @@ RFC EDI esplicite:
 - RFC-1101 Shader Pipeline
 - RFC-1102 Shader Laboratory
 - RFC-1214 Validation Support Builder Foundation
+- RFC-1215 Validation Support Traceability Foundation
 
 Milestone equivalenti a RFC implicite:
 - Viewer Recovery Foundation

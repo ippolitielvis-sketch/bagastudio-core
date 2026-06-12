@@ -188,3 +188,20 @@ Prima di introdurre approval, rejection o Mutation, il Validation Support Builde
 
 # Prossimo passo consigliato
 EDI Validation Support Builder Review and Mutation Boundary Planning.
+
+## Roadmap - Validation Support Traceability Foundation
+
+# Contesto
+Validation Support dispone di artifact e builder fondazionali, ma non ancora di audit trail dedicato.
+
+# Stato raggiunto
+RFC-1215 introduce la traceability pura per il Validation Support Layer.
+
+# Sequenza
+Validation Support Artifact -> Validation Support Builder -> Validation Support Traceability.
+
+# Regola roadmap
+Prima di introdurre approval, rejection, decisioni o Mutation, la traceability deve restare audit data e non deve chiamare runtime, executor, Viewer, UI, storage o retrieval.
+
+# Prossimo passo consigliato
+EDI Validation Support Traceability Review and Mutation Boundary Planning.

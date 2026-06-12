@@ -1231,6 +1231,14 @@ It supports single and batch artifact creation through `buildValidationSupportAr
 
 RFC-1214 clarified that the builder is a foundational producer only. It does not approve, reject, make automatic decisions, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, access storage, or perform retrieval.
 
+RFC-1215 introduced `EdiValidationSupportTraceability` as the dedicated audit trail data contract for the Validation Support layer.
+
+The traceability foundation can represent source artifact ids, understanding references, reasoning references, proposal references, validation support lineage references, consideration references, risk references, question references, and derivation metadata.
+
+The factory `createEdiValidationSupportTraceability` uses explicit timestamp input and defensively copies reference arrays and metadata.
+
+RFC-1215 clarified that Validation Support Traceability is audit data, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1431,6 +1439,9 @@ RFC-1214 clarified that the builder is a foundational producer only. It does not
 - Validation Support Builder accepts explicit inputs only.
 - Validation Support Builder requires explicit timestamp.
 - Validation Support Builder does not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, access storage, or perform retrieval.
+- Validation Support Traceability is audit data, not approval, rejection, decision, or Mutation.
+- Validation Support Traceability does not mutate Product Package or Project State.
+- Validation Support Traceability does not call executor, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1543,7 +1554,8 @@ Implemented producer adapter foundation:
 - Proposal Evaluation Foundation exists;
 - Validation Support Artifact Foundation exists;
 - Validation Support Builder Foundation exists;
-- Validation Support Builder Review and Mutation Boundary Planning is the next recommended review;
+- Validation Support Traceability Foundation exists;
+- Validation Support Traceability Review and Mutation Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1588,6 +1600,7 @@ Not implemented today:
 - Proposal traceability consumers;
 - Proposal evaluation consumers;
 - Validation support builder consumers;
+- Validation support traceability consumers;
 - Validation support approval/rejection workflow;
 - Validation support mutation boundary;
 - Optimization foundation;

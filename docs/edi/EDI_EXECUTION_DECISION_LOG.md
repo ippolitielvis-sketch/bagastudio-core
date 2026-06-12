@@ -3424,6 +3424,60 @@ La foundation prepara future review su Mutation Boundary e validazione BagaStudi
 - Validation Support Builder non muta Product Package o Project State.
 - Validation Support Builder non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
+## DL-EXEC-067 - Validation Support Traceability Is Audit Data, Not Authority
+
+### Problema
+
+Dopo Validation Support Artifact e Validation Support Builder, serviva una struttura dedicata alla tracciabilita cognitiva del Validation Support Layer senza introdurre approvazione, rifiuto, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiValidationSupportTraceability` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+La traceability puo rappresentare:
+
+- source artifact ids;
+- understanding references;
+- reasoning references;
+- proposal references;
+- validation support lineage references;
+- consideration references;
+- risk references;
+- question references;
+- derivation metadata.
+
+La factory `createEdiValidationSupportTraceability` usa timestamp esplicito e copia difensivamente array di riferimenti e metadata.
+
+### Motivazione
+
+Validation Support ha bisogno di auditability prima di qualsiasi Mutation Boundary o workflow BagaStudio-owned.
+
+La traceability deve permettere ispezione e responsabilita storica senza diventare approval, rejection, decision engine, mutation path o source of truth.
+
+### Alternative Scartate
+
+- Usare traceability come approval o rejection.
+- Far prendere decisioni automatiche alla traceability.
+- Collegare traceability a Mutation Layer.
+- Collegare traceability a executor, runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dalla traceability.
+
+### Impatto Architetturale
+
+RFC-1215 aggiunge il primo audit trail cognitivo dedicato al Validation Support layer.
+
+La foundation prepara future review su Mutation Boundary e governance, ma non introduce nessuno di questi layer come comportamento operativo.
+
+### Regole Permanenti Generate
+
+- Validation Support Traceability e audit data.
+- Validation Support Traceability non e approval.
+- Validation Support Traceability non e rejection.
+- Validation Support Traceability non produce decisioni automatiche.
+- Validation Support Traceability non e Mutation.
+- Validation Support Traceability non muta Product Package o Project State.
+- Validation Support Traceability non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

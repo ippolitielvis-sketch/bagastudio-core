@@ -129,6 +129,7 @@ This document covers:
 - RFC-1212: EDI Proposal Evaluation Foundation
 - RFC-1213: EDI Validation Support Artifact Foundation
 - RFC-1214: EDI Validation Support Builder Foundation
+- RFC-1215: EDI Validation Support Traceability Foundation
 
 ## Architecture Overview
 
@@ -2587,6 +2588,38 @@ It also supports `buildValidationSupportArtifacts` for deterministic batch creat
 
 The builder does not change the public meaning of Validation Support Artifact: it remains support material, not approval, rejection, automatic decision-making, Mutation, executor behavior, runtime wiring, Viewer output, UI, storage, or retrieval.
 
+### EDI Validation Support Traceability Foundation
+
+RFC-1215 introduces `EdiValidationSupportTraceability` as the dedicated audit trail data contract for Validation Support artifacts.
+
+The validation support traceability foundation is serializable, audit-oriented, domain-independent, non-executive, and independent from future approval, rejection, decision, and Mutation layers.
+
+Validation Support Traceability can represent:
+
+- source artifact ids;
+- understanding references;
+- reasoning references;
+- proposal references;
+- validation support lineage references;
+- consideration references;
+- risk references;
+- question references;
+- derivation metadata.
+
+Validation support traceability creation path:
+
+```text
+explicit validation support traceability input
+-> createEdiValidationSupportTraceability
+-> EdiValidationSupportTraceability
+```
+
+The factory uses explicit timestamp input and defensively copies reference arrays and derivation metadata.
+
+`EdiValidationSupportTraceability` does not approve, reject, decide, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future Validation Support, governance, and Mutation Boundary reviews can inspect lineage without turning traceability into authority or execution.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2878,6 +2911,10 @@ The execution foundation must not depend on:
 - Validation Support Builder accepts explicit inputs only.
 - Validation Support Builder requires explicit timestamp.
 - Validation Support Builder must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
+- Validation Support Traceability is audit data.
+- Validation Support Traceability is not approval, rejection, decision, or Mutation.
+- Validation Support Traceability must remain domain-independent and non-executive.
+- Validation Support Traceability must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -2979,6 +3016,8 @@ The execution foundation must not depend on:
 - Validation Support Artifact exists, but no approval workflow, rejection workflow, mutation path, executor, runtime, or UI consumes it yet.
 - Validation Support Builder exists, but no approval workflow, rejection workflow, mutation path, executor, runtime, UI, storage, or retrieval consumes it yet.
 - Validation Support Builder is deterministic only if callers provide deterministic inputs.
+- Validation Support Traceability exists, but no approval workflow, rejection workflow, mutation path, governance layer, executor, runtime, UI, storage, or retrieval consumes it yet.
+- Validation Support Traceability schema is foundation-level and may need richer lineage categories after Mutation Boundary planning.
 - Validation Support Artifact questions and considerations are foundation-level and may need domain-specific review before product workflows.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
@@ -3072,4 +3111,5 @@ The Decision Log should record:
 40. RFC-1212 - EDI Proposal Evaluation Foundation.
 41. RFC-1213 - EDI Validation Support Artifact Foundation.
 42. RFC-1214 - EDI Validation Support Builder Foundation.
-43. EDI Validation Support Builder Review and Mutation Boundary Planning.
+43. RFC-1215 - EDI Validation Support Traceability Foundation.
+44. EDI Validation Support Traceability Review and Mutation Boundary Planning.

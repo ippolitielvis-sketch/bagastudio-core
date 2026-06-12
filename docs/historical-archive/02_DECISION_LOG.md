@@ -221,3 +221,38 @@ EDI Cognitive, Proposal, Reasoning, Understanding, BagaStudio Validation futura.
 
 # Conversazioni utilizzate
 - RFC-1214 Validation Support Builder Foundation
+
+## Milestone - RFC-1215 Validation Support Traceability Foundation
+
+# Contesto
+Validation Support dispone di artifact e builder fondazionali, ma serve tracciabilita cognitiva dedicata prima di qualsiasi review su Mutation Boundary.
+
+# Problema
+Senza audit trail, il materiale di supporto alla validazione non puo essere collegato in modo esplicito a Understanding, Reasoning, Proposal, considerazioni, rischi e domande.
+
+# Decisione
+Introdurre `EdiValidationSupportTraceability` come struttura dati serializzabile, auditabile, domain-independent e non esecutiva.
+
+# Motivazione
+Validation Support deve poter essere ispezionato storicamente senza diventare approval, rejection, decision engine o mutation path.
+
+# Implementazione
+RFC-1215 crea `components/edi/validation/EdiValidationSupportTraceability.ts` e documenta la traceability nei documenti EDI principali.
+
+# Evoluzione
+La roadmap passa a review di Validation Support Traceability e Mutation Boundary prima di introdurre approval/rejection workflow.
+
+# Impatto
+Il layer Validation Support ottiene auditability fondazionale, mantenendo separati supporto, decisione e mutation.
+
+# Regole permanenti nate
+- Validation Support Traceability e audit data.
+- Validation Support Traceability non approva, non rifiuta e non decide.
+- Validation Support Traceability non muta Product Package o Project State.
+- Validation Support Traceability non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+# Collegamenti con altri Engine
+EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudio Validation futura.
+
+# Conversazioni utilizzate
+- RFC-1215 Validation Support Traceability Foundation
