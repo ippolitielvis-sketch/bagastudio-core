@@ -256,3 +256,20 @@ La prima presenza visibile di EDI deve restare passiva: niente EDI Core import n
 
 # Prossimo passo consigliato
 First Visible EDI Panel Review before Product Package Observation Flow wiring.
+
+## Roadmap - First Real Observation Foundation
+
+# Contesto
+EDI e visibile nel Viewer come pannello read-only.
+
+# Stato raggiunto
+RFC-1219 introduce osservazioni descrittive derivate da dati Viewer presentation-safe.
+
+# Sequenza
+First Visible EDI Panel -> First Real Observation -> Observation Panel Review.
+
+# Regola roadmap
+Le osservazioni Viewer devono restare descrittive e non devono creare artifact EDI, chiamare runtime, attivare Memory/Understanding/Reasoning/Proposal o mutare Product Package / Project State.
+
+# Prossimo passo consigliato
+First Real Observation Panel Review before Product Package Observation Adapter wiring.

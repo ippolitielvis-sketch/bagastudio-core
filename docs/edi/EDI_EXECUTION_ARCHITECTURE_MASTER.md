@@ -133,6 +133,7 @@ This document covers:
 - RFC-1216: EDI Validation Support Evaluation Foundation
 - RFC-1217: EDI Decision Support Artifact Foundation
 - RFC-1218: First Visible EDI Panel Foundation
+- RFC-1219: First Real Observation Foundation
 
 ## Architecture Overview
 
@@ -3156,6 +3157,29 @@ Not introduced:
 - Decision Engine;
 - Mutation Layer.
 
+## First Real Observation Foundation
+
+RFC-1219 upgrades the visible EDI panel from static status display to first real Viewer observation.
+
+The observation remains presentation-only. `EdiObservationPanel` derives read-only descriptive messages from props already supplied by `Viewer3D`.
+
+Implemented observation messages:
+
+- no product loaded;
+- model detected;
+- import completed;
+- observable component count.
+
+This is not EDI Core observation. It does not create `ProductPackageObservationSnapshot`, does not create any EDI artifact, does not call EDI runtime, does not write Product Package, does not write Project State, and does not trigger Memory, Understanding, Reasoning, Proposal, Validation Support, Decision Support, or Mutation.
+
+Permanent boundary:
+
+```text
+Viewer presentation-safe props
+-> local read-only observation messages
+-> EdiObservationPanel
+```
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3246,4 +3270,5 @@ The Decision Log should record:
 44. RFC-1216 - EDI Validation Support Evaluation Foundation.
 45. RFC-1217 - EDI Decision Support Artifact Foundation.
 46. RFC-1218 - First Visible EDI Panel Foundation.
-47. EDI Decision Support Artifact Review and Decision Boundary Planning.
+47. RFC-1219 - First Real Observation Foundation.
+48. EDI Decision Support Artifact Review and Decision Boundary Planning.

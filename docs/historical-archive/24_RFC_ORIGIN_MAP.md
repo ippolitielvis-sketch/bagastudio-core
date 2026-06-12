@@ -30,6 +30,7 @@ Mappa delle RFC esplicite e delle milestone con ruolo equivalente a RFC implicit
 | RFC-1216 Validation Support Evaluation Foundation | RFC-1216 | Validation Support Traceability -> Evaluation | Quality data descrittiva, senza approval/rejection/mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1217 Decision Support Artifact Foundation | RFC-1217 | Validation Support Evaluation -> Decision Support | Support material non autoritativo, senza Decision Engine o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1218 First Visible EDI Panel Foundation | RFC-1218 | Decision Support Foundation -> visible Viewer surface | Pannello EDI read-only, senza EDI Core runtime o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
+| RFC-1219 First Real Observation Foundation | RFC-1219 | First Visible EDI Panel -> Viewer observation messages | Osservazioni descrittive da dati Viewer, senza artifact EDI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 
 ## Evoluzione RFC EDI
 

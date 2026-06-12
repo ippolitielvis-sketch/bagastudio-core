@@ -9,6 +9,40 @@ type EdiObservationPanelProps = {
 
 const formatAvailability = (available: boolean) => (available ? "disponibile" : "non disponibile");
 
+const createViewerObservationMessages = ({
+  productPackageAvailable,
+  importedModelName,
+  componentCount,
+  lastImporterEvent,
+}: {
+  productPackageAvailable: boolean;
+  importedModelName?: string;
+  componentCount: number;
+  lastImporterEvent?: string;
+}) => {
+  const observations: string[] = [];
+  const hasImportedModel = Boolean(importedModelName?.trim());
+  const hasImporterEvent = Boolean(lastImporterEvent?.trim());
+
+  if (!productPackageAvailable && !hasImportedModel && componentCount === 0) {
+    observations.push("Nessun prodotto caricato");
+  }
+
+  if (hasImportedModel) {
+    observations.push("Modello rilevato");
+  }
+
+  if (productPackageAvailable || hasImporterEvent) {
+    observations.push("Importazione completata");
+  }
+
+  if (componentCount > 0) {
+    observations.push(`${componentCount} componenti osservabili`);
+  }
+
+  return observations;
+};
+
 export default function EdiObservationPanel({
   productPackageAvailable,
   importedModelName,
@@ -19,6 +53,12 @@ export default function EdiObservationPanel({
     typeof observableComponentCount === "number" && Number.isFinite(observableComponentCount)
       ? observableComponentCount
       : 0;
+  const observations = createViewerObservationMessages({
+    productPackageAvailable,
+    importedModelName,
+    componentCount,
+    lastImporterEvent,
+  });
 
   return (
     <aside className="absolute bottom-20 right-4 z-[68] w-[320px] rounded-2xl border border-emerald-300/22 bg-slate-950/92 p-4 text-xs text-slate-100 shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl">
@@ -78,6 +118,20 @@ export default function EdiObservationPanel({
             {lastImporterEvent || "non disponibile"}
           </span>
         </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-emerald-300/16 bg-emerald-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-emerald-200">
+          Osservazioni
+        </span>
+        <ul className="mt-2 space-y-1.5">
+          {observations.map((observation) => (
+            <li key={observation} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" />
+              <span>{observation}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       <div className="mt-3 rounded-xl border border-amber-300/18 bg-amber-400/8 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-100">

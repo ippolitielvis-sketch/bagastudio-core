@@ -1582,6 +1582,8 @@ Implemented producer adapter foundation:
 - Decision Support Artifact Foundation exists;
 - First Visible EDI Panel Foundation exists;
 - EDI is visible in the Viewer through a read-only panel fed only by existing Viewer state;
+- First Real Observation Foundation exists;
+- EDI panel derives descriptive observation messages from Viewer presentation-safe data;
 - Decision Support Artifact Review and Decision Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
@@ -1605,6 +1607,7 @@ Not implemented today:
 - real Viewer wiring;
 - final Viewer UI;
 - EDI Core backed Viewer integration;
+- EDI artifact backed Viewer observation;
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
 - Viewer consumption of BagaStudio Presentation Model;

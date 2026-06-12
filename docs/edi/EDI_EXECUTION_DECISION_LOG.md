@@ -3652,6 +3652,49 @@ Il pannello e reversibile, minimale e non autoritativo.
 - First Visible EDI Panel non usa storage o retrieval.
 - Legacy EDI dev overlay non deve essere renderizzato insieme al primo pannello ufficiale.
 
+## DL-EXEC-071 - First Real Viewer Observation Is Descriptive Only
+
+### Problema
+
+Dopo il primo pannello visibile, EDI mostrava stato statico ma non ancora osservazioni derivate dal Viewer.
+
+### Decisione
+
+Aggiornare `EdiObservationPanel` con una sezione `Osservazioni` calcolata esclusivamente da dati gia disponibili nel Viewer.
+
+Le osservazioni introdotte sono descrittive:
+
+- Nessun prodotto caricato;
+- Modello rilevato;
+- Importazione completata;
+- componenti osservabili.
+
+### Motivazione
+
+Questa e la forma minima di osservazione reale: l'utente vede EDI reagire al contesto Viewer, ma il sistema non introduce EDI Core, runtime, artifact, Memory, Understanding, Reasoning, Proposal, Validation, Decision o Mutation.
+
+### Alternative Scartate
+
+- Creare `ProductPackageObservationSnapshot` dalla UI.
+- Collegare Product Package Observation Adapter.
+- Chiamare runtime EDI.
+- Generare Memory, Understanding, Reasoning o Proposal.
+- Produrre decisioni o azioni.
+
+### Impatto Architetturale
+
+RFC-1219 rende EDI visibile come osservatore reale del Viewer a livello presentation-only.
+
+Il confine resta Viewer props -> messaggi descrittivi -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- First Real Viewer Observation e descrittiva.
+- First Real Viewer Observation non crea artifact EDI.
+- First Real Viewer Observation non chiama runtime EDI.
+- First Real Viewer Observation non attiva Memory, Understanding, Reasoning, Proposal, Validation Support o Decision Support.
+- First Real Viewer Observation non muta Product Package o Project State.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

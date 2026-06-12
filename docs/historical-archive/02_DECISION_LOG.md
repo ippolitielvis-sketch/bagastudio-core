@@ -364,3 +364,39 @@ Viewer, BagaStudio Presentation, EDI Cognitive.
 
 # Conversazioni utilizzate
 - RFC-1218 First Visible EDI Panel Foundation
+
+## Milestone - RFC-1219 First Real Observation Foundation
+
+# Contesto
+Il primo pannello EDI era visibile nel Viewer ma mostrava solo stato statico.
+
+# Problema
+Serviva rendere EDI capace di mostrare osservazioni reali derivate dal Viewer senza collegare EDI Core, runtime, artifact cognitivi o Mutation Layer.
+
+# Decisione
+Aggiornare `EdiObservationPanel` con una sezione `Osservazioni` derivata da dati presentation-safe gia disponibili nel Viewer.
+
+# Motivazione
+L'utente vede EDI reagire al contesto senza trasformare il pannello in runtime, observation flow reale o writer del Product Package.
+
+# Implementazione
+RFC-1219 aggiunge osservazioni descrittive: nessun prodotto caricato, modello rilevato, importazione completata e componenti osservabili.
+
+# Evoluzione
+La roadmap puo passare alla review del primo observation panel prima di collegare Product Package Observation Adapter o Memory.
+
+# Impatto
+EDI diventa osservatore visibile minimale, ma resta presentation-only.
+
+# Regole permanenti nate
+- First Real Viewer Observation e descrittiva.
+- First Real Viewer Observation non crea artifact EDI.
+- First Real Viewer Observation non chiama runtime EDI.
+- First Real Viewer Observation non attiva Memory, Understanding, Reasoning, Proposal, Validation Support o Decision Support.
+- First Real Viewer Observation non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, BagaStudio Presentation, EDI Observation futura.
+
+# Conversazioni utilizzate
+- RFC-1219 First Real Observation Foundation
