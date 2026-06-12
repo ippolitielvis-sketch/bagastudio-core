@@ -76,6 +76,7 @@ Covered foundation:
 - Understanding to Reasoning Boundary Review
 - EDI Reasoning Foundation Review
 - EDI Reasoning Artifact Foundation
+- EDI Reasoning Builder Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2941,6 +2942,55 @@ Il layer e pronto per una review successiva su come Proposal potra consumare art
 - Reasoning Artifact non produce Mutation, Validation Support, Optimization execution, Viewer output o UI.
 - Reasoning Artifact conserva riferimenti serializzabili agli Understanding Artifact, non storage live.
 - Reasoning Artifact non attiva Proposal automaticamente.
+
+## DL-EXEC-058 - Reasoning Builder Produces Artifacts Without Decisions
+
+### Problema
+
+Dopo aver introdotto `EdiReasoningArtifact`, serviva un modo fondazionale e controllato per costruirlo da input espliciti senza introdurre Proposal, decisioni automatiche, mutation, runtime, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiReasoningArtifactBuilder` come builder puro, stateless e deterministico.
+
+Il builder espone:
+
+- `buildReasoningArtifact`;
+- `buildReasoningArtifacts`.
+
+Entrambi delegano a `createEdiReasoningArtifact`.
+
+Il builder accetta solo input espliciti derivati da Understanding: source understanding artifacts, timestamp, alternatives, constraints, consequences, tradeoffs, assumptions, risks, rationale e metadata.
+
+### Motivazione
+
+Il builder rende stabile il passaggio Understanding to Reasoning senza introdurre evaluator, classifier, runtime o Proposal.
+
+Delegare alla factory dell'artifact evita duplicazione della logica di creazione e mantiene la traceability verso Understanding.
+
+### Alternative Scartate
+
+- Far generare Proposal al builder.
+- Far prendere decisioni automatiche al builder.
+- Inserire validazione operativa o mutation.
+- Collegare il builder a runtime, Viewer, UI, storage o retrieval.
+- Introdurre un evaluator domain-specific in questa RFC.
+
+### Impatto Architetturale
+
+RFC-1206 completa la foundation minima per creare Reasoning Artifact da input controllati.
+
+Il layer resta pronto per future review su evaluator, Proposal o Validation Support, ma non implementa nessuno di questi comportamenti.
+
+### Regole Permanenti Generate
+
+- Reasoning Builder produce solo `EdiReasoningArtifact`.
+- Reasoning Builder usa `createEdiReasoningArtifact`.
+- Reasoning Builder accetta input espliciti.
+- Reasoning Builder non genera Proposal.
+- Reasoning Builder non prende decisioni automatiche.
+- Reasoning Builder non muta Product Package o Project State.
+- Reasoning Builder non chiama runtime, Viewer, UI, storage o retrieval.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

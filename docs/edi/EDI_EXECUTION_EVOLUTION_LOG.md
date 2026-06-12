@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1205.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1206.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1205
+- RFC-1126 to RFC-1206
 
 Architecture distinction:
 
@@ -1159,6 +1159,14 @@ The foundation clarified that Reasoning Artifact is evaluation and consequence m
 
 RFC-1205 prepares future Proposal by creating a stable evaluated consequence descriptor, but it does not introduce Proposal, Validation Support, Optimization, mutation, runtime, Viewer, UI, React state, storage, retrieval, or engine integration.
 
+RFC-1206 introduced `EdiReasoningArtifactBuilder` as the pure builder for `EdiReasoningArtifact`.
+
+The builder accepts explicit Understanding-derived inputs and delegates creation to `createEdiReasoningArtifact`.
+
+It supports single and batch artifact creation through `buildReasoningArtifact` and `buildReasoningArtifacts`.
+
+RFC-1206 clarified that the builder is a foundational producer only. It does not generate Proposal, make automatic decisions, mutate Product Package or Project State, call runtime, call Viewer, call UI, access storage, or perform retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1326,6 +1334,10 @@ RFC-1205 prepares future Proposal by creating a stable evaluated consequence des
 - Reasoning Artifact is evaluation, not Proposal.
 - Reasoning Artifact references Understanding Artifacts, not live Understanding storage.
 - Reasoning Artifact does not trigger Proposal, Validation, Optimization, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Reasoning Builder produces only Reasoning Artifact.
+- Reasoning Builder delegates to createEdiReasoningArtifact.
+- Reasoning Builder accepts explicit inputs only.
+- Reasoning Builder does not generate Proposal, decisions, mutation, runtime behavior, Viewer output, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1429,7 +1441,8 @@ Implemented producer adapter foundation:
 - Understanding to Reasoning Boundary Review is documented;
 - Reasoning Foundation Review is documented;
 - Reasoning Artifact Foundation exists;
-- Reasoning Artifact Review and Proposal Foundation Planning is the next recommended review;
+- Reasoning Builder Foundation exists;
+- Reasoning Builder Review and Proposal Foundation Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1466,6 +1479,7 @@ Not implemented today:
 - EDI Understanding artifact runtime usage;
 - Reasoning foundation;
 - Reasoning artifact runtime usage;
+- Reasoning evaluator;
 - Proposal foundation;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;

@@ -120,6 +120,7 @@ This document covers:
 - RFC-1203: Understanding to Reasoning Boundary Review
 - RFC-1204: EDI Reasoning Foundation Review
 - RFC-1205: EDI Reasoning Artifact Foundation
+- RFC-1206: EDI Reasoning Builder Foundation
 
 ## Architecture Overview
 
@@ -2306,6 +2307,41 @@ The foundation intentionally does not introduce Proposal, Validation Support, Op
 
 The artifact prepares future Proposal by organizing rationale, alternatives, constraints, consequences, assumptions, tradeoffs, and risks. It does not create Proposal automatically.
 
+### EDI Reasoning Builder Foundation
+
+RFC-1206 introduces `EdiReasoningArtifactBuilder` as a pure, deterministic builder for `EdiReasoningArtifact`.
+
+The builder is a foundational producer only. It does not evaluate domain data, infer decisions, create Proposal, validate changes, mutate project state, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+Builder flow:
+
+```text
+EdiUnderstandingArtifact[]
+-> createEdiReasoningArtifactBuilder
+-> buildReasoningArtifact
+-> createEdiReasoningArtifact
+-> EdiReasoningArtifact
+```
+
+The builder accepts explicit input:
+
+- source understanding artifacts;
+- timestamp;
+- alternatives;
+- constraints;
+- consequences;
+- tradeoffs;
+- assumptions;
+- risks;
+- rationale;
+- metadata.
+
+The builder keeps traceability by passing source Understanding Artifacts into the artifact factory.
+
+It also supports `buildReasoningArtifacts` for deterministic batch creation from explicit inputs.
+
+The builder does not change the public meaning of Reasoning Artifact: it remains evaluation, not Proposal.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2569,6 +2605,9 @@ The execution foundation must not depend on:
 - Reasoning Artifact is a descriptor of evaluated consequences, not a Proposal.
 - Reasoning Artifact references Understanding Artifacts, not live understanding storage.
 - Reasoning Artifact must not trigger Proposal, Validation, Optimization, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Reasoning Builder must delegate artifact creation to `createEdiReasoningArtifact`.
+- Reasoning Builder accepts explicit inputs only.
+- Reasoning Builder must not infer Proposal, validate decisions, mutate state, call runtime, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -2651,8 +2690,10 @@ The execution foundation must not depend on:
 - Reasoning artifact shape exists as a foundation, but remains unvalidated by runtime use.
 - Reasoning could become implicit Proposal if output boundaries are not preserved.
 - Domain-specific Reasoning may pull in real engines if future adapters are not isolated.
-- Reasoning Artifact exists, but no builder, evaluator, proposal consumer, storage, retrieval, or validation policy uses it yet.
+- Reasoning Artifact exists, and a builder can create it, but no evaluator, proposal consumer, storage, retrieval, or validation policy uses it yet.
 - Reasoning Artifact metadata remains foundation-level and will need privacy/governance rules for business and personal contexts.
+- Reasoning Builder exists, but no evaluator or domain adapter feeds it yet.
+- Reasoning Builder is deterministic only if callers provide deterministic inputs.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2736,4 +2777,5 @@ The Decision Log should record:
 31. RFC-1203 - Understanding to Reasoning Boundary Review.
 32. RFC-1204 - EDI Reasoning Foundation Review.
 33. RFC-1205 - EDI Reasoning Artifact Foundation.
-34. EDI Reasoning Artifact Review and Proposal Foundation Planning.
+34. RFC-1206 - EDI Reasoning Builder Foundation.
+35. EDI Reasoning Builder Review and Proposal Foundation Planning.
