@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1196.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1197.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1196
+- RFC-1126 to RFC-1197
 
 Architecture distinction:
 
@@ -753,6 +753,7 @@ RFC:
 - RFC-1194
 - RFC-1195
 - RFC-1196
+- RFC-1197
 
 ### Context
 
@@ -1058,6 +1059,18 @@ RFC-1196 does not introduce product integration. No product workflow calls the a
 
 The adapter does not mutate Product Package, call RuntimeHost, call RuntimeLoop, call Viewer, call Factory, call UI, call React state, validate product changes, create proposals, or execute runtime.
 
+RFC-1197 reviewed the full Product Package Observation Flow before EDI Memory planning.
+
+The reviewed flow is Product Package, Product Package Observation Adapter, Product Package Observation Snapshot, and EDI Observation.
+
+The review confirmed that the flow is one-way at foundation level, read-only at data-shape level, serializable when metadata is serializable, and sufficient for Memory architecture review.
+
+RFC-1197 did not introduce Memory, Reasoning, Proposal, Viewer, UI, or runtime wiring.
+
+Known risks remain: metadata needs a serializability/allowlist policy, immutable-style data is not runtime frozen, field selection is intentionally minimal, component id mapping may need expansion, and traceability may need stronger correlation ids.
+
+The next recommended RFC is `RFC-1198 - EDI Memory Foundation Review`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1190,6 +1203,10 @@ The adapter does not mutate Product Package, call RuntimeHost, call RuntimeLoop,
 - Product Package Observation Adapter produces only ProductPackageObservationSnapshot.
 - Product Package Observation Adapter does not return mutable Product Package references.
 - Product Package Observation Adapter foundation is not product integration.
+- Product Package Observation Flow is reviewed as one-way.
+- Product Package Observation Flow is Memory-ready for review, not automatic ingestion.
+- Memory must consume observation snapshots, not live Product Package references.
+- Observation metadata requires serializability and allowlist policy before Memory ingestion.
 
 ## Current State
 
@@ -1283,6 +1300,8 @@ Implemented producer adapter foundation:
 - Product Package Observation Snapshot Foundation exists;
 - Product Package Observation Adapter Foundation exists;
 - Product Package Observation Adapter is not called by product workflows yet;
+- Product Package Observation Flow is reviewed;
+- EDI Memory Foundation Review is the next recommended RFC;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1314,6 +1333,8 @@ Not implemented today:
 - EDI observation path over Product Package;
 - EDI proposal validation path;
 - Product Package Observation Adapter product workflow integration;
+- EDI Memory foundation;
+- Product Package Observation metadata serializability policy;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

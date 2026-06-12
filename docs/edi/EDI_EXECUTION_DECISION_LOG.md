@@ -67,6 +67,7 @@ Covered foundation:
 - Product Package Observation Adapter Review
 - Product Package Observation Snapshot Foundation
 - Product Package Observation Adapter Foundation
+- Product Package Observation Flow Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2347,6 +2348,79 @@ Nessun workflow prodotto chiama ancora `createProductPackageObservationAdapterRe
 - Product Package Observation Adapter non crea proposal.
 - Product Package Observation Adapter non valida product changes.
 - Product Package Observation Adapter foundation non e product integration.
+
+## DL-EXEC-049 - Product Package Observation Flow Is Memory-Ready For Review
+
+### Problema
+
+Dopo RFC-1195 e RFC-1196, serviva verificare se il flow Product Package, Observation Adapter, Observation Snapshot, EDI Observation fosse abbastanza sicuro per pianificare Memory senza introdurre ancora Memory, Reasoning, Proposal, Viewer o UI.
+
+### Decisione
+
+Il Product Package Observation Flow e approvato come foundation one-way e read-only.
+
+Il flow resta:
+
+```text
+Product Package
+Product Package Observation Adapter
+Product Package Observation Snapshot
+EDI Observation
+```
+
+Il flow e pronto per una review Memory, non per ingestion automatica.
+
+### Motivazione
+
+L'adapter non restituisce il Product Package originale, non muta Product Package e produce solo `ProductPackageObservationSnapshot`.
+
+Lo snapshot contiene dati sufficienti per una prima pianificazione Memory:
+
+- id;
+- timestamp;
+- productPackageId;
+- productPackageVersion;
+- schema;
+- sourceFormat;
+- status;
+- dimensions;
+- footprint;
+- component ids;
+- component summaries;
+- material summaries;
+- finish summaries;
+- traceability metadata.
+
+### Rischi Documentati
+
+- `metadata` usa campi estensibili `unknown` e richiede una policy futura di serializzazione e allowlist.
+- Le array sono readonly a livello TypeScript e copiate difensivamente, ma non sono runtime frozen.
+- La selezione campi Product Package e minimale e potrebbe mancare dati utili alla Memory futura.
+- Alcuni componenti potrebbero non entrare nello snapshot se usano campi id non riconosciuti.
+- La tracciabilita e ancora foundation-level.
+
+### Alternative Scartate
+
+- Collegare subito lo snapshot a Memory.
+- Introdurre Reasoning o Proposal prima della Memory review.
+- Collegare il flow a Viewer o UI.
+- Espandere adesso l'adapter con field mapping completo.
+- Introdurre runtime freezing o validation policy senza RFC dedicata.
+
+### Impatto Architetturale
+
+La prossima RFC consigliata e `RFC-1198 - EDI Memory Foundation Review`.
+
+RFC-1198 dovra decidere come EDI Observation diventa Memory senza introdurre ingestion automatica o mutation.
+
+### Regole Permanenti Generate
+
+- Product Package Observation Flow e one-way.
+- Product Package Observation Flow e read-only a livello foundation.
+- Product Package Observation Snapshot puo alimentare Memory solo dopo RFC dedicata.
+- Metadata osservativi richiedono policy di serializzazione prima di Memory ingestion.
+- Memory non deve leggere Product Package direttamente.
+- Memory deve ricevere osservazioni/snapshot, non riferimenti Product Package live.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

@@ -111,6 +111,7 @@ This document covers:
 - RFC-1194: Product Package Observation Adapter Review
 - RFC-1195: Product Package Observation Snapshot Foundation
 - RFC-1196: Product Package Observation Adapter Foundation
+- RFC-1197: Product Package Observation Flow Review
 
 ## Architecture Overview
 
@@ -1871,6 +1872,48 @@ One-way observation rule:
 
 RFC-1196 is still foundation, not integration. It creates a safe conversion point, but no product code calls it yet.
 
+### Product Package Observation Flow Review
+
+RFC-1197 reviews the full Product Package Observation Flow before designing EDI Memory.
+
+Reviewed flow:
+
+```text
+Product Package
+-> Product Package Observation Adapter
+-> Product Package Observation Snapshot
+-> EDI Observation
+```
+
+Review outcome:
+
+- the flow is one-way at foundation level;
+- the adapter creates copied snapshot data and does not return the Product Package reference;
+- the snapshot is read-only at TypeScript/data-shape level;
+- the snapshot is serializable when callers provide serializable metadata;
+- Product Package remains protected because no mutation, validation, runtime, Viewer, Factory, UI, or proposal call exists in the flow;
+- the snapshot contains enough foundation data for initial Memory planning: identity, timestamp, schema, source format, status, dimensions, footprint, component ids, component summaries, material summaries, finish summaries, and traceability metadata.
+
+Readiness for Memory:
+
+- ready for architecture review;
+- ready for defining how observations become memory entries;
+- not ready for automatic memory ingestion;
+- not ready for long-term retention policy;
+- not ready for privacy/governance decisions over business or customer metadata.
+
+Known review risks:
+
+- metadata is typed with `unknown` extension fields and requires a future serializability/allowlist policy;
+- immutable-style arrays are compile-time readonly and defensive copied, but objects are not runtime frozen;
+- Product Package field selection is intentionally minimal and may omit future memory-relevant data;
+- component summaries may be incomplete when Product Package uses unrecognized component id fields;
+- traceability is foundation-level and may need stronger correlation ids before Memory.
+
+The next recommended RFC is `RFC-1198 - EDI Memory Foundation Review`.
+
+RFC-1197 introduces no code. It documents review status only.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2105,6 +2148,8 @@ The execution foundation must not depend on:
 - Product Package Observation Adapter is one-way: Product Package to snapshot only.
 - Product Package Observation Adapter must not return mutable Product Package references.
 - Product Package Observation Adapter must not create proposal, mutation, runtime execution, Viewer output, or Factory output.
+- Product Package Observation Flow is reviewed as one-way and read-only at foundation level.
+- Product Package Observation Snapshot may feed Memory only after a dedicated Memory RFC.
 
 ## Residual Risks
 
@@ -2163,6 +2208,10 @@ The execution foundation must not depend on:
 - Product Package Observation Snapshot exists and Product Package Observation Adapter can create it, but no product workflow calls the adapter yet.
 - Observable Product Package field allowlist needs a dedicated foundation.
 - Product/customer/business metadata selection requires future privacy and governance review.
+- Product Package Observation Flow has not been connected to Memory.
+- Product Package Observation metadata still needs serializability and allowlist rules.
+- Product Package Observation Snapshot is not runtime frozen.
+- Product Package Observation traceability is still foundation-level.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2237,4 +2286,5 @@ The Decision Log should record:
 22. RFC-1194 - Product Package Observation Adapter Review.
 23. RFC-1195 - Product Package Observation Snapshot Foundation.
 24. RFC-1196 - Product Package Observation Adapter Foundation.
-25. Product Package Observation Adapter validation and integration planning.
+25. RFC-1197 - Product Package Observation Flow Review.
+26. RFC-1198 - EDI Memory Foundation Review.
