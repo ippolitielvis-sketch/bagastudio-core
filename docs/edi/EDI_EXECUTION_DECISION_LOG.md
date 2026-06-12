@@ -78,6 +78,7 @@ Covered foundation:
 - EDI Reasoning Artifact Foundation
 - EDI Reasoning Builder Foundation
 - EDI Reasoning Traceability Foundation
+- EDI Reasoning Evaluation Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3045,6 +3046,59 @@ La foundation prepara future review su Proposal e governance, ma non introduce P
 - Reasoning Traceability non muta Product Package o Project State.
 - Reasoning Traceability non chiama runtime, Viewer, UI, storage o retrieval.
 - Reasoning Traceability resta indipendente dalla Proposal futura.
+
+## DL-EXEC-060 - Reasoning Evaluation Is Quality Data, Not Validation
+
+### Problema
+
+Dopo Reasoning Artifact, Reasoning Builder e Reasoning Traceability, serviva rappresentare la qualita di un Reasoning Artifact senza introdurre Proposal, Validation, decisioni automatiche, mutation, runtime, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiReasoningEvaluation` come contratto dati serializzabile e non esecutivo.
+
+La evaluation puo rappresentare:
+
+- confidence indicators;
+- consistency indicators;
+- coverage indicators;
+- risk indicators;
+- traceability completeness indicators;
+- evaluation metadata.
+
+La factory `createEdiReasoningEvaluation` usa timestamp esplicito e copia difensivamente indicator arrays, notes e metadata.
+
+### Motivazione
+
+Reasoning ha bisogno di segnali di qualita prima di Proposal e Validation.
+
+La evaluation deve permettere auditability e review dei reasoning artifact senza diventare validator, decision engine o source of truth.
+
+Separare evaluation da Proposal e Validation mantiene il Core Cognitive Loop incrementale.
+
+### Alternative Scartate
+
+- Inserire evaluation dentro Proposal futura.
+- Trattare evaluation come Validation.
+- Usare evaluation per prendere decisioni automatiche.
+- Collegare evaluation a runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dalla evaluation.
+
+### Impatto Architetturale
+
+RFC-1208 aggiunge il primo quality descriptor cognitivo dedicato al Reasoning layer.
+
+La foundation prepara future review su Proposal, Validation Support e governance, ma non introduce nessuno di questi layer come comportamento operativo.
+
+### Regole Permanenti Generate
+
+- Reasoning Evaluation e quality data.
+- Reasoning Evaluation non e Proposal.
+- Reasoning Evaluation non e Validation.
+- Reasoning Evaluation non produce decisioni automatiche.
+- Reasoning Evaluation non muta Product Package o Project State.
+- Reasoning Evaluation non chiama runtime, Viewer, UI, storage o retrieval.
+- Reasoning Evaluation resta indipendente da Proposal e Validation future.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

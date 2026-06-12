@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1207.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1208.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1207
+- RFC-1126 to RFC-1208
 
 Architecture distinction:
 
@@ -1175,6 +1175,14 @@ The factory `createEdiReasoningTraceability` uses explicit timestamp input and d
 
 RFC-1207 clarified that traceability is audit data, not Evaluation, not Proposal, not automatic decision-making, not mutation, not runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1208 introduced `EdiReasoningEvaluation` as the dedicated quality descriptor for Reasoning artifacts.
+
+The evaluation foundation can represent confidence indicators, consistency indicators, coverage indicators, risk indicators, traceability completeness indicators, and evaluation metadata.
+
+The factory `createEdiReasoningEvaluation` uses explicit timestamp input and defensively copies indicator arrays, notes, and metadata.
+
+RFC-1208 clarified that evaluation is quality data, not Proposal, not Validation, not automatic decision-making, not mutation, not runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1349,6 +1357,9 @@ RFC-1207 clarified that traceability is audit data, not Evaluation, not Proposal
 - Reasoning Traceability is audit data, not Evaluation.
 - Reasoning Traceability remains independent from future Proposal.
 - Reasoning Traceability does not trigger Proposal, Evaluation, Validation, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Reasoning Evaluation is quality data, not Proposal or Validation.
+- Reasoning Evaluation remains independent from future Proposal and Validation.
+- Reasoning Evaluation does not trigger decisions, Mutation, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1454,7 +1465,8 @@ Implemented producer adapter foundation:
 - Reasoning Artifact Foundation exists;
 - Reasoning Builder Foundation exists;
 - Reasoning Traceability Foundation exists;
-- Reasoning Traceability Review and Proposal Foundation Planning is the next recommended review;
+- Reasoning Evaluation Foundation exists;
+- Reasoning Evaluation Review and Proposal Foundation Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1493,6 +1505,7 @@ Not implemented today:
 - Reasoning artifact runtime usage;
 - Reasoning evaluator;
 - Reasoning traceability consumers;
+- Reasoning evaluation consumers;
 - Proposal foundation;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;
