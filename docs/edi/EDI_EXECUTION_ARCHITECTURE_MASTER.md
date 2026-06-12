@@ -103,6 +103,7 @@ This document covers:
 - RFC-1187: BagaStudio Integration Planning
 - RFC-1188: BagaStudio EDI Presentation Adapter Review
 - RFC-1189: BagaStudio Presentation Model Foundation
+- RFC-1190: BagaStudio Integration Readiness Review
 
 ## Architecture Overview
 
@@ -1398,6 +1399,58 @@ BagaStudioPresentationModel
       └─ metadata
 ```
 
+### BagaStudio Integration Readiness Review
+
+RFC-1190 reviews the state reached after the bridge:
+
+```text
+EDI Observable Stack
+↓
+EdiViewerExposure
+↓
+BagaStudioPresentationModel
+```
+
+Review outcome:
+
+- EDI Observable Stack is sufficiently stable for planning;
+- `BagaStudioPresentationModel` is a correct BagaStudio-side boundary;
+- Viewer remains separated from EDI internals;
+- RuntimeHost and RuntimeLoop remain untouched;
+- no UI, React state, Viewer wiring, dispatch, or real recognition is introduced.
+
+Readiness assessment:
+
+- EDI readiness: stable foundation for observable data and presentation planning;
+- BagaStudio readiness: ready for product-level planning, not operational product activation;
+- Viewer readiness: not ready for real Viewer wiring yet;
+- remote readiness: branch should go through a dedicated sync/push review before new operational work.
+
+Missing before real Viewer:
+
+- BagaStudio-side presentation adapter behavior;
+- Viewer-facing consumption contract;
+- UI ownership rules;
+- React state strategy, if any;
+- test/validation pattern for presentation data;
+- explicit non-runtime data flow into Viewer.
+
+Missing before operational BagaStudio return:
+
+- sync/push review;
+- remote branch verification;
+- product integration plan;
+- ownership rules for project/product state;
+- decision on whether EDI remains passive or becomes requestable by product workflows.
+
+Recommended next phase:
+
+1. Sync/push review.
+2. BagaStudio operational planning.
+3. Viewer exposure wiring only after a dedicated Viewer RFC.
+
+RFC-1190 does not introduce code. It documents readiness only.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1604,6 +1657,9 @@ The execution foundation must not depend on:
 - Memory, Reasoning, Feedback, and Planning must enter presentation through the same adapter boundary.
 - BagaStudio Presentation Model is BagaStudio-owned, not EDI runtime-owned.
 - BagaStudio Presentation Model is data, not UI or React state.
+- BagaStudio Integration Readiness is planning readiness, not product activation.
+- Sync/push review should happen before the next operational phase.
+- Viewer wiring requires a dedicated RFC after product-side planning.
 
 ## Residual Risks
 
@@ -1643,6 +1699,9 @@ The execution foundation must not depend on:
 - BagaStudio EDI Presentation Adapter is not implemented yet.
 - BagaStudio Presentation Model exists, but no Viewer consumes it yet.
 - BagaStudio Presentation Model currently exposes only the EDI recognition presentation section.
+- No BagaStudio operational plan exists yet.
+- No sync/push review has been performed after RFC-1190.
+- Viewer wiring remains explicitly out of scope.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -1709,3 +1768,5 @@ The Decision Log should record:
 14. RFC-1188 - BagaStudio EDI Presentation Adapter Review.
 15. RFC-1189 - BagaStudio EDI Presentation Model Foundation.
 16. Define BagaStudio EDI Presentation Adapter behavior before Viewer wiring.
+17. Perform sync/push review before starting the next operational phase.
+18. Plan BagaStudio operational integration before Viewer wiring.

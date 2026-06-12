@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1189.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1190.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1189
+- RFC-1126 to RFC-1190
 
 Architecture distinction:
 
@@ -745,6 +745,7 @@ RFC:
 - RFC-1187
 - RFC-1188
 - RFC-1189
+- RFC-1190
 
 ### Context
 
@@ -970,6 +971,14 @@ This model is BagaStudio-owned data. It is not Viewer UI, not React state, not r
 
 No RuntimeHost, RuntimeLoop, Executor, Consumer, PreviewExecutionAndDispatch, Viewer, UI, dispatch, or engine real integration was introduced.
 
+RFC-1190 reviewed integration readiness after the bridge from EDI Observable Stack to `EdiViewerExposure` to `BagaStudioPresentationModel`.
+
+The review confirmed that EDI Observable Stack is stable enough for planning, and that `BagaStudioPresentationModel` is a correct BagaStudio-side boundary.
+
+The review also confirmed that real Viewer wiring is not ready yet. Missing pieces include presentation adapter behavior, Viewer-facing consumption contract, UI ownership rules, React state strategy if any, and a validation pattern for presentation data.
+
+Before operational BagaStudio work, the recommended next phase is sync/push review. BagaStudio operational planning should follow that verification, and Viewer exposure wiring should remain behind a dedicated RFC.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1060,6 +1069,10 @@ No RuntimeHost, RuntimeLoop, Executor, Consumer, PreviewExecutionAndDispatch, Vi
 - BagaStudio Presentation Model does not call runtime.
 - BagaStudio Presentation Model does not know RuntimeHost or RuntimeLoop.
 - BagaStudio Presentation Model does not contain real recognition logic.
+- BagaStudio Integration Readiness is planning readiness, not product activation.
+- Sync/push review precedes the next operational phase.
+- BagaStudio operational planning precedes Viewer wiring.
+- Viewer wiring requires a dedicated RFC.
 
 ## Current State
 
@@ -1136,6 +1149,10 @@ Implemented producer adapter foundation:
 - BagaStudio Presentation Model is the next planned foundation;
 - `createBagaStudioPresentationModelFromEdiViewerExposure` exists as the BagaStudio Presentation Model foundation;
 - `BagaStudioPresentationModel` exists with an EDI presentation section;
+- BagaStudio integration readiness is reviewed;
+- EDI Observable Stack is stable enough for planning;
+- BagaStudioPresentationModel is a correct BagaStudio-side boundary;
+- sync/push review is the recommended next phase;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1159,6 +1176,9 @@ Not implemented today:
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
 - Viewer consumption of BagaStudio Presentation Model;
+- sync/push review after RFC-1190;
+- BagaStudio operational planning;
+- Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;
 - automated Observable Stack tests;
 - GitHub/local remote synchronization after this phase;

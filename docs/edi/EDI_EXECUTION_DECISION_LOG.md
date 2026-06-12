@@ -59,6 +59,7 @@ Covered foundation:
 - BagaStudio Integration Planning
 - BagaStudio EDI Presentation Adapter Review
 - BagaStudio Presentation Model Foundation
+- BagaStudio Integration Readiness Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1823,6 +1824,49 @@ Non viene introdotto wiring operativo.
 - BagaStudio Presentation Model non chiama runtime.
 - BagaStudio Presentation Model non conosce RuntimeHost o RuntimeLoop.
 - BagaStudio Presentation Model non contiene recognition reale.
+
+## DL-EXEC-041 - BagaStudio Integration Is Ready For Planning, Not Activation
+
+### Problema
+
+Dopo il ponte EDI Observable Stack, `EdiViewerExposure`, e `BagaStudioPresentationModel`, serviva stabilire se procedere direttamente verso Viewer, verso integrazione operativa BagaStudio, oppure prima consolidare lo stato locale/remoto.
+
+### Decisione
+
+La foundation e pronta per planning BagaStudio, ma non per attivazione operativa o Viewer wiring.
+
+La prossima fase consigliata e una sync/push review dedicata prima di nuovo lavoro operativo.
+
+### Motivazione
+
+Il branch contiene una lunga sequenza di foundation EDI e BagaStudio-side. Prima di introdurre nuove integrazioni operative, conviene verificare stato locale/remoto, branch, ahead, build e contenuto della PR.
+
+`BagaStudioPresentationModel` e un boundary corretto, ma manca ancora un piano operativo di prodotto e manca un contratto Viewer-facing.
+
+### Alternative Scartate
+
+- Procedere subito con Viewer wiring.
+- Procedere subito con UI.
+- Collegare BagaStudioPresentationModel a React state.
+- Collegare EDI a Project/Product state.
+- Introdurre runtime operativo prima della sync/push review.
+
+### Impatto Architetturale
+
+La roadmap viene ordinata in tre passaggi:
+
+1. sync/push review;
+2. BagaStudio operational planning;
+3. Viewer exposure wiring solo con RFC dedicata.
+
+### Regole Permanenti Generate
+
+- Readiness non significa product activation.
+- Viewer readiness non significa Viewer wiring.
+- BagaStudioPresentationModel e boundary corretto, non UI.
+- Sync/push review precede la prossima fase operativa.
+- BagaStudio operational planning precede Viewer wiring.
+- Viewer reale richiede RFC dedicata.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
