@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1181
+- RFC-1126 to RFC-1182
 
 Architecture distinction:
 
@@ -737,6 +737,7 @@ RFC:
 - RFC-1179
 - RFC-1180
 - RFC-1181
+- RFC-1182
 
 ### Context
 
@@ -880,6 +881,16 @@ The review confirmed that boundary failure does not call runtime, validation suc
 
 The post-review state is: First Observable Recognition Flow reviewed, EDI observable foundation complete enough for next planning, Viewer exposure requires a dedicated RFC, and GitHub/local remote synchronization requires a dedicated verification before push.
 
+RFC-1182 planned future Viewer exposure through an EDI View Model Snapshot.
+
+The planned path is RecognitionObservableResult, EDI View Model Snapshot, Viewer.
+
+The Viewer must not read `RecognitionObservableResult` directly, call `runRecognitionObservableFlow`, know `EdiExecutionRuntime`, RuntimeHost, or RuntimeLoop.
+
+The View Model Snapshot is planned as immutable, not live state. It must remain separate from Recognition-specific flow logic and must be extensible to recognition, memory, reasoning, feedback, and planning.
+
+The next planned RFC is `RFC-1183 - EDI View Model Snapshot Foundation`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -933,6 +944,9 @@ The post-review state is: First Observable Recognition Flow reviewed, EDI observ
 - First Observable Recognition Flow is reviewed.
 - Viewer exposure requires a dedicated RFC.
 - Push/remoto requires dedicated verification.
+- Viewer reads View Model Snapshot, not RecognitionObservableResult.
+- EDI View Model Snapshot is immutable, not live state.
+- View Model does not render UI.
 
 ## Current State
 
@@ -994,6 +1008,7 @@ Implemented producer adapter foundation:
 - `runRecognitionObservableFlow` exists as the first observable recognition flow foundation;
 - First Observable Recognition Flow is reviewed;
 - EDI observable foundation is complete enough for next planning;
+- Viewer exposure is planned through EDI View Model Snapshot;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1013,6 +1028,7 @@ Not implemented today:
 - automatic execution and dispatch orchestration;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
 - Viewer exposure;
+- EDI View Model Snapshot;
 - GitHub/local remote synchronization after this phase;
 - `runRealIntegration`.
 

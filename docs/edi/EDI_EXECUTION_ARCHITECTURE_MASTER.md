@@ -95,6 +95,7 @@ This document covers:
 - RFC-1179: EDI Recognition Observable Flow Review
 - RFC-1180: EDI First Observable Recognition Flow Foundation
 - RFC-1181: EDI Observable Recognition Flow Review
+- RFC-1182: EDI Viewer Exposure Planning Review
 
 ## Architecture Overview
 
@@ -1037,6 +1038,44 @@ Post-review state:
 - Viewer exposure requires a dedicated future RFC;
 - local/remote synchronization requires a dedicated verification before push.
 
+### Viewer Exposure Planning
+
+RFC-1182 defines the future Viewer exposure boundary without introducing Viewer code, UI, React state, or wiring.
+
+The future exposure path is:
+
+```text
+RecognitionObservableResult
+↓
+EDI View Model Snapshot
+↓
+Viewer
+```
+
+The Viewer must not read `RecognitionObservableResult` directly.
+
+The Viewer must not call `runRecognitionObservableFlow`.
+
+The Viewer must not know `EdiExecutionRuntime`, RuntimeHost, or RuntimeLoop.
+
+`EDI View Model Snapshot` is planned as an immutable snapshot, not live state.
+
+The View Model must remain separate from domain-specific flows such as Recognition.
+
+Recognition observable data may feed the View Model, but Viewer reads only the View Model.
+
+The View Model must be future-extensible to:
+
+- recognition;
+- memory;
+- reasoning;
+- feedback;
+- planning.
+
+The View Model must not own runtime logic, real recognition logic, rendering, UI behavior, dispatch, or React state.
+
+The planned next RFC is `RFC-1183 - EDI View Model Snapshot Foundation`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1224,6 +1263,8 @@ The execution foundation must not depend on:
 - Recognition Observable Flow returns observable data, not UI.
 - First Observable Recognition Flow is reviewed.
 - Viewer exposure requires a dedicated RFC.
+- Viewer must read View Model Snapshot, not RecognitionObservableResult.
+- EDI View Model Snapshot is immutable, not live state.
 
 ## Residual Risks
 
@@ -1254,6 +1295,7 @@ The execution foundation must not depend on:
 - Recognition Observable Flow fallback is controlled but minimal.
 - Recognition Observable Flow has no automated tests yet.
 - GitHub remote synchronization still requires a dedicated local/remote verification before push.
+- Viewer exposure via View Model Snapshot is planned but not implemented.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1311,3 +1353,4 @@ The Decision Log should record:
 8. Define validation for Recognition Runtime Adapter once a project test pattern exists.
 9. Define validation for Recognition Result Adapter once a project test pattern exists.
 10. Define validation for Recognition Observable Flow once a project test pattern exists.
+11. RFC-1183 - EDI View Model Snapshot Foundation.

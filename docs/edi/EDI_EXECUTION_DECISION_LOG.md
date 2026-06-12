@@ -51,6 +51,7 @@ Covered foundation:
 - Recognition Observable Flow Boundary
 - First Observable Recognition Flow Foundation
 - Observable Recognition Flow Review
+- Viewer Exposure Via View Model Snapshot
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1434,6 +1435,59 @@ Prima del push serve una verifica local/remote dedicata.
 - Viewer exposure richiede RFC dedicata.
 - Push/remoto richiede verifica dedicata.
 - Tracciabilita e fallback restano foundation-level finche non vengono ampliati da RFC dedicate.
+
+## DL-EXEC-033 - Viewer Exposure Via View Model Snapshot
+
+### Problema
+
+Dopo la review del First Observable Recognition Flow, serviva pianificare come esporre in futuro risultati EDI osservabili al Viewer senza accoppiare Viewer a RecognitionObservableResult, RecognitionObservableFlow, EdiExecutionRuntime, RuntimeHost o RuntimeLoop.
+
+### Decisione
+
+La futura esposizione Viewer dovra passare attraverso un `EDI View Model Snapshot`.
+
+Il flusso futuro sara:
+
+```text
+RecognitionObservableResult
+EDI View Model Snapshot
+Viewer
+```
+
+Il Viewer non dovra leggere direttamente `RecognitionObservableResult` e non dovra chiamare `RecognitionObservableFlow`.
+
+### Motivazione
+
+Uno snapshot immutabile e preferibile a live state in questa fase perche mantiene il confine architetturale leggibile, serializzabile e non operativo.
+
+Il View Model separa i flow specifici, come Recognition, dalla futura superficie Viewer.
+
+### Alternative Scartate
+
+- Far leggere direttamente `RecognitionObservableResult` al Viewer.
+- Far chiamare `RecognitionObservableFlow` al Viewer.
+- Introdurre React state.
+- Introdurre UI wiring.
+- Collegare Viewer a `EdiExecutionRuntime`.
+- Collegare Viewer a RuntimeHost o RuntimeLoop.
+- Trasformare il View Model in runtime vivo.
+
+### Impatto Architetturale
+
+Il View Model Snapshot diventa il confine futuro tra observable data e Viewer exposure.
+
+La prossima RFC operativa sara `RFC-1183 - EDI View Model Snapshot Foundation`.
+
+### Regole Permanenti Generate
+
+- Viewer legge View Model Snapshot, non RecognitionObservableResult.
+- Viewer non chiama RecognitionObservableFlow.
+- View Model Snapshot e immutabile, non live state.
+- View Model e separato dai flow specifici.
+- View Model non possiede runtime logic.
+- View Model non possiede real recognition logic.
+- View Model non renderizza UI.
+- View Model deve restare estendibile a recognition, memory, reasoning, feedback e planning.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
