@@ -127,6 +127,7 @@ This document covers:
 - RFC-1210: EDI Proposal Builder Foundation
 - RFC-1211: EDI Proposal Traceability Foundation
 - RFC-1212: EDI Proposal Evaluation Foundation
+- RFC-1213: EDI Validation Support Artifact Foundation
 
 ## Architecture Overview
 
@@ -2527,6 +2528,38 @@ The evaluation factory uses explicit timestamp input and defensively copies indi
 
 It exists so future Validation Support and governance review can inspect proposal quality signals without turning evaluation into authority.
 
+### EDI Validation Support Artifact Foundation
+
+RFC-1213 introduces `EdiValidationSupportArtifact` as the first data contract of the Validation Support layer.
+
+The validation support artifact is serializable, audit-oriented, domain-independent, and non-executive.
+
+Validation Support Artifact can represent:
+
+- validation context;
+- proposal references;
+- reasoning references;
+- understanding references;
+- validation considerations;
+- validation risks;
+- validation benefits;
+- validation questions;
+- metadata.
+
+Validation support creation path:
+
+```text
+explicit validation support input
+-> createEdiValidationSupportArtifact
+-> EdiValidationSupportArtifact
+```
+
+The factory uses explicit timestamp input and copies related Proposal, Reasoning, and Understanding artifacts into serializable references.
+
+`EdiValidationSupportArtifact` does not approve, reject, decide, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future human or BagaStudio-owned validation workflows can inspect support material without making EDI authoritative.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2811,6 +2844,9 @@ The execution foundation must not depend on:
 - Proposal Evaluation is quality data, not Validation Support or approval.
 - Proposal Evaluation must remain domain-independent and non-executive.
 - Proposal Evaluation must not validate, approve, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
+- Validation Support Artifact is support material, not approval, rejection, decision, or Mutation.
+- Validation Support Artifact must remain domain-independent and non-executive.
+- Validation Support Artifact must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -2909,6 +2945,8 @@ The execution foundation must not depend on:
 - Proposal Traceability schema is foundation-level and may need richer lineage categories after Validation Support planning.
 - Proposal Evaluation exists, but no validation support, mutation path, governance layer, executor, runtime, or UI consumes it yet.
 - Proposal Evaluation indicators are foundation-level and may need calibrated scales after domain-specific review.
+- Validation Support Artifact exists, but no approval workflow, rejection workflow, mutation path, executor, runtime, or UI consumes it yet.
+- Validation Support Artifact questions and considerations are foundation-level and may need domain-specific review before product workflows.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2999,4 +3037,5 @@ The Decision Log should record:
 38. RFC-1210 - EDI Proposal Builder Foundation.
 39. RFC-1211 - EDI Proposal Traceability Foundation.
 40. RFC-1212 - EDI Proposal Evaluation Foundation.
-41. EDI Proposal Evaluation Review and Validation Support Planning.
+41. RFC-1213 - EDI Validation Support Artifact Foundation.
+42. EDI Validation Support Artifact Review and Mutation Boundary Planning.

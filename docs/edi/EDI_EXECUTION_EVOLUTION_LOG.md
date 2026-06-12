@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1212.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1213.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1212
+- RFC-1126 to RFC-1213
 
 Architecture distinction:
 
@@ -1215,6 +1215,14 @@ The factory `createEdiProposalEvaluation` uses explicit timestamp input and defe
 
 RFC-1212 clarified that Proposal Evaluation is quality data, not Validation Support, not approval, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1213 introduced `EdiValidationSupportArtifact` as the first data contract of the Validation Support layer.
+
+The artifact can represent validation context, proposal references, reasoning references, understanding references, validation considerations, validation risks, validation benefits, validation questions, and metadata.
+
+The factory `createEdiValidationSupportArtifact` uses explicit timestamp input and copies Proposal, Reasoning, and Understanding artifacts into serializable references.
+
+RFC-1213 clarified that Validation Support Artifact is support material, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1407,6 +1415,10 @@ RFC-1212 clarified that Proposal Evaluation is quality data, not Validation Supp
 - Proposal Evaluation does not produce decisions.
 - Proposal Evaluation does not mutate Product Package or Project State.
 - Proposal Evaluation does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Validation Support Artifact is support material, not approval or rejection.
+- Validation Support Artifact does not produce decisions.
+- Validation Support Artifact does not mutate Product Package or Project State.
+- Validation Support Artifact does not call executor, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1517,7 +1529,8 @@ Implemented producer adapter foundation:
 - Proposal Builder Foundation exists;
 - Proposal Traceability Foundation exists;
 - Proposal Evaluation Foundation exists;
-- Proposal Evaluation Review and Validation Support Planning is the next recommended review;
+- Validation Support Artifact Foundation exists;
+- Validation Support Artifact Review and Mutation Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1561,6 +1574,8 @@ Not implemented today:
 - Proposal artifact runtime usage;
 - Proposal traceability consumers;
 - Proposal evaluation consumers;
+- Validation support approval/rejection workflow;
+- Validation support mutation boundary;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;

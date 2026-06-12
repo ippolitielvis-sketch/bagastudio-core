@@ -83,6 +83,7 @@ Covered foundation:
 - EDI Proposal Builder Foundation
 - EDI Proposal Traceability Foundation
 - EDI Proposal Evaluation Foundation
+- EDI Validation Support Artifact Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3315,6 +3316,62 @@ La foundation prepara future review su Validation Support e governance, ma non i
 - Proposal Evaluation non produce decisioni automatiche.
 - Proposal Evaluation non muta Product Package o Project State.
 - Proposal Evaluation non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+## DL-EXEC-065 - Validation Support Artifact Is Not Approval Or Rejection
+
+### Problema
+
+Dopo Proposal Artifact, Builder, Traceability ed Evaluation, serviva introdurre il primo artifact del layer Validation Support senza trasformarlo in approvazione, rifiuto, decisione automatica, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiValidationSupportArtifact` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+Il Validation Support Artifact puo rappresentare:
+
+- validation context;
+- proposal references;
+- reasoning references;
+- understanding references;
+- validation considerations;
+- validation risks;
+- validation benefits;
+- validation questions;
+- metadata.
+
+La factory `createEdiValidationSupportArtifact` usa timestamp esplicito e copia in modo serializzabile Proposal, Reasoning e Understanding references.
+
+### Motivazione
+
+Validation Support deve aiutare un futuro processo di validazione senza diventare il processo stesso.
+
+EDI puo preparare materiale consultivo, ma non deve approvare, rifiutare o mutare Product Package / Project State.
+
+Separare supporto da decisione protegge BagaStudio ownership e il futuro Mutation Layer.
+
+### Alternative Scartate
+
+- Inserire approval o rejection nell'artifact.
+- Far decidere automaticamente al Validation Support.
+- Collegare Validation Support a Mutation Layer.
+- Collegare Validation Support a executor, runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dal supporto.
+
+### Impatto Architetturale
+
+RFC-1213 apre il Validation Support layer con un artifact fondazionale.
+
+La foundation prepara future review su Mutation Boundary e validazione BagaStudio-owned, ma non introduce decisioni o mutazioni.
+
+### Regole Permanenti Generate
+
+- Validation Support Artifact e support material.
+- Validation Support Artifact non e approval.
+- Validation Support Artifact non e rejection.
+- Validation Support Artifact non produce decisioni automatiche.
+- Validation Support Artifact non e Mutation.
+- Validation Support Artifact non muta Product Package o Project State.
+- Validation Support Artifact non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
