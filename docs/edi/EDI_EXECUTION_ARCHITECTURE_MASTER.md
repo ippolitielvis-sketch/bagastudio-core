@@ -118,6 +118,7 @@ This document covers:
 - RFC-1201: EDI Understanding Foundation Review
 - RFC-1202: EDI Understanding Artifact Foundation
 - RFC-1203: Understanding to Reasoning Boundary Review
+- RFC-1204: EDI Reasoning Foundation Review
 
 ## Architecture Overview
 
@@ -2212,6 +2213,61 @@ Reasoning output is not defined in RFC-1203. It is expected to prepare future Pr
 
 The next recommended RFC is `RFC-1204 - EDI Reasoning Foundation Review`.
 
+### EDI Reasoning Foundation Review
+
+RFC-1204 defines the philosophy and role of Reasoning in the Core Cognitive Loop before introducing any Reasoning artifact, Proposal, Optimization, runtime, UI, Viewer, storage, or operational behavior.
+
+Reasoning means that EDI can evaluate the consequences of interpreted meaning.
+
+Conceptual distinction:
+
+- Understanding: EDI knows what something means.
+- Reasoning: EDI evaluates what follows from that meaning.
+
+Reasoning works over:
+
+- classifications;
+- relations;
+- context;
+- constraints;
+- alternatives;
+- consequences;
+- tradeoffs;
+- uncertainty and missing assumptions.
+
+Reasoning may produce future outputs such as:
+
+- evaluated alternatives;
+- consequences;
+- constraints discovered during evaluation;
+- risks;
+- assumptions;
+- rationale;
+- readiness signals for Proposal.
+
+Reasoning does not produce:
+
+- Proposal artifacts;
+- mutations;
+- validation decisions;
+- runtime execution;
+- UI output;
+- Source of Truth updates;
+- optimization execution.
+
+Reasoning scope across domains:
+
+- Product Package: evaluate consequences of product structure, missing relations, conflicts, or possible configurations.
+- DXF/DWG: evaluate layout constraints, openings, dimensions, obstacles, and implications for design.
+- Hardware: evaluate compatibility, constraints, and installation consequences.
+- Estimates: evaluate pricing assumptions, missing cost context, and commercial tradeoffs.
+- Production: evaluate materials, process constraints, waste risks, nesting implications, and manufacturing consequences.
+- Business Intelligence: evaluate patterns, risks, opportunities, and decision support signals without becoming Source of Truth.
+
+Reasoning prepares Proposal by organizing alternatives, rationale, constraints, and consequences. It does not create Proposal until a dedicated Proposal RFC defines the contract.
+
+The next recommended RFC is `RFC-1205 - EDI Reasoning Artifact Foundation`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2468,6 +2524,10 @@ The execution foundation must not depend on:
 - Understanding owns interpreted meaning; Reasoning owns evaluation over that meaning.
 - Reasoning must not be introduced inside Understanding Artifact.
 - Reasoning may prepare Proposal only after dedicated Reasoning and Proposal RFCs.
+- Reasoning evaluates consequences, alternatives, constraints, and tradeoffs.
+- Reasoning is not Proposal, Validation, Optimization execution, runtime, Viewer, or UI.
+- Reasoning must remain domain-independent at foundation level.
+- Reasoning must not mutate Product Package, Project State, Presentation Model, Viewer, Factory, or runtime.
 
 ## Residual Risks
 
@@ -2547,6 +2607,9 @@ The execution foundation must not depend on:
 - Understanding to Reasoning transition is documented but has no contract yet.
 - Reasoning output shape is not defined yet.
 - Proposal readiness is architecture-only and requires Reasoning first.
+- Reasoning artifact shape is not defined yet.
+- Reasoning could become implicit Proposal if output boundaries are not preserved.
+- Domain-specific Reasoning may pull in real engines if future adapters are not isolated.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2629,3 +2692,4 @@ The Decision Log should record:
 30. RFC-1202 - EDI Understanding Artifact Foundation.
 31. RFC-1203 - Understanding to Reasoning Boundary Review.
 32. RFC-1204 - EDI Reasoning Foundation Review.
+33. RFC-1205 - EDI Reasoning Artifact Foundation.

@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1203.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1204.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1203
+- RFC-1126 to RFC-1204
 
 Architecture distinction:
 
@@ -1137,6 +1137,20 @@ RFC-1203 confirmed readiness for `RFC-1204 - EDI Reasoning Foundation Review`.
 
 It did not introduce Reasoning Foundation, Proposal, runtime, Viewer, UI, storage, retrieval, or engine integration.
 
+RFC-1204 defined the philosophy and role of Reasoning in the Core Cognitive Loop.
+
+The review clarified that Understanding means EDI knows what something means, while Reasoning means EDI evaluates what follows from that meaning.
+
+Reasoning works over classifications, relations, context, constraints, alternatives, consequences, tradeoffs, uncertainty, and missing assumptions.
+
+The review documented Reasoning scope for Product Package, DXF/DWG, hardware, estimates, production, and Business Intelligence.
+
+Reasoning prepares future Proposal by organizing alternatives, rationale, constraints, risks, assumptions, and consequences. It does not create Proposal and does not mutate Product Package, Project State, Viewer, Factory, runtime, or any Source of Truth.
+
+RFC-1204 confirmed readiness for `RFC-1205 - EDI Reasoning Artifact Foundation`.
+
+It did not introduce Reasoning artifact, Proposal, Optimization, runtime, Viewer, UI, storage, retrieval, or engine integration.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1298,6 +1312,9 @@ It did not introduce Reasoning Foundation, Proposal, runtime, Viewer, UI, storag
 - Reasoning owns evaluation over understood meaning.
 - Reasoning must not be embedded in Understanding Artifact.
 - Reasoning may prepare Proposal only after dedicated Reasoning and Proposal RFCs.
+- Reasoning evaluates consequences, alternatives, constraints, tradeoffs, and assumptions.
+- Reasoning is not Proposal, Validation Layer, Optimization execution, runtime, Viewer, or UI.
+- Reasoning does not mutate Product Package, Project State, Viewer, Factory, runtime, or Source of Truth.
 
 ## Current State
 
@@ -1399,7 +1416,8 @@ Implemented producer adapter foundation:
 - Understanding Foundation Review is documented;
 - Understanding Artifact Foundation exists;
 - Understanding to Reasoning Boundary Review is documented;
-- Reasoning Foundation Review is the next recommended RFC;
+- Reasoning Foundation Review is documented;
+- Reasoning Artifact Foundation is the next recommended RFC;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1437,6 +1455,7 @@ Not implemented today:
 - Reasoning foundation;
 - Reasoning output contract;
 - Proposal foundation;
+- Optimization foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;
 - alignment between EdiMemoryEntry descriptor and older cognitive memory contracts;

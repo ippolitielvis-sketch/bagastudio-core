@@ -74,6 +74,7 @@ Covered foundation:
 - EDI Understanding Foundation Review
 - EDI Understanding Artifact Foundation
 - Understanding to Reasoning Boundary Review
+- EDI Reasoning Foundation Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2822,6 +2823,63 @@ La prossima RFC consigliata e `RFC-1204 - EDI Reasoning Foundation Review`.
 - Understanding Artifact non contiene Reasoning.
 - Reasoning non produce Proposal senza una RFC Proposal dedicata.
 - Reasoning non deve introdurre runtime, Viewer, UI o engine reali in questa fase.
+
+## DL-EXEC-056 - Reasoning Evaluates Consequences Before Proposal
+
+### Problema
+
+Dopo aver definito il confine Understanding to Reasoning, serviva stabilire che cosa significhi Reasoning per EDI prima di introdurre artifact, Proposal, Optimization, runtime, UI o engine reali.
+
+Il rischio era trattare Reasoning come Proposal implicita, Validation decision, Optimization operativa o mutazione.
+
+### Decisione
+
+Definire Reasoning come il layer in cui EDI valuta conseguenze, vincoli, alternative, tradeoff e assunzioni a partire da Understanding.
+
+Sintesi concettuale:
+
+```text
+Understanding = so cosa significa
+Reasoning = so quali conseguenze ha
+```
+
+Reasoning lavora su classificazioni, relazioni, contesto, vincoli, alternative e conseguenze.
+
+Reasoning puo preparare Proposal organizzando rationale, rischi, assunzioni, vincoli e alternative, ma non produce Proposal finche non esiste una RFC Proposal dedicata.
+
+### Motivazione
+
+Reasoning e il ponte tra significato interpretato e proposta futura.
+
+Deve poter supportare Product Package, DXF/DWG, ferramenta, preventivi, produzione e Business Intelligence senza diventare engine reale, Source of Truth o runtime operativo.
+
+Separare Reasoning da Proposal mantiene BagaStudio Validation Layer e Mutation Layer protetti.
+
+### Alternative Scartate
+
+- Far produrre Proposal direttamente a Reasoning.
+- Trattare Reasoning come Validation Layer.
+- Trattare Reasoning come Optimization execution.
+- Collegare Reasoning a runtime, Viewer, UI o engine reali.
+- Rendere Reasoning domain-specific e accoppiato a Product Package, Factory, Pricing o DXF/DWG engine.
+
+### Impatto Architetturale
+
+RFC-1204 posiziona Reasoning dopo Understanding e prima di Proposal.
+
+Il prossimo passo e introdurre un artifact dati per Reasoning senza Proposal, Optimization, runtime o UI.
+
+La prossima RFC consigliata e `RFC-1205 - EDI Reasoning Artifact Foundation`.
+
+### Regole Permanenti Generate
+
+- Reasoning valuta conseguenze, alternative, vincoli, tradeoff e assunzioni.
+- Reasoning non e Understanding.
+- Reasoning non e Proposal.
+- Reasoning non e Validation Layer.
+- Reasoning non e Optimization execution.
+- Reasoning non muta Product Package, Project State, Viewer, Factory o runtime.
+- Reasoning prepara Proposal solo come readiness architetturale.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
