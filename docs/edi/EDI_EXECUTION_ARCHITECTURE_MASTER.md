@@ -87,6 +87,7 @@ This document covers:
 - RFC-1171: EDI First Real Producer Adapter Review
 - RFC-1172: EDI Recognition Producer Adapter Foundation
 - RFC-1173: EDI Recognition Producer Boundary Pipeline Review
+- RFC-1174: EDI Recognition Producer Pipeline Validation Review
 
 ## Architecture Overview
 
@@ -822,6 +823,28 @@ The result is a boundary pipeline result, not an `EdiExecutionResult`.
 
 It does not call runtime, dispatcher, executor, consumer, recognition runtime, geometry recognition, scene recognition, cognitive reasoning, real engines, or `runRealIntegration`.
 
+### Recognition Producer Pipeline Validation
+
+RFC-1174 validates the recognition producer pre-runtime path as documentation-backed foundation validation.
+
+No project test framework is introduced because the repository does not currently expose a dedicated test script or established TS test pattern for this layer.
+
+The official validation checklist is:
+
+- minimal recognition input can be accepted by `createRecognitionProducerAdapterOutput`;
+- adapter output is created as `EdiProducerAdapterOutput`;
+- `createRecognitionProducerBoundaryPipelineResult` creates the pipeline result;
+- boundary validation succeeds for the minimal foundation output;
+- request is present when validation succeeds;
+- result type remains `EdiProducerAdapterBoundaryPipelineResult`;
+- no `EdiExecutionResult` is produced;
+- runtime is not called;
+- dispatch is not called;
+- executor and consumer are not called;
+- no real recognition, geometry recognition, scene recognition, or cognitive reasoning is introduced.
+
+A boundary-valid request means the request can cross the Integration Boundary. It does not mean execution occurred.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -993,6 +1016,7 @@ The execution foundation must not depend on:
 - Producer Adapter Boundary Pipeline does not execute or dispatch.
 - Recognition Producer Boundary Pipeline is Pre-Runtime.
 - Recognition Producer Boundary Pipeline returns boundary validation, not execution result.
+- Recognition Producer Pipeline Validation is documentation-backed until a project test pattern exists.
 
 ## Residual Risks
 
@@ -1015,6 +1039,7 @@ The execution foundation must not depend on:
 - Producer adapter boundary pipeline exists, but no real producer or runtime calls it yet.
 - Recognition Producer Adapter Foundation exists, but recognition real integration is not implemented.
 - Recognition Producer Boundary Pipeline exists, but it remains pre-runtime and does not dispatch or execute.
+- Recognition Producer Pipeline Validation is documented, but no automated test framework has been introduced for it.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

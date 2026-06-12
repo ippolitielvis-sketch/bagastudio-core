@@ -43,6 +43,7 @@ Covered foundation:
 - First Real Producer Adapter Candidate
 - Recognition Producer Adapter Foundation
 - Recognition Producer Boundary Pipeline
+- Recognition Producer Pipeline Validation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1106,3 +1107,45 @@ RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch resta
 - Recognition Producer Boundary Pipeline non chiama dispatcher.
 - Recognition Producer Boundary Pipeline non chiama executor o consumer.
 - Recognition Producer Boundary Pipeline non introduce recognition reale.
+
+## DL-EXEC-025 - Recognition Producer Pipeline Validation
+
+### Problema
+
+Dopo l'introduzione di `RecognitionProducerAdapter` e `RecognitionProducerBoundaryPipeline`, serviva validare il flusso pre-runtime senza introdurre runtime integration, dispatch o recognition reale.
+
+### Decisione
+
+Documentare una validation checklist ufficiale per il flusso Recognition Producer pre-runtime.
+
+Non viene introdotto un nuovo framework di test perche il progetto non espone oggi uno script test dedicato o un pattern TS test consolidato per questo layer.
+
+### Motivazione
+
+La validazione deve restare compatibile con l'architettura corrente e non deve creare infrastruttura trasversale non richiesta.
+
+La build TypeScript resta la validazione tecnica disponibile e la checklist documentale blocca semanticamente il perimetro.
+
+### Alternative Scartate
+
+- Introdurre un framework di test nuovo.
+- Creare uno script di validation custom non consolidato.
+- Chiamare runtime execution.
+- Chiamare dispatcher, executor o consumer.
+- Produrre `EdiExecutionResult` dalla pipeline recognition.
+- Introdurre recognition runtime reale.
+
+### Impatto Architetturale
+
+Il flusso Recognition Producer e validato come pre-runtime foundation path.
+
+Il boundary-valid request resta distinto da execution.
+
+### Regole Permanenti Generate
+
+- Recognition Producer Pipeline Validation non introduce framework test nuovo.
+- Recognition Producer Pipeline Validation resta pre-runtime.
+- Boundary-valid request non equivale a execution.
+- Recognition Producer Pipeline Validation non produce execution result.
+- Recognition Producer Pipeline Validation non chiama runtime o dispatch.
+- Recognition Producer Pipeline Validation non introduce recognition reale.

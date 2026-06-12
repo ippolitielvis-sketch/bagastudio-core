@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1173
+- RFC-1126 to RFC-1174
 
 Architecture distinction:
 
@@ -729,6 +729,7 @@ RFC:
 - RFC-1171
 - RFC-1172
 - RFC-1173
+- RFC-1174
 
 ### Context
 
@@ -818,6 +819,12 @@ It returns the existing boundary pipeline result, not an execution result.
 
 It does not call runtime, dispatch, executor, consumer, recognition runtime, geometry recognition, scene recognition, cognitive reasoning, or real engines.
 
+RFC-1174 validated the Recognition Producer pre-runtime flow.
+
+The repository does not currently expose a dedicated test script or established TS test pattern for this layer, so no new test framework was introduced.
+
+The validation is recorded as an official checklist: minimal recognition input, adapter output, boundary pipeline result, successful boundary validation, request presence on success, no execution result, no runtime call, no dispatch, and no real recognition.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -851,6 +858,8 @@ It does not call runtime, dispatch, executor, consumer, recognition runtime, geo
 - Recognition Producer Adapter does not execute or dispatch.
 - Recognition Producer Boundary Pipeline is pre-runtime.
 - Recognition Producer Boundary Pipeline returns boundary validation, not execution result.
+- Recognition Producer Pipeline Validation is documentation-backed until a project test pattern exists.
+- Boundary-valid request is not execution.
 
 ## Current State
 
@@ -906,6 +915,7 @@ Implemented producer adapter foundation:
 - no concrete real producer exists;
 - `recognitionProducerAdapter` exists as foundation output producer;
 - `createRecognitionProducerBoundaryPipelineResult` exists as pre-runtime boundary pipeline helper;
+- Recognition Producer Pipeline Validation is documented as a checklist;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
