@@ -85,6 +85,7 @@ This document covers:
 - RFC-1169: EDI Producer Adapter Request Factory Foundation
 - RFC-1170: EDI Producer Adapter Boundary Pipeline Review
 - RFC-1171: EDI First Real Producer Adapter Review
+- RFC-1172: EDI Recognition Producer Adapter Foundation
 
 ## Architecture Overview
 
@@ -777,6 +778,30 @@ Viewer is deferred because it risks pulling UI state integration and product run
 
 The planned Recognition producer must remain a foundation adapter. It must produce `EdiProducerAdapterOutput` compatible with the pre-runtime pipeline, but it must not execute runtime, dispatch results, analyze real geometry, call real Recognition runtime, or introduce complete real recognition integration.
 
+### RecognitionProducerAdapter
+
+`RecognitionProducerAdapter` is the first concrete producer adapter foundation.
+
+It exports:
+
+- `RECOGNITION_PRODUCER_ADAPTER_ID`;
+- `RecognitionProducerAdapterPayload`;
+- `RecognitionProducerAdapterInput`;
+- `createRecognitionProducerAdapterOutput`;
+- `recognitionProducerAdapter`.
+
+The adapter produces `EdiProducerAdapterOutput` with:
+
+- source: `recognition-integration`;
+- target domain: `recognition`;
+- default mode: `preview`;
+- minimal descriptive payload;
+- metadata identifying the foundation adapter.
+
+It does not call recognition runtime, geometry recognition, scene recognition, cognitive reasoning, runtime execution, dispatcher, executor, consumer, or `runRealIntegration`.
+
+The output remains compatible with the pre-runtime producer adapter boundary pipeline.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -966,7 +991,7 @@ The execution foundation must not depend on:
 - Producer adapter to boundary contract is documented, but no producer is wired operationally.
 - Producer adapter request factory exists, but no real producer calls it yet.
 - Producer adapter boundary pipeline exists, but no real producer or runtime calls it yet.
-- Recognition Producer Adapter Foundation is the planned next producer step, but it is not implemented yet.
+- Recognition Producer Adapter Foundation exists, but recognition real integration is not implemented.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

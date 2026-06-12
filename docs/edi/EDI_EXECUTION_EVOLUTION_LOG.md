@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1171
+- RFC-1126 to RFC-1172
 
 Architecture distinction:
 
@@ -727,6 +727,7 @@ RFC:
 - RFC-1169
 - RFC-1170
 - RFC-1171
+- RFC-1172
 
 ### Context
 
@@ -802,6 +803,12 @@ The next producer candidate is Recognition Producer Adapter Foundation. It is pr
 
 Import and Viewer producers are deferred because they risk pulling parsing, geometry, scene graph, model normalization, UI state integration, or product runtime ownership too early.
 
+RFC-1172 introduced the Recognition Producer Adapter Foundation.
+
+`recognitionProducerAdapter` is the first concrete producer adapter foundation. It produces `EdiProducerAdapterOutput` for the recognition domain and remains compatible with the pre-runtime pipeline.
+
+It does not call recognition runtime, analyze geometry, inspect scenes, trigger cognitive reasoning, execute runtime, dispatch results, or call real engines.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -830,6 +837,9 @@ Import and Viewer producers are deferred because they risk pulling parsing, geom
 - First concrete producer candidate is Recognition.
 - Recognition Producer must remain foundation-only.
 - Import and Viewer producers remain deferred.
+- Recognition Producer Adapter Foundation exists.
+- Recognition Producer Adapter is not real recognition.
+- Recognition Producer Adapter does not execute or dispatch.
 
 ## Current State
 
@@ -883,7 +893,7 @@ Implemented producer adapter foundation:
 - `createEdiExecutionRequestFromProducerAdapterOutput` converts adapter output into `EdiExecutionRequest`;
 - `createEdiProducerAdapterBoundaryPipelineResult` converts adapter output into boundary validation result;
 - no concrete real producer exists;
-- Recognition Producer Adapter Foundation is planned as RFC-1172;
+- `recognitionProducerAdapter` exists as foundation output producer;
 - no producer is wired to Integration Boundary;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 

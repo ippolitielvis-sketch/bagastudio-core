@@ -41,6 +41,7 @@ Covered foundation:
 - Producer Adapter Request Factory
 - Producer Adapter Boundary Pipeline
 - First Real Producer Adapter Candidate
+- Recognition Producer Adapter Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1011,3 +1012,52 @@ Nessun producer reale viene introdotto in questa RFC.
 - Import Producer resta rinviato.
 - Viewer Producer resta rinviato.
 - Producer RFC non modifica RuntimeHost o RuntimeLoop.
+
+## DL-EXEC-023 — Recognition Producer Adapter Foundation
+
+### Problema
+
+Dopo aver scelto Recognition come primo producer candidate, serviva introdurre una foundation concreta senza trasformarla in recognition runtime reale.
+
+### Decisione
+
+Introdurre `RecognitionProducerAdapter` come adapter foundation.
+
+L'adapter produce `EdiProducerAdapterOutput` con:
+
+- source `recognition-integration`;
+- target domain `recognition`;
+- mode coerente, con default `preview`;
+- payload minimale;
+- metadata descrittivi.
+
+### Motivazione
+
+Recognition e il dominio piu vicino alla semantica cognitiva EDI e puo validare la forma producer adapter senza introdurre parsing, Viewer state, geometria o scene graph.
+
+### Alternative Scartate
+
+- Introdurre recognition runtime reale.
+- Analizzare geometria reale.
+- Analizzare scene reali.
+- Collegare cognitive reasoning reale.
+- Chiamare runtime execution.
+- Chiamare dispatcher.
+- Chiamare executor o consumer.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+EDI ottiene il primo producer adapter foundation concreto, ma nessuna real integration.
+
+RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch restano invariati.
+
+### Regole Permanenti Generate
+
+- Recognition Producer Adapter e foundation.
+- Recognition Producer Adapter non e real recognition.
+- Recognition Producer Adapter produce solo `EdiProducerAdapterOutput`.
+- Recognition Producer Adapter non esegue runtime.
+- Recognition Producer Adapter non chiama dispatcher.
+- Recognition Producer Adapter non analizza geometria reale.
+- Recognition Producer Adapter non modifica RuntimeHost o RuntimeLoop.
