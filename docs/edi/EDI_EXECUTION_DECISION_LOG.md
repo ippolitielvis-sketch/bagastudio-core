@@ -45,6 +45,7 @@ Covered foundation:
 - Recognition Producer Boundary Pipeline
 - Recognition Producer Pipeline Validation
 - Recognition Producer Runtime Wiring Boundary
+- Recognition Runtime Adapter Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1196,3 +1197,48 @@ RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch resta
 - Recognition Runtime Adapter non chiamera RuntimeHost o RuntimeLoop.
 - Recognition Runtime Adapter non introdurra recognition reale.
 - RFC-1176 dovra creare solo la foundation del Recognition Runtime Adapter.
+
+## DL-EXEC-027 - Recognition Runtime Adapter Foundation
+
+### Problema
+
+Serviva introdurre il primo layer operativo minimale capace di ricevere una `EdiExecutionRequest` gia validata dalla boundary e passarla al runtime di execution esistente, senza creare dispatch o recognition reale.
+
+### Decisione
+
+Introdurre `RecognitionRuntimeAdapter` come foundation minimale.
+
+L'adapter esporta `runRecognitionRuntimeAdapter`, riceve `EdiExecutionRequest` e `EdiExecutionRuntime` tramite dependency injection esplicita, chiama `executionRuntime.runExecution({ request })` e restituisce `EdiExecutionResult`.
+
+### Motivazione
+
+La dependency injection evita istanze globali e mantiene separato il runtime adapter da RuntimeHost, RuntimeLoop, PreviewExecutionAndDispatch, Consumer e Dispatcher.
+
+La funzione resta un passaggio controllato tra boundary-valid request e runtime di execution.
+
+### Alternative Scartate
+
+- Creare o importare un runtime globale.
+- Chiamare RuntimeHost o RuntimeLoop.
+- Chiamare PreviewExecutionAndDispatch.
+- Fare dispatch del result.
+- Chiamare Consumer.
+- Introdurre recognition runtime reale.
+- Analizzare geometria o scene.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+Recognition ottiene il primo runtime adapter foundation, ma non una real integration.
+
+Il confine tra Producer Adapter, Boundary Pipeline, Runtime Adapter, Execution Runtime e Dispatch resta separato.
+
+### Regole Permanenti Generate
+
+- Recognition Runtime Adapter riceve request gia boundary-valid.
+- Recognition Runtime Adapter usa `EdiExecutionRuntime` iniettato.
+- Recognition Runtime Adapter restituisce `EdiExecutionResult`.
+- Recognition Runtime Adapter non fa dispatch.
+- Recognition Runtime Adapter non chiama Consumer.
+- Recognition Runtime Adapter non chiama RuntimeHost o RuntimeLoop.
+- Recognition Runtime Adapter non introduce recognition reale.

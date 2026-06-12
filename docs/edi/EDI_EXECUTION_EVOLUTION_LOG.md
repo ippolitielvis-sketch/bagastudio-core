@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1175
+- RFC-1126 to RFC-1176
 
 Architecture distinction:
 
@@ -731,6 +731,7 @@ RFC:
 - RFC-1173
 - RFC-1174
 - RFC-1175
+- RFC-1176
 
 ### Context
 
@@ -832,6 +833,12 @@ The Recognition Producer must not call runtime directly. A future `Recognition R
 
 The future adapter must not dispatch, call RuntimeHost, call RuntimeLoop, own real recognition logic, analyze geometry, manipulate scene graph, or introduce `runRealIntegration`.
 
+RFC-1176 introduced the Recognition Runtime Adapter Foundation.
+
+`runRecognitionRuntimeAdapter` receives a boundary-valid `EdiExecutionRequest` and an injected `EdiExecutionRuntime`, calls `executionRuntime.runExecution({ request })`, and returns `EdiExecutionResult`.
+
+It does not dispatch, call Consumer, call RuntimeHost, call RuntimeLoop, analyze geometry, inspect scenes, perform real recognition, or introduce `runRealIntegration`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -870,6 +877,9 @@ The future adapter must not dispatch, call RuntimeHost, call RuntimeLoop, own re
 - Recognition Producer does not call runtime directly.
 - Recognition Runtime Adapter is the future runtime entry point.
 - Recognition Runtime Adapter must not dispatch.
+- Recognition Runtime Adapter receives boundary-valid requests only.
+- Recognition Runtime Adapter uses injected EdiExecutionRuntime.
+- Recognition Runtime Adapter returns EdiExecutionResult.
 
 ## Current State
 
@@ -926,7 +936,7 @@ Implemented producer adapter foundation:
 - `recognitionProducerAdapter` exists as foundation output producer;
 - `createRecognitionProducerBoundaryPipelineResult` exists as pre-runtime boundary pipeline helper;
 - Recognition Producer Pipeline Validation is documented as a checklist;
-- Recognition Runtime Adapter is planned as the next foundation and is not implemented yet;
+- `runRecognitionRuntimeAdapter` exists as the Recognition Runtime Adapter foundation;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -945,7 +955,6 @@ Not implemented today:
 - runtime result integration;
 - automatic execution and dispatch orchestration;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
-- Recognition Runtime Adapter;
 - `runRealIntegration`.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.
