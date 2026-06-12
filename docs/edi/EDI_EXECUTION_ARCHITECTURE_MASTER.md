@@ -134,6 +134,7 @@ This document covers:
 - RFC-1217: EDI Decision Support Artifact Foundation
 - RFC-1218: First Visible EDI Panel Foundation
 - RFC-1219: First Real Observation Foundation
+- RFC-1220: First Real Understanding Foundation
 
 ## Architecture Overview
 
@@ -3180,6 +3181,32 @@ Viewer presentation-safe props
 -> EdiObservationPanel
 ```
 
+## First Real Understanding Foundation
+
+RFC-1220 upgrades the visible EDI panel from observation-only presentation to first deterministic Viewer understanding.
+
+This understanding remains presentation-only. `EdiObservationPanel` derives read-only explanatory messages from props already supplied by `Viewer3D`.
+
+Implemented understanding messages:
+
+- project composed of `X` elements;
+- no configured element;
+- STL object detected when the imported model name has `.stl` extension;
+- imported model detected;
+- detected model name.
+
+This is not EDI Core Understanding. It does not create `EdiUnderstandingArtifact`, does not create Memory, Reasoning, Proposal, Validation Support, Decision Support, or any EDI artifact, does not call EDI runtime, does not call LLM or AI services, does not write Product Package, and does not write Project State.
+
+Permanent boundary:
+
+```text
+Viewer presentation-safe props
+-> local deterministic understanding messages
+-> EdiObservationPanel
+```
+
+The Viewer-facing understanding is deterministic, explainable, read-only, and presentation-safe. It exists to make EDI visibly interpret already available Viewer context without becoming runtime integration.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3271,4 +3298,5 @@ The Decision Log should record:
 45. RFC-1217 - EDI Decision Support Artifact Foundation.
 46. RFC-1218 - First Visible EDI Panel Foundation.
 47. RFC-1219 - First Real Observation Foundation.
-48. EDI Decision Support Artifact Review and Decision Boundary Planning.
+48. RFC-1220 - First Real Understanding Foundation.
+49. EDI Decision Support Artifact Review and Decision Boundary Planning.

@@ -273,3 +273,20 @@ Le osservazioni Viewer devono restare descrittive e non devono creare artifact E
 
 # Prossimo passo consigliato
 First Real Observation Panel Review before Product Package Observation Adapter wiring.
+
+## Roadmap - First Real Understanding Foundation
+
+# Contesto
+EDI e visibile nel Viewer e mostra osservazioni descrittive da dati Viewer presentation-safe.
+
+# Stato raggiunto
+RFC-1220 introduce una sezione `COMPRENSIONE` nel pannello EDI con interpretazioni deterministiche del contesto Viewer.
+
+# Sequenza
+First Visible EDI Panel -> First Real Observation -> First Real Understanding.
+
+# Regola roadmap
+La comprensione Viewer deve restare presentation-level: niente `EdiUnderstandingArtifact`, niente runtime, niente LLM/AI, niente Memory, Reasoning, Proposal, Validation o mutation.
+
+# Prossimo passo consigliato
+First Real Understanding Panel Review before EDI Core backed Understanding or Product Package Observation Flow wiring.

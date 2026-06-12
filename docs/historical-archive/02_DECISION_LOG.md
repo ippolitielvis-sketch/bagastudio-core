@@ -400,3 +400,40 @@ Viewer, BagaStudio Presentation, EDI Observation futura.
 
 # Conversazioni utilizzate
 - RFC-1219 First Real Observation Foundation
+
+## Milestone - RFC-1220 First Real Understanding Foundation
+
+# Contesto
+Il pannello EDI mostrava osservazioni reali derivate dal Viewer, ma non ancora una comprensione semplice e visibile del contesto.
+
+# Problema
+Serviva mostrare una prima interpretazione deterministica del Viewer senza collegare EDI Core, runtime, Understanding Artifact, Memory, Reasoning, Proposal, Validation o Mutation Layer.
+
+# Decisione
+Aggiornare `EdiObservationPanel` con una sezione `COMPRENSIONE` derivata solo da dati Viewer presentation-safe gia disponibili.
+
+# Motivazione
+La comprensione visibile rende EDI piu utile per l'utente, ma resta read-only, spiegabile e non operativa.
+
+# Implementazione
+RFC-1220 aggiunge comprensioni deterministiche: progetto composto da X elementi, nessun elemento configurato, oggetto STL rilevato, modello importato rilevato e nome rilevato.
+
+# Evoluzione
+La roadmap puo distinguere la comprensione presentation-level dal futuro `EdiUnderstandingArtifact` collegato al Core Cognitive Loop.
+
+# Impatto
+EDI interpreta il contesto Viewer in modo minimale, ma non diventa runtime, AI, decision maker o mutatore del Product Package.
+
+# Regole permanenti nate
+- First Real Viewer Understanding e presentation-level.
+- First Real Viewer Understanding non crea artifact EDI.
+- First Real Viewer Understanding non chiama runtime EDI.
+- First Real Viewer Understanding non usa LLM o AI.
+- First Real Viewer Understanding non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support o Decision Support.
+- First Real Viewer Understanding non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, BagaStudio Presentation, EDI Understanding futura.
+
+# Conversazioni utilizzate
+- RFC-1220 First Real Understanding Foundation

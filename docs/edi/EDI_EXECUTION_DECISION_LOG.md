@@ -3695,6 +3695,52 @@ Il confine resta Viewer props -> messaggi descrittivi -> pannello read-only.
 - First Real Viewer Observation non attiva Memory, Understanding, Reasoning, Proposal, Validation Support o Decision Support.
 - First Real Viewer Observation non muta Product Package o Project State.
 
+## DL-EXEC-072 - First Real Viewer Understanding Is Presentation-Level
+
+### Problema
+
+Dopo le prime osservazioni reali, EDI poteva descrivere dati Viewer ma non ancora mostrare una comprensione semplice del contesto visibile.
+
+### Decisione
+
+Aggiornare `EdiObservationPanel` con una sezione `COMPRENSIONE` calcolata esclusivamente da dati gia disponibili nel Viewer.
+
+Le comprensioni introdotte sono deterministiche e descrittive:
+
+- Progetto composto da X elementi;
+- Nessun elemento configurato;
+- Oggetto STL rilevato;
+- Modello importato rilevato;
+- Nome rilevato.
+
+### Motivazione
+
+Questa e la forma minima di comprensione reale visibile: l'utente vede EDI interpretare il contesto Viewer senza introdurre EDI Core Understanding, artifact cognitivi, runtime, LLM, AI, decisioni automatiche o mutation.
+
+### Alternative Scartate
+
+- Creare `EdiUnderstandingArtifact` dalla UI.
+- Collegare Memory o Understanding Core al Viewer.
+- Chiamare runtime EDI.
+- Usare LLM o chiamate AI.
+- Generare Reasoning, Proposal, Validation o Decision Support.
+- Mutare Product Package o Project State.
+
+### Impatto Architetturale
+
+RFC-1220 introduce comprensione presentation-level nel pannello EDI.
+
+Il confine resta Viewer props -> messaggi deterministici di comprensione -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- First Real Viewer Understanding e presentation-level.
+- First Real Viewer Understanding non crea artifact EDI.
+- First Real Viewer Understanding non chiama runtime EDI.
+- First Real Viewer Understanding non usa LLM o AI.
+- First Real Viewer Understanding non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support o Decision Support.
+- First Real Viewer Understanding non muta Product Package o Project State.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

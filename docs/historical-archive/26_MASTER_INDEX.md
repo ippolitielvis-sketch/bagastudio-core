@@ -99,6 +99,7 @@ RFC EDI esplicite:
 - RFC-1217 Decision Support Artifact Foundation
 - RFC-1218 First Visible EDI Panel Foundation
 - RFC-1219 First Real Observation Foundation
+- RFC-1220 First Real Understanding Foundation
 
 Milestone equivalenti a RFC implicite:
 - Viewer Recovery Foundation

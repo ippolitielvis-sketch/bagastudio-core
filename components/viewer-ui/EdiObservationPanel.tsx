@@ -43,6 +43,36 @@ const createViewerObservationMessages = ({
   return observations;
 };
 
+const createViewerUnderstandingMessages = ({
+  importedModelName,
+  componentCount,
+}: {
+  importedModelName?: string;
+  componentCount: number;
+}) => {
+  const understandings: string[] = [];
+  const normalizedModelName = importedModelName?.trim();
+  const hasImportedModel = Boolean(normalizedModelName);
+  const modelExtension = normalizedModelName?.split(".").pop()?.toLowerCase();
+
+  if (componentCount > 0) {
+    understandings.push(`Progetto composto da ${componentCount} elementi`);
+  } else {
+    understandings.push("Nessun elemento configurato");
+  }
+
+  if (modelExtension === "stl") {
+    understandings.push("Oggetto STL rilevato");
+  }
+
+  if (hasImportedModel) {
+    understandings.push("Modello importato rilevato");
+    understandings.push(`Nome rilevato: ${normalizedModelName}`);
+  }
+
+  return understandings;
+};
+
 export default function EdiObservationPanel({
   productPackageAvailable,
   importedModelName,
@@ -58,6 +88,10 @@ export default function EdiObservationPanel({
     importedModelName,
     componentCount,
     lastImporterEvent,
+  });
+  const understandings = createViewerUnderstandingMessages({
+    importedModelName,
+    componentCount,
   });
 
   return (
@@ -129,6 +163,20 @@ export default function EdiObservationPanel({
             <li key={observation} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" />
               <span>{observation}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-sky-300/16 bg-sky-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-sky-200">
+          COMPRENSIONE
+        </span>
+        <ul className="mt-2 space-y-1.5">
+          {understandings.map((understanding) => (
+            <li key={understanding} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+              <span>{understanding}</span>
             </li>
           ))}
         </ul>
