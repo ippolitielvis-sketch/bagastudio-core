@@ -185,3 +185,39 @@ Viewer overlay, Home, EDI Cognitive, Shader Laboratory.
 # Conversazioni utilizzate
 - `EDI Animated Core` (`conversations-005.json`)
 - `BagaStudio Shader Laboratory` (`conversations-005.json`)
+
+## Milestone - RFC-1214 Validation Support Builder Foundation
+
+# Contesto
+Il Core Cognitive Loop ha introdotto Proposal Artifact, Proposal Builder, Proposal Traceability, Proposal Evaluation e poi Validation Support Artifact come materiale consultivo non autoritativo.
+
+# Problema
+Serviva un builder fondazionale per creare Validation Support Artifact singoli o multipli da input espliciti senza trasformare il supporto in approvazione, rifiuto, decisione automatica o Mutation.
+
+# Decisione
+Introdurre `EdiValidationSupportArtifactBuilder` come builder stateless, puro e deterministico con timestamp esplicito, delegando a `createEdiValidationSupportArtifact`.
+
+# Motivazione
+Validation Support deve avere una forma produttiva coerente, ma deve restare support material. La decisione finale e la mutation appartengono a futuri layer BagaStudio-owned.
+
+# Implementazione
+RFC-1214 crea `components/edi/validation/EdiValidationSupportArtifactBuilder.ts` e documenta il builder nei documenti EDI principali.
+
+# Evoluzione
+La roadmap passa a review di Validation Support Builder e Mutation Boundary prima di qualsiasi approval/rejection workflow.
+
+# Impatto
+Il layer Validation Support ottiene artifact e builder fondazionali, ma resta non esecutivo e non autoritativo.
+
+# Regole permanenti nate
+- Validation Support Builder produce solo `EdiValidationSupportArtifact`.
+- Validation Support Builder usa input espliciti e timestamp esplicito.
+- Validation Support Builder non approva, non rifiuta e non decide.
+- Validation Support Builder non muta Product Package o Project State.
+- Validation Support Builder non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+# Collegamenti con altri Engine
+EDI Cognitive, Proposal, Reasoning, Understanding, BagaStudio Validation futura.
+
+# Conversazioni utilizzate
+- RFC-1214 Validation Support Builder Foundation

@@ -3373,6 +3373,57 @@ La foundation prepara future review su Mutation Boundary e validazione BagaStudi
 - Validation Support Artifact non muta Product Package o Project State.
 - Validation Support Artifact non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
+## DL-EXEC-066 - Validation Support Builder Produces Support Material Without Decisions
+
+### Problema
+
+Dopo `EdiValidationSupportArtifact`, serviva un builder fondazionale capace di costruire validation support artifact da input espliciti senza introdurre approvazione, rifiuto, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiValidationSupportArtifactBuilder` come builder stateless e puro.
+
+Il builder espone:
+
+- `buildValidationSupportArtifact`;
+- `buildValidationSupportArtifacts`.
+
+Entrambi delegano a `createEdiValidationSupportArtifact`.
+
+Il builder richiede timestamp esplicito e mantiene traceability verso Proposal, Reasoning e Understanding passando gli artifact correlati alla factory.
+
+### Motivazione
+
+Validation Support ha bisogno di un punto coerente per creare support material singolo o batch mantenendo la separazione tra supporto, decisione e Mutation.
+
+La creazione del validation support artifact deve restare distinta da approval/rejection workflow e Mutation Layer.
+
+### Alternative Scartate
+
+- Far generare approval o rejection al builder.
+- Inserire status decisionale nel builder.
+- Far decidere automaticamente al builder.
+- Collegare il builder a Mutation Layer, executor, runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dal builder.
+
+### Impatto Architetturale
+
+RFC-1214 completa la foundation minima iniziale del Validation Support layer: artifact e builder.
+
+La foundation prepara future review su Mutation Boundary e validazione BagaStudio-owned, ma non introduce decisioni, approvazioni, rifiuti o mutazioni.
+
+### Regole Permanenti Generate
+
+- Validation Support Builder produce solo `EdiValidationSupportArtifact`.
+- Validation Support Builder usa `createEdiValidationSupportArtifact`.
+- Validation Support Builder accetta input espliciti.
+- Validation Support Builder richiede timestamp esplicito.
+- Validation Support Builder non approva.
+- Validation Support Builder non rifiuta.
+- Validation Support Builder non prende decisioni automatiche.
+- Validation Support Builder non muta Product Package o Project State.
+- Validation Support Builder non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

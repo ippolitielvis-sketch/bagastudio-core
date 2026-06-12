@@ -128,6 +128,7 @@ This document covers:
 - RFC-1211: EDI Proposal Traceability Foundation
 - RFC-1212: EDI Proposal Evaluation Foundation
 - RFC-1213: EDI Validation Support Artifact Foundation
+- RFC-1214: EDI Validation Support Builder Foundation
 
 ## Architecture Overview
 
@@ -2560,6 +2561,32 @@ The factory uses explicit timestamp input and copies related Proposal, Reasoning
 
 It exists so future human or BagaStudio-owned validation workflows can inspect support material without making EDI authoritative.
 
+### EDI Validation Support Builder Foundation
+
+RFC-1214 introduces `EdiValidationSupportArtifactBuilder` as the pure builder for `EdiValidationSupportArtifact`.
+
+The builder is stateless, deterministic with explicit inputs, and delegates artifact creation to `createEdiValidationSupportArtifact`.
+
+Builder input remains explicit:
+
+- id;
+- timestamp;
+- validation context;
+- Proposal Artifacts;
+- Reasoning Artifacts;
+- Understanding Artifacts;
+- validation considerations;
+- validation risks;
+- validation benefits;
+- validation questions;
+- metadata.
+
+The builder keeps traceability by passing Proposal, Reasoning, and Understanding Artifacts into the validation support artifact factory.
+
+It also supports `buildValidationSupportArtifacts` for deterministic batch creation from explicit inputs.
+
+The builder does not change the public meaning of Validation Support Artifact: it remains support material, not approval, rejection, automatic decision-making, Mutation, executor behavior, runtime wiring, Viewer output, UI, storage, or retrieval.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2847,6 +2874,10 @@ The execution foundation must not depend on:
 - Validation Support Artifact is support material, not approval, rejection, decision, or Mutation.
 - Validation Support Artifact must remain domain-independent and non-executive.
 - Validation Support Artifact must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
+- Validation Support Builder delegates to createEdiValidationSupportArtifact.
+- Validation Support Builder accepts explicit inputs only.
+- Validation Support Builder requires explicit timestamp.
+- Validation Support Builder must not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -2946,6 +2977,8 @@ The execution foundation must not depend on:
 - Proposal Evaluation exists, but no validation support, mutation path, governance layer, executor, runtime, or UI consumes it yet.
 - Proposal Evaluation indicators are foundation-level and may need calibrated scales after domain-specific review.
 - Validation Support Artifact exists, but no approval workflow, rejection workflow, mutation path, executor, runtime, or UI consumes it yet.
+- Validation Support Builder exists, but no approval workflow, rejection workflow, mutation path, executor, runtime, UI, storage, or retrieval consumes it yet.
+- Validation Support Builder is deterministic only if callers provide deterministic inputs.
 - Validation Support Artifact questions and considerations are foundation-level and may need domain-specific review before product workflows.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
@@ -3038,4 +3071,5 @@ The Decision Log should record:
 39. RFC-1211 - EDI Proposal Traceability Foundation.
 40. RFC-1212 - EDI Proposal Evaluation Foundation.
 41. RFC-1213 - EDI Validation Support Artifact Foundation.
-42. EDI Validation Support Artifact Review and Mutation Boundary Planning.
+42. RFC-1214 - EDI Validation Support Builder Foundation.
+43. EDI Validation Support Builder Review and Mutation Boundary Planning.

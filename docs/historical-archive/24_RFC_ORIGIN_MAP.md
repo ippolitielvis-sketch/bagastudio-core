@@ -25,6 +25,7 @@ Mappa delle RFC esplicite e delle milestone con ruolo equivalente a RFC implicit
 | RFC-1100 Preview Panel | `BagaStudio Shader Laboratory` (`conversations-005.json`) | `/edi-v2-preview` | Preview isolata per EDI V2 | [16](16_EDI_VISUAL_ENGINE_HISTORY.md) |
 | RFC-1101 Shader Pipeline | `BagaStudio Shader Laboratory` (`conversations-005.json`) | WebGLRenderer, RenderTarget, ShaderMaterial, EffectComposer | Pipeline GPU dedicata | [16](16_EDI_VISUAL_ENGINE_HISTORY.md) |
 | RFC-1102 Shader Laboratory | `BagaStudio Shader Laboratory` (`conversations-005.json`) | laboratory -> Heart/Plasma/Magnetic/Particles/Glow | Non evolvere piu SVG; usare EDI Render Engine V2 | [16](16_EDI_VISUAL_ENGINE_HISTORY.md), [07](07_EDI_HISTORY.md) |
+| RFC-1214 Validation Support Builder Foundation | RFC-1214 | Validation Support Artifact -> Builder | Builder puro, stateless, senza approval/rejection/mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 
 ## Evoluzione RFC EDI
 

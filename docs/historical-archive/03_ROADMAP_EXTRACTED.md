@@ -171,3 +171,20 @@ EDI Cognitive, Viewer overlay, Shader Laboratory.
 # Conversazioni utilizzate
 - `EDI Animated Core` (`conversations-005.json`)
 - `BagaStudio Shader Laboratory` (`conversations-005.json`)
+
+## Roadmap - Validation Support Builder Foundation
+
+# Contesto
+Il percorso cognitivo EDI ha raggiunto Proposal e Validation Support con contratti fondazionali non esecutivi.
+
+# Stato raggiunto
+RFC-1214 introduce il builder puro per `EdiValidationSupportArtifact`.
+
+# Sequenza
+Proposal Artifact -> Proposal Builder -> Proposal Traceability -> Proposal Evaluation -> Validation Support Artifact -> Validation Support Builder.
+
+# Regola roadmap
+Prima di introdurre approval, rejection o Mutation, il Validation Support Builder deve essere reviewato e deve restare separato da runtime, executor, Viewer, UI, storage e retrieval.
+
+# Prossimo passo consigliato
+EDI Validation Support Builder Review and Mutation Boundary Planning.

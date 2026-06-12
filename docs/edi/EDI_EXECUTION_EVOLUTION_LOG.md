@@ -1223,6 +1223,14 @@ The factory `createEdiValidationSupportArtifact` uses explicit timestamp input a
 
 RFC-1213 clarified that Validation Support Artifact is support material, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1214 introduced `EdiValidationSupportArtifactBuilder` as the pure builder for `EdiValidationSupportArtifact`.
+
+The builder accepts explicit validation support inputs, requires explicit timestamp, preserves traceability to Proposal, Reasoning, and Understanding through related artifacts, and delegates creation to `createEdiValidationSupportArtifact`.
+
+It supports single and batch artifact creation through `buildValidationSupportArtifact` and `buildValidationSupportArtifacts`.
+
+RFC-1214 clarified that the builder is a foundational producer only. It does not approve, reject, make automatic decisions, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, access storage, or perform retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1419,6 +1427,10 @@ RFC-1213 clarified that Validation Support Artifact is support material, not app
 - Validation Support Artifact does not produce decisions.
 - Validation Support Artifact does not mutate Product Package or Project State.
 - Validation Support Artifact does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Validation Support Builder delegates to createEdiValidationSupportArtifact.
+- Validation Support Builder accepts explicit inputs only.
+- Validation Support Builder requires explicit timestamp.
+- Validation Support Builder does not approve, reject, decide, mutate, call executor/runtime, call Viewer/UI, access storage, or perform retrieval.
 
 ## Current State
 
@@ -1530,7 +1542,8 @@ Implemented producer adapter foundation:
 - Proposal Traceability Foundation exists;
 - Proposal Evaluation Foundation exists;
 - Validation Support Artifact Foundation exists;
-- Validation Support Artifact Review and Mutation Boundary Planning is the next recommended review;
+- Validation Support Builder Foundation exists;
+- Validation Support Builder Review and Mutation Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1574,6 +1587,7 @@ Not implemented today:
 - Proposal artifact runtime usage;
 - Proposal traceability consumers;
 - Proposal evaluation consumers;
+- Validation support builder consumers;
 - Validation support approval/rejection workflow;
 - Validation support mutation boundary;
 - Optimization foundation;
