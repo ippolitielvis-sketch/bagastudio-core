@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1195.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1196.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1195
+- RFC-1126 to RFC-1196
 
 Architecture distinction:
 
@@ -752,6 +752,7 @@ RFC:
 - RFC-1193
 - RFC-1194
 - RFC-1195
+- RFC-1196
 
 ### Context
 
@@ -1049,6 +1050,14 @@ RFC-1195 does not introduce the operational Product Package Observation Adapter.
 
 The snapshot may later feed Memory, Reasoning, Proposal, and Optimization as evidence. It remains non-authoritative and cannot mutate Product Package.
 
+RFC-1196 introduced `ProductPackageObservationAdapter` as a one-way foundation adapter from Product Package-shaped data to `ProductPackageObservationSnapshot`.
+
+The adapter accepts a neutral `Record<string, unknown>` so EDI does not import Viewer-local Product Package types. It selects observable summary fields, creates copied snapshot data, and does not return or retain mutable Product Package references.
+
+RFC-1196 does not introduce product integration. No product workflow calls the adapter yet.
+
+The adapter does not mutate Product Package, call RuntimeHost, call RuntimeLoop, call Viewer, call Factory, call UI, call React state, validate product changes, create proposals, or execute runtime.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1177,6 +1186,10 @@ The snapshot may later feed Memory, Reasoning, Proposal, and Optimization as evi
 - Product Package Observation Snapshot does not contain runtime, Viewer, Factory, or React references.
 - Product Package Observation Snapshot does not create proposals.
 - Product Package Observation Adapter remains a future operational foundation.
+- Product Package Observation Adapter is one-way.
+- Product Package Observation Adapter produces only ProductPackageObservationSnapshot.
+- Product Package Observation Adapter does not return mutable Product Package references.
+- Product Package Observation Adapter foundation is not product integration.
 
 ## Current State
 
@@ -1268,7 +1281,8 @@ Implemented producer adapter foundation:
 - Observation Path, Proposal Path, and Presentation Path are documented;
 - Product Package Observation Adapter is documented as read-only observation boundary;
 - Product Package Observation Snapshot Foundation exists;
-- Product Package Observation Adapter implementation is the next recommended product observation step;
+- Product Package Observation Adapter Foundation exists;
+- Product Package Observation Adapter is not called by product workflows yet;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1299,7 +1313,7 @@ Not implemented today:
 - Product Package to Presentation Model flow;
 - EDI observation path over Product Package;
 - EDI proposal validation path;
-- Product Package Observation Adapter implementation;
+- Product Package Observation Adapter product workflow integration;
 - governance for business intelligence and personal memory;
 - Viewer-facing consumption contract;
 - memory/reasoning/feedback/planning View Model sections;

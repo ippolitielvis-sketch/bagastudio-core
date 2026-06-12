@@ -66,6 +66,7 @@ Covered foundation:
 - BagaStudio Product State Integration Planning
 - Product Package Observation Adapter Review
 - Product Package Observation Snapshot Foundation
+- Product Package Observation Adapter Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2278,6 +2279,74 @@ La prossima fase potra introdurre un Product Package Observation Adapter Foundat
 - Product Package Observation Snapshot non crea proposal.
 - Product Package Observation Snapshot alimenta Memory, Reasoning, Proposal e Optimization solo come evidenza.
 - Product Package Observation Adapter operativo resta una RFC futura.
+
+## DL-EXEC-048 - Product Package Observation Adapter Is One-Way
+
+### Problema
+
+Dopo aver creato `ProductPackageObservationSnapshot`, serviva introdurre il primo adapter foundation capace di trasformare dati Product Package in snapshot senza aprire un percorso di mutation, proposal o runtime execution.
+
+### Decisione
+
+Introdurre `ProductPackageObservationAdapter` come adapter one-way.
+
+Il flusso ammesso e:
+
+```text
+Product Package-shaped data
+createProductPackageObservationAdapterResult
+ProductPackageObservationSnapshot
+EDI
+```
+
+L'adapter accetta una shape neutra `Record<string, unknown>` e seleziona solo campi osservabili:
+
+- identita prodotto;
+- schema;
+- versione;
+- sourceFormat;
+- status;
+- dimensioni;
+- footprint;
+- component ids;
+- component summaries;
+- component count;
+- materiali;
+- finiture;
+- metadata di tracciabilita.
+
+L'adapter non restituisce il Product Package originale e non conserva riferimenti mutabili.
+
+### Motivazione
+
+La shape Product Package esistente e ancora vicina a Viewer/runtime legacy. Usare un input neutro evita di importare tipi Viewer-local dentro EDI.
+
+La conversione one-way permette a EDI di osservare dati prodotto senza diventare owner del Product Package.
+
+### Alternative Scartate
+
+- Importare direttamente il tipo Product Package definito nel Viewer.
+- Restituire il Product Package originale insieme allo snapshot.
+- Collegare l'adapter a RuntimeHost o RuntimeLoop.
+- Usare l'adapter per generare proposal.
+- Usare l'adapter per validare o mutare Product Package.
+
+### Impatto Architetturale
+
+RFC-1196 crea un punto di conversione sicuro, ma non introduce integration.
+
+Nessun workflow prodotto chiama ancora `createProductPackageObservationAdapterResult`.
+
+### Regole Permanenti Generate
+
+- Product Package Observation Adapter e one-way.
+- Product Package Observation Adapter produce solo `ProductPackageObservationSnapshot`.
+- Product Package Observation Adapter non restituisce reference mutabili al Product Package.
+- Product Package Observation Adapter non muta Product Package.
+- Product Package Observation Adapter non chiama RuntimeHost, RuntimeLoop, Viewer, Factory, UI o React state.
+- Product Package Observation Adapter non crea proposal.
+- Product Package Observation Adapter non valida product changes.
+- Product Package Observation Adapter foundation non e product integration.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

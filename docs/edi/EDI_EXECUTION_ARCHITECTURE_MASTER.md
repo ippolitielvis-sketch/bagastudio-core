@@ -110,6 +110,7 @@ This document covers:
 - RFC-1193: BagaStudio Product State Integration Planning
 - RFC-1194: Product Package Observation Adapter Review
 - RFC-1195: Product Package Observation Snapshot Foundation
+- RFC-1196: Product Package Observation Adapter Foundation
 
 ## Architecture Overview
 
@@ -1829,6 +1830,47 @@ The snapshot can later feed EDI Memory as historical product context, Reasoning 
 
 RFC-1195 introduces no adapter, no runtime wiring, no Viewer integration, and no Product Package mutation.
 
+### Product Package Observation Adapter Foundation
+
+RFC-1196 introduces `ProductPackageObservationAdapter` as the first foundation adapter that converts a Product Package-shaped data object into `ProductPackageObservationSnapshot`.
+
+The adapter is intentionally generic because Product Package is still represented by runtime-oriented structures in the existing product surface. RFC-1196 does not import Viewer-local Product Package types, does not modify Product Package, and does not establish a product workflow.
+
+Snapshot creation path:
+
+```text
+Product Package-shaped data
+-> createProductPackageObservationAdapterResult
+-> ProductPackageObservationSnapshot
+-> EDI
+```
+
+The adapter accepts a `Record<string, unknown>` as input and selects only observable summary fields:
+
+- product identity;
+- schema;
+- version;
+- sourceFormat;
+- status;
+- dimensions;
+- footprint;
+- component ids;
+- component summaries;
+- component count;
+- material summaries;
+- finish summaries;
+- traceability metadata.
+
+One-way observation rule:
+
+- Product Package enters EDI as copied snapshot data;
+- the adapter never returns the original Product Package reference;
+- the adapter never mutates Product Package;
+- the adapter never calls RuntimeHost, RuntimeLoop, Viewer, Factory, UI, React state, Mutation Layer, Proposal Layer, or EDI runtime;
+- the adapter creates no proposal and performs no validation of product changes.
+
+RFC-1196 is still foundation, not integration. It creates a safe conversion point, but no product code calls it yet.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2060,6 +2102,9 @@ The execution foundation must not depend on:
 - Product Package Observation Snapshot is read-only and serializable.
 - Product Package Observation Snapshot must not contain mutation functions or runtime references.
 - Product Package Observation Snapshot is evidence for Memory, Reasoning, Proposal, and Optimization, not a mutation contract.
+- Product Package Observation Adapter is one-way: Product Package to snapshot only.
+- Product Package Observation Adapter must not return mutable Product Package references.
+- Product Package Observation Adapter must not create proposal, mutation, runtime execution, Viewer output, or Factory output.
 
 ## Residual Risks
 
@@ -2112,10 +2157,10 @@ The execution foundation must not depend on:
 - Product Package to Presentation Model flow is not defined yet.
 - EDI observation path over Product Package is not implemented yet.
 - EDI proposal validation path is not defined yet.
-- Product Package Observation Adapter is defined only as a documented boundary; no adapter implementation exists yet.
+- Product Package Observation Adapter exists as a foundation, but no product workflow calls it yet.
 - Product Package to Presentation Model generation is not implemented yet.
 - Proposal validation and mutation contracts are not implemented yet.
-- Product Package Observation Snapshot exists, but no Product Package Observation Adapter creates it yet.
+- Product Package Observation Snapshot exists and Product Package Observation Adapter can create it, but no product workflow calls the adapter yet.
 - Observable Product Package field allowlist needs a dedicated foundation.
 - Product/customer/business metadata selection requires future privacy and governance review.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
@@ -2191,4 +2236,5 @@ The Decision Log should record:
 21. RFC-1193 - BagaStudio Product State Integration Planning.
 22. RFC-1194 - Product Package Observation Adapter Review.
 23. RFC-1195 - Product Package Observation Snapshot Foundation.
-24. Product Package Observation Adapter Foundation.
+24. RFC-1196 - Product Package Observation Adapter Foundation.
+25. Product Package Observation Adapter validation and integration planning.
