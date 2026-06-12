@@ -437,3 +437,40 @@ Viewer, BagaStudio Presentation, EDI Understanding futura.
 
 # Conversazioni utilizzate
 - RFC-1220 First Real Understanding Foundation
+
+## Milestone - RFC-1221 First Real Insight Foundation
+
+# Contesto
+Il pannello EDI mostrava osservazioni e comprensioni presentation-level derivate dal Viewer.
+
+# Problema
+Serviva aggiungere una prima nota di insight visibile senza collegare Reasoning, Proposal, Validation, Decision, runtime, AI o Mutation Layer.
+
+# Decisione
+Aggiornare `EdiObservationPanel` con una sezione `INSIGHT` derivata solo da dati Viewer presentation-safe gia disponibili.
+
+# Motivazione
+Gli insight rule-based rendono EDI piu espressivo per l'utente, ma restano spiegabili, read-only e non operativi.
+
+# Implementazione
+RFC-1221 aggiunge insight deterministici: progetto ancora vuoto, progetto con un solo elemento, progetto con pochi elementi e modello esterno importato.
+
+# Evoluzione
+La roadmap puo distinguere gli insight presentation-level dal futuro Reasoning, Decision Support o Decision Layer.
+
+# Impatto
+EDI mostra una prima nota contestuale, ma non diventa runtime, AI, decision maker o mutatore del Product Package.
+
+# Regole permanenti nate
+- First Real Viewer Insight e rule-based e presentation-level.
+- First Real Viewer Insight non crea artifact EDI.
+- First Real Viewer Insight non chiama runtime EDI.
+- First Real Viewer Insight non usa LLM o AI.
+- First Real Viewer Insight non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support o Decision.
+- First Real Viewer Insight non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, BagaStudio Presentation, EDI Insight futura.
+
+# Conversazioni utilizzate
+- RFC-1221 First Real Insight Foundation

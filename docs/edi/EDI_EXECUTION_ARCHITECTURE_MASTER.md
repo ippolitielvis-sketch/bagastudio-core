@@ -135,6 +135,7 @@ This document covers:
 - RFC-1218: First Visible EDI Panel Foundation
 - RFC-1219: First Real Observation Foundation
 - RFC-1220: First Real Understanding Foundation
+- RFC-1221: First Real Insight Foundation
 
 ## Architecture Overview
 
@@ -3207,6 +3208,31 @@ Viewer presentation-safe props
 
 The Viewer-facing understanding is deterministic, explainable, read-only, and presentation-safe. It exists to make EDI visibly interpret already available Viewer context without becoming runtime integration.
 
+## First Real Insight Foundation
+
+RFC-1221 upgrades the visible EDI panel from observation and understanding display to first deterministic Viewer insight.
+
+The insight remains presentation-only. `EdiObservationPanel` derives read-only notes from props already supplied by `Viewer3D`.
+
+Implemented insight messages:
+
+- project is still empty;
+- project contains one element;
+- project contains few elements;
+- an external model has been imported.
+
+This is not EDI Core Reasoning, Proposal, Validation, or Decision. It does not create any EDI artifact, does not call EDI runtime, does not call LLM or AI services, does not write Product Package, and does not write Project State.
+
+Permanent boundary:
+
+```text
+Viewer presentation-safe props
+-> local deterministic insight messages
+-> EdiObservationPanel
+```
+
+The Viewer-facing insight is deterministic, explainable, read-only, and presentation-safe. It gives the user a first visible interpretation note without becoming decision support, mutation, or runtime integration.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3299,4 +3325,5 @@ The Decision Log should record:
 46. RFC-1218 - First Visible EDI Panel Foundation.
 47. RFC-1219 - First Real Observation Foundation.
 48. RFC-1220 - First Real Understanding Foundation.
-49. EDI Decision Support Artifact Review and Decision Boundary Planning.
+49. RFC-1221 - First Real Insight Foundation.
+50. EDI Decision Support Artifact Review and Decision Boundary Planning.

@@ -3741,6 +3741,51 @@ Il confine resta Viewer props -> messaggi deterministici di comprensione -> pann
 - First Real Viewer Understanding non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support o Decision Support.
 - First Real Viewer Understanding non muta Product Package o Project State.
 
+## DL-EXEC-073 - First Real Viewer Insight Is Rule-Based And Presentation-Level
+
+### Problema
+
+Dopo osservazioni e comprensioni visibili, EDI poteva mostrare dati e interpretazioni semplici, ma non ancora note di insight derivate da regole controllate.
+
+### Decisione
+
+Aggiornare `EdiObservationPanel` con una sezione `INSIGHT` calcolata esclusivamente da dati gia disponibili nel Viewer.
+
+Gli insight introdotti sono rule-based e descrittivi:
+
+- Ho notato che il progetto e ancora vuoto;
+- Ho notato che il progetto contiene un solo elemento;
+- Ho notato che il progetto contiene pochi elementi;
+- Ho notato che e stato importato un modello esterno.
+
+### Motivazione
+
+Questa e la forma minima di insight reale visibile: l'utente vede EDI offrire una nota contestuale, ma il sistema non introduce Reasoning, Proposal, Validation, Decision, runtime, LLM, AI, mutation o artifact EDI.
+
+### Alternative Scartate
+
+- Creare artifact EDI dalla UI.
+- Collegare Reasoning o Decision Support al Viewer.
+- Chiamare runtime EDI.
+- Usare LLM o chiamate AI.
+- Generare Proposal, Validation o Decision.
+- Mutare Product Package o Project State.
+
+### Impatto Architetturale
+
+RFC-1221 introduce insight presentation-level nel pannello EDI.
+
+Il confine resta Viewer props -> messaggi deterministici di insight -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- First Real Viewer Insight e rule-based e presentation-level.
+- First Real Viewer Insight non crea artifact EDI.
+- First Real Viewer Insight non chiama runtime EDI.
+- First Real Viewer Insight non usa LLM o AI.
+- First Real Viewer Insight non attiva Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support o Decision.
+- First Real Viewer Insight non muta Product Package o Project State.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

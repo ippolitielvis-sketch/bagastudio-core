@@ -32,6 +32,7 @@ Mappa delle RFC esplicite e delle milestone con ruolo equivalente a RFC implicit
 | RFC-1218 First Visible EDI Panel Foundation | RFC-1218 | Decision Support Foundation -> visible Viewer surface | Pannello EDI read-only, senza EDI Core runtime o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1219 First Real Observation Foundation | RFC-1219 | First Visible EDI Panel -> Viewer observation messages | Osservazioni descrittive da dati Viewer, senza artifact EDI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1220 First Real Understanding Foundation | RFC-1220 | Viewer observation messages -> Viewer understanding messages | Comprensioni deterministiche presentation-level, senza Understanding Artifact, AI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
+| RFC-1221 First Real Insight Foundation | RFC-1221 | Viewer understanding messages -> Viewer insight messages | Insight rule-based presentation-level, senza Reasoning, Decision, AI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 
 ## Evoluzione RFC EDI
 

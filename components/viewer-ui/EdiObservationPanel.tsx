@@ -73,6 +73,31 @@ const createViewerUnderstandingMessages = ({
   return understandings;
 };
 
+const createViewerInsightMessages = ({
+  importedModelName,
+  componentCount,
+}: {
+  importedModelName?: string;
+  componentCount: number;
+}) => {
+  const insights: string[] = [];
+  const hasImportedModel = Boolean(importedModelName?.trim());
+
+  if (componentCount === 0) {
+    insights.push("Ho notato che il progetto e ancora vuoto.");
+  } else if (componentCount === 1) {
+    insights.push("Ho notato che il progetto contiene un solo elemento.");
+  } else if (componentCount <= 5) {
+    insights.push("Ho notato che il progetto contiene pochi elementi.");
+  }
+
+  if (hasImportedModel) {
+    insights.push("Ho notato che e stato importato un modello esterno.");
+  }
+
+  return insights;
+};
+
 export default function EdiObservationPanel({
   productPackageAvailable,
   importedModelName,
@@ -90,6 +115,10 @@ export default function EdiObservationPanel({
     lastImporterEvent,
   });
   const understandings = createViewerUnderstandingMessages({
+    importedModelName,
+    componentCount,
+  });
+  const insights = createViewerInsightMessages({
     importedModelName,
     componentCount,
   });
@@ -177,6 +206,20 @@ export default function EdiObservationPanel({
             <li key={understanding} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
               <span>{understanding}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-violet-300/16 bg-violet-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-violet-200">
+          INSIGHT
+        </span>
+        <ul className="mt-2 space-y-1.5">
+          {insights.map((insight) => (
+            <li key={insight} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-300" />
+              <span>{insight}</span>
             </li>
           ))}
         </ul>

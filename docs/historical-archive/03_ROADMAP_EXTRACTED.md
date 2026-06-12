@@ -290,3 +290,20 @@ La comprensione Viewer deve restare presentation-level: niente `EdiUnderstanding
 
 # Prossimo passo consigliato
 First Real Understanding Panel Review before EDI Core backed Understanding or Product Package Observation Flow wiring.
+
+## Roadmap - First Real Insight Foundation
+
+# Contesto
+EDI e visibile nel Viewer e mostra osservazioni e comprensioni presentation-level.
+
+# Stato raggiunto
+RFC-1221 introduce una sezione `INSIGHT` nel pannello EDI con note rule-based derivate dal contesto Viewer.
+
+# Sequenza
+First Visible EDI Panel -> First Real Observation -> First Real Understanding -> First Real Insight.
+
+# Regola roadmap
+Gli insight Viewer devono restare presentation-level: niente artifact EDI, niente runtime, niente LLM/AI, niente Reasoning, Proposal, Validation, Decision o mutation.
+
+# Prossimo passo consigliato
+First Real Insight Panel Review before EDI Core backed Reasoning, Decision Support, or Product Package Observation Flow wiring.

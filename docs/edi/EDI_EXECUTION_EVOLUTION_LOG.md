@@ -1586,6 +1586,8 @@ Implemented producer adapter foundation:
 - EDI panel derives descriptive observation messages from Viewer presentation-safe data;
 - First Real Understanding Foundation exists;
 - EDI panel derives deterministic understanding messages from Viewer presentation-safe data;
+- First Real Insight Foundation exists;
+- EDI panel derives rule-based insight messages from Viewer presentation-safe data;
 - Decision Support Artifact Review and Decision Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
@@ -1612,6 +1614,8 @@ Not implemented today:
 - EDI artifact backed Viewer observation;
 - EDI artifact backed Viewer understanding;
 - LLM or AI-backed Viewer understanding;
+- EDI artifact backed Viewer insight;
+- LLM or AI-backed Viewer insight;
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
 - Viewer consumption of BagaStudio Presentation Model;
