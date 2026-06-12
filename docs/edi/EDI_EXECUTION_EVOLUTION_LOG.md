@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1209.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1210.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1209
+- RFC-1126 to RFC-1210
 
 Architecture distinction:
 
@@ -1191,6 +1191,14 @@ The factory `createEdiProposalArtifact` uses explicit timestamp input and copies
 
 RFC-1209 clarified that Proposal Artifact is a proposal descriptor, not Validation, not Mutation, not automatic decision-making, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1210 introduced `EdiProposalArtifactBuilder` as the pure builder for `EdiProposalArtifact`.
+
+The builder accepts explicit proposal inputs, requires explicit timestamp, preserves traceability to Reasoning and Understanding through related artifacts, and delegates creation to `createEdiProposalArtifact`.
+
+It supports single and batch artifact creation through `buildProposalArtifact` and `buildProposalArtifacts`.
+
+RFC-1210 clarified that the builder is a foundational producer only. It does not validate proposals, make automatic decisions, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, access storage, or perform retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1372,6 +1380,9 @@ RFC-1209 clarified that Proposal Artifact is a proposal descriptor, not Validati
 - Proposal Artifact is not Validation, Mutation, or Source of Truth.
 - Proposal Artifact does not call executor, runtime, Viewer, UI, storage, or retrieval.
 - Proposal Artifact does not mutate Product Package or Project State.
+- Proposal Builder delegates to createEdiProposalArtifact.
+- Proposal Builder accepts explicit inputs only.
+- Proposal Builder does not validate, decide, mutate, call executor/runtime, call Viewer/UI, access storage, or perform retrieval.
 
 ## Current State
 
@@ -1479,7 +1490,8 @@ Implemented producer adapter foundation:
 - Reasoning Traceability Foundation exists;
 - Reasoning Evaluation Foundation exists;
 - Proposal Artifact Foundation exists;
-- Proposal Artifact Review and Validation Support Planning is the next recommended review;
+- Proposal Builder Foundation exists;
+- Proposal Builder Review and Validation Support Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1519,7 +1531,6 @@ Not implemented today:
 - Reasoning evaluator;
 - Reasoning traceability consumers;
 - Reasoning evaluation consumers;
-- Proposal builder;
 - Proposal validation support;
 - Proposal artifact runtime usage;
 - Optimization foundation;

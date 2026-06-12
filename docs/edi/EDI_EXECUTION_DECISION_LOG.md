@@ -80,6 +80,7 @@ Covered foundation:
 - EDI Reasoning Traceability Foundation
 - EDI Reasoning Evaluation Foundation
 - EDI Proposal Artifact Foundation
+- EDI Proposal Builder Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3158,6 +3159,54 @@ La foundation prepara future review su Proposal Builder, Validation Support e Mu
 - Proposal Artifact non e Source of Truth.
 - Proposal Artifact non chiama executor, runtime, Viewer, UI, storage o retrieval.
 - Proposal Artifact non muta Product Package o Project State.
+
+## DL-EXEC-062 - Proposal Builder Produces Artifacts Without Validation
+
+### Problema
+
+Dopo `EdiProposalArtifact`, serviva un builder fondazionale capace di costruire proposal artifact da input espliciti senza introdurre Validation, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiProposalArtifactBuilder` come builder stateless e puro.
+
+Il builder espone:
+
+- `buildProposalArtifact`;
+- `buildProposalArtifacts`.
+
+Entrambi delegano a `createEdiProposalArtifact`.
+
+### Motivazione
+
+Il Proposal layer ha bisogno di un punto coerente per creare artifact singoli o batch mantenendo traceability verso Reasoning e Understanding.
+
+La creazione del proposal artifact deve restare distinta da Validation Support e Mutation.
+
+### Alternative Scartate
+
+- Inserire Validation nel builder.
+- Far decidere al builder se una proposta e accettabile.
+- Far mutare Product Package o Project State dal builder.
+- Collegare il builder a executor, runtime, Viewer, UI, storage o retrieval.
+- Far inferire proposal da input non espliciti.
+
+### Impatto Architetturale
+
+RFC-1210 completa la foundation minima del Proposal layer: artifact e builder.
+
+La foundation prepara future review su Validation Support, ma non introduce validazione o mutazione.
+
+### Regole Permanenti Generate
+
+- Proposal Builder produce solo `EdiProposalArtifact`.
+- Proposal Builder usa `createEdiProposalArtifact`.
+- Proposal Builder accetta input espliciti.
+- Proposal Builder richiede timestamp esplicito.
+- Proposal Builder non valida proposte.
+- Proposal Builder non prende decisioni automatiche.
+- Proposal Builder non muta Product Package o Project State.
+- Proposal Builder non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
