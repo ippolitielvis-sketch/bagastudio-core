@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1165
+- RFC-1126 to RFC-1166
 
 Architecture distinction:
 
@@ -721,6 +721,7 @@ RFC:
 - RFC-1163
 - RFC-1164
 - RFC-1165
+- RFC-1166
 
 ### Context
 
@@ -762,6 +763,12 @@ RFC-1165 connected Preview Integration to the boundary.
 
 `runEdiPreviewExecutionAndDispatch` now validates the request through `createEdiIntegrationBoundaryRequest` before calling execution runtime. Boundary validation failures produce a controlled failed `EdiExecutionResult` and are dispatched through the existing dispatcher.
 
+RFC-1166 clarified boundary failure semantics.
+
+Boundary failure is pre-runtime. Current boundary errors are terminal: `missing-request`, `missing-request-id`, `missing-request-mode`, and `missing-request-domain`.
+
+`missing-request-domain` may become recoverable only in a future RFC with an explicit adapter capable of inferring `targetDomain`.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -773,6 +780,9 @@ RFC-1165 connected Preview Integration to the boundary.
 - RuntimeHost and RuntimeLoop receive already validated requests.
 - Preview Integration calls Integration Boundary before execution runtime.
 - Boundary failure returns a controlled execution result.
+- Boundary Failure is Pre-Runtime.
+- Boundary Failure is not Executor Failure.
+- Boundary Failure does not infer targetDomain.
 
 ## Current State
 
@@ -815,6 +825,7 @@ Implemented preview wiring:
 - `runEdiPreviewExecutionAndDispatch` calls the boundary before execution runtime;
 - boundary-valid requests continue through the existing execution and dispatch flow;
 - boundary-invalid requests produce a failed `EdiExecutionResult`;
+- boundary-invalid requests are classified as pre-runtime failures;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
 Not implemented today:

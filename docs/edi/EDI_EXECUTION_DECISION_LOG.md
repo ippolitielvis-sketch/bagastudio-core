@@ -35,6 +35,7 @@ Covered foundation:
 - Integration Boundary
 - Integration Boundary Wiring Rule
 - Preview Integration Boundary Wiring
+- Boundary Failure Semantics
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -692,3 +693,61 @@ Se la boundary non valida la request, il flow produce un `EdiExecutionResult` fa
 - Consumer non chiama Integration Boundary.
 - Boundary failure produce result controllato.
 - Preview boundary wiring non e real integration.
+
+## DL-EXEC-017 — Boundary Failure Is Pre-Runtime
+
+### Problema
+
+Dopo RFC-1165, la Preview Integration produce un `EdiExecutionResult` failed quando la `EdiIntegrationBoundary` non valida la request.
+
+Serviva distinguere questo fallimento da un errore di executor, RuntimeHost, RuntimeLoop o Consumer.
+
+### Decisione
+
+Un fallimento della boundary e un errore pre-runtime.
+
+Non e:
+
+- errore executor;
+- errore RuntimeHost;
+- errore RuntimeLoop;
+- errore Consumer.
+
+### Classificazione Errori
+
+Gli errori attuali sono terminali:
+
+- `missing-request`;
+- `missing-request-id`;
+- `missing-request-mode`;
+- `missing-request-domain`.
+
+`missing-request-domain` resta terminale per ora. Potra diventare recoverable solo in una futura RFC, se verra introdotto un adapter capace di inferire esplicitamente `targetDomain`.
+
+### Motivazione
+
+La boundary protegge il runtime da request non valide. Se fallisce, il runtime non deve essere chiamato e il risultato deve indicare chiaramente che il fallimento e avvenuto prima dell'esecuzione.
+
+### Alternative Scartate
+
+- Trattare il fallimento boundary come errore executor.
+- Impostare un executor reale o preview come responsabile del fallimento.
+- Introdurre recovery automatico.
+- Inferire automaticamente `targetDomain`.
+- Chiamare RuntimeHost o RuntimeLoop.
+
+### Impatto Architetturale
+
+Preview Integration mantiene un failure path controllato e descrittivo.
+
+Il `EdiExecutionResult` failed usa metadata pre-runtime coerenti con `EdiIntegrationBoundary`, senza fingere che sia fallito un executor.
+
+### Regole Permanenti Generate
+
+- Boundary Failure Is Pre-Runtime.
+- Boundary Failure non e Executor Failure.
+- Boundary Failure non chiama RuntimeHost.
+- Boundary Failure non chiama RuntimeLoop.
+- Boundary Failure non attiva recovery automatico.
+- Boundary Failure non inferisce `targetDomain`.
+- `missing-request-domain` e terminale fino a RFC dedicata.

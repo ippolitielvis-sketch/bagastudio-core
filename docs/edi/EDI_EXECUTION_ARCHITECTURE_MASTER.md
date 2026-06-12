@@ -79,6 +79,7 @@ This document covers:
 - RFC-1163: EDI Integration Boundary Foundation
 - RFC-1164: EDI Integration Boundary Wiring Review
 - RFC-1165: EDI Preview Integration Boundary Wiring
+- RFC-1166: EDI Boundary Failure Semantics Review
 
 ## Architecture Overview
 
@@ -600,6 +601,8 @@ Preview Integration
 
 If boundary validation fails, the helper returns and dispatches a controlled failed `EdiExecutionResult`. It does not throw destructively and does not call execution runtime with a boundary-invalid request.
 
+Boundary validation failure is a pre-runtime failure. It is not an executor failure, RuntimeHost failure, RuntimeLoop failure, or consumer failure.
+
 ### EdiIntegrationBoundary
 
 `EdiIntegrationBoundary` introduces the first architectural boundary between Preview Integration and future real runtime integration.
@@ -644,6 +647,23 @@ It must not be called directly by:
 RuntimeHost and RuntimeLoop must receive `EdiExecutionRequest` instances that are already normalized and validated. They must not know where the request came from and must not import the integration boundary directly.
 
 The boundary must not become a dispatcher, a parallel runtime, a registry, or an execution/consumption owner.
+
+#### Boundary Failure Is Pre-Runtime Rule
+
+Boundary failures happen before execution runtime.
+
+Current boundary issues are terminal:
+
+- `missing-request`;
+- `missing-request-id`;
+- `missing-request-mode`;
+- `missing-request-domain`.
+
+`missing-request-domain` is terminal for now. It may become recoverable only in a future RFC if an explicit adapter is introduced to infer `targetDomain`.
+
+The current foundation does not perform automatic recovery, does not infer `targetDomain`, does not call RuntimeHost, does not call RuntimeLoop, and does not reinterpret boundary failures as executor failures.
+
+Preview Integration represents boundary failure as a controlled failed `EdiExecutionResult` with pre-runtime metadata.
 
 ## Foundation vs Wiring vs Integration
 
@@ -799,6 +819,8 @@ The execution foundation must not depend on:
 - Integration Boundary is not Real Integration.
 - Integration Boundary is before Runtime.
 - RuntimeHost and RuntimeLoop do not import Integration Boundary.
+- Boundary Failure is Pre-Runtime.
+- Boundary Failure is not Executor Failure.
 
 ## Residual Risks
 
@@ -814,6 +836,7 @@ The execution foundation must not depend on:
 - `EdiIntegrationBoundary` validates requests for boundary crossing but does not connect real runtime.
 - Boundary placement is documented, and only preview integration wiring has been introduced.
 - Preview Integration now uses the boundary before execution runtime, but no real runtime integration has been introduced.
+- Boundary failure semantics are documented as terminal and pre-runtime, with no automatic recovery or targetDomain inference.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
