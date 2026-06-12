@@ -36,6 +36,7 @@ Covered foundation:
 - Integration Boundary Wiring Rule
 - Preview Integration Boundary Wiring
 - Boundary Failure Semantics
+- Real Producer Adapter Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -751,3 +752,52 @@ Il `EdiExecutionResult` failed usa metadata pre-runtime coerenti con `EdiIntegra
 - Boundary Failure non attiva recovery automatico.
 - Boundary Failure non inferisce `targetDomain`.
 - `missing-request-domain` e terminale fino a RFC dedicata.
+
+## DL-EXEC-018 — Producer Adapter Prima Della Boundary
+
+### Problema
+
+Dopo la definizione della Integration Boundary, serviva un contratto neutrale per rappresentare futuri producer reali senza introdurre engine reali, real integration o wiring operativo.
+
+### Decisione
+
+Introdurre `EdiProducerAdapter` come foundation di contratto.
+
+Il producer adapter descrive:
+
+- source;
+- target domain;
+- mode;
+- payload/input;
+- metadata minimi;
+- output compatibile con futura creazione di `EdiExecutionRequest`.
+
+### Motivazione
+
+I futuri adapter di integrazione dovranno preparare request prima di attraversare `EdiIntegrationBoundary`, ma non devono essere confusi con engine reali, RuntimeHost, RuntimeLoop, executor o consumer.
+
+### Alternative Scartate
+
+- Creare subito un Import producer reale.
+- Creare subito un Recognition producer reale.
+- Creare subito un Viewer producer reale.
+- Collegare producer adapter alla boundary in modo operativo.
+- Importare RuntimeHost o RuntimeLoop nei producer adapter.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+EDI guadagna un livello contrattuale pre-boundary senza attivare real integration.
+
+Il contratto resta neutrale e non modifica il contratto pubblico `EdiExecutionRequest`.
+
+### Regole Permanenti Generate
+
+- Producer Adapter non e Real Engine.
+- Producer Adapter non e RuntimeHost.
+- Producer Adapter non e RuntimeLoop.
+- Producer Adapter non e Executor.
+- Producer Adapter non e Consumer.
+- Producer Adapter vive prima della Integration Boundary.
+- Producer Adapter non chiama engine reali.
+- Producer Adapter non introduce real integration.

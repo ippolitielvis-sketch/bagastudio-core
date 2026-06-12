@@ -80,6 +80,7 @@ This document covers:
 - RFC-1164: EDI Integration Boundary Wiring Review
 - RFC-1165: EDI Preview Integration Boundary Wiring
 - RFC-1166: EDI Boundary Failure Semantics Review
+- RFC-1167: EDI Real Producer Adapter Foundation
 
 ## Architecture Overview
 
@@ -135,6 +136,17 @@ Foundation
 Preview Integration means a caller explicitly asks the helper to execute one request and dispatch the resulting `EdiExecutionResult`. Real Integration with UI, Viewer, cognitive runtime, or real engines is not implemented.
 
 This path is caller-driven. It does not run automatically.
+
+Future real integration is expected to pass through producer adapters before crossing the integration boundary:
+
+```text
+Future Real Producer Adapter
+-> EdiIntegrationBoundary
+-> EdiExecutionRequest
+-> Execution Runtime
+```
+
+This path is not operational today.
 
 ## Core Contracts
 
@@ -665,6 +677,25 @@ The current foundation does not perform automatic recovery, does not infer `targ
 
 Preview Integration represents boundary failure as a controlled failed `EdiExecutionResult` with pre-runtime metadata.
 
+### EdiProducerAdapter
+
+`EdiProducerAdapter` introduces a neutral contract for future real producer adapters.
+
+It defines:
+
+- `EdiProducerAdapterSource`;
+- `EdiProducerAdapterDomain`;
+- `EdiProducerAdapterMode`;
+- `EdiProducerAdapterInput`;
+- `EdiProducerAdapterOutput`;
+- `EdiProducerAdapter`.
+
+A producer adapter is not a real engine. It does not parse files, inspect Viewer state, call product runtimes, mutate projects, call RuntimeHost, call RuntimeLoop, or execute requests.
+
+Its role is to describe how a future source could prepare data compatible with future `EdiExecutionRequest` creation before crossing `EdiIntegrationBoundary`.
+
+No concrete Import, Recognition, Viewer, Pricing, Factory, Layout, or Join real producer is implemented in this foundation.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -678,7 +709,8 @@ Foundation includes the stable contracts and preview primitives:
 - execution request;
 - execution result;
 - executor contract;
-- preview executors.
+- preview executors;
+- producer adapter contract.
 
 Foundation defines what exists and how the pieces are shaped.
 
@@ -731,6 +763,8 @@ Real Integration would include future controlled connections to:
 
 This document does not claim that real integration exists.
 
+Producer adapters are a future pre-boundary layer. They are not RuntimeHost, RuntimeLoop, Executor, Consumer, or real engine integrations.
+
 Consumer wiring does not mean result integration. The current consumer registry can be constructed, but no implemented layer automatically passes execution results into consumers.
 
 The current `PreviewExecutionAndConsumptionWiring` object exposes components together but does not orchestrate them.
@@ -770,6 +804,8 @@ Execution result consumers remain separate from `EdiExecutionRuntime` and are no
 `EdiIntegrationBoundary` remains separate from RuntimeHost, RuntimeLoop, Execution, Consumption, and Preview Integration. It validates the edge without importing real runtime owners.
 
 The boundary sits before runtime. Preview Integration and future integration adapters may use it before handing a request to execution runtime components, but RuntimeHost, RuntimeLoop, Executor, and Consumer must remain unaware of it.
+
+`EdiProducerAdapter` sits before `EdiIntegrationBoundary`. It describes future source adaptation and remains separate from boundary validation, runtime execution, consumers, preview executors, and real engines.
 
 ## Forbidden Dependencies
 
@@ -821,6 +857,8 @@ The execution foundation must not depend on:
 - RuntimeHost and RuntimeLoop do not import Integration Boundary.
 - Boundary Failure is Pre-Runtime.
 - Boundary Failure is not Executor Failure.
+- Producer Adapter is not Real Engine.
+- Producer Adapter is before Integration Boundary.
 
 ## Residual Risks
 
@@ -837,6 +875,7 @@ The execution foundation must not depend on:
 - Boundary placement is documented, and only preview integration wiring has been introduced.
 - Preview Integration now uses the boundary before execution runtime, but no real runtime integration has been introduced.
 - Boundary failure semantics are documented as terminal and pre-runtime, with no automatic recovery or targetDomain inference.
+- Producer adapter foundation exists as a contract only; no real producer is connected.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1166
+- RFC-1126 to RFC-1167
 
 Architecture distinction:
 
@@ -722,6 +722,7 @@ RFC:
 - RFC-1164
 - RFC-1165
 - RFC-1166
+- RFC-1167
 
 ### Context
 
@@ -769,6 +770,12 @@ Boundary failure is pre-runtime. Current boundary errors are terminal: `missing-
 
 `missing-request-domain` may become recoverable only in a future RFC with an explicit adapter capable of inferring `targetDomain`.
 
+RFC-1167 introduced the Real Producer Adapter Foundation.
+
+`EdiProducerAdapter` defines a neutral contract for future source adapters that may prepare data compatible with future `EdiExecutionRequest` creation before crossing `EdiIntegrationBoundary`.
+
+No real Import, Recognition, Viewer, Pricing, Factory, Layout, or Join producer was introduced.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -783,6 +790,9 @@ Boundary failure is pre-runtime. Current boundary errors are terminal: `missing-
 - Boundary Failure is Pre-Runtime.
 - Boundary Failure is not Executor Failure.
 - Boundary Failure does not infer targetDomain.
+- Producer Adapter is not Real Engine.
+- Producer Adapter stays before Integration Boundary.
+- Producer Adapter does not call RuntimeHost or RuntimeLoop.
 
 ## Current State
 
@@ -810,6 +820,7 @@ Implemented today:
 - preview execution and consumption wiring;
 - preview execution and dispatch helper;
 - integration boundary.
+- producer adapter contract.
 
 Documented placement:
 
@@ -826,6 +837,13 @@ Implemented preview wiring:
 - boundary-valid requests continue through the existing execution and dispatch flow;
 - boundary-invalid requests produce a failed `EdiExecutionResult`;
 - boundary-invalid requests are classified as pre-runtime failures;
+- no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
+
+Implemented producer adapter foundation:
+
+- `EdiProducerAdapter` contract exists;
+- no concrete real producer exists;
+- no producer is wired to Integration Boundary;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
 Not implemented today:
