@@ -98,6 +98,7 @@ This document covers:
 - RFC-1182: EDI Viewer Exposure Planning Review
 - RFC-1183: EDI View Model Snapshot Foundation
 - RFC-1184: EDI View Model Snapshot Validation Review
+- RFC-1185: EDI Viewer Exposure Foundation
 
 ## Architecture Overview
 
@@ -1135,6 +1136,37 @@ Readiness:
 
 The planned next RFC is `RFC-1185 - Viewer Exposure Foundation`.
 
+### EdiViewerExposure
+
+`EdiViewerExposure` introduces the first data boundary between `EdiViewModelSnapshot` and a future Viewer.
+
+It exports:
+
+- `EdiViewerExposureMetadata`;
+- `EdiViewerExposureRecognition`;
+- `EdiViewerExposure`;
+- `createEdiViewerExposureFromSnapshot`.
+
+The exposure receives `EdiViewModelSnapshot` and produces a Viewer-friendly data shape.
+
+It preserves:
+
+- id;
+- timestamp;
+- recognition status;
+- recognition mode;
+- recognition execution result id;
+- recognition execution request id;
+- metadata.
+
+`EdiViewModelSnapshot` is the internal EDI view model boundary.
+
+`EdiViewerExposure` is the future Viewer-facing data boundary.
+
+It does not create Viewer components, render UI, use React state, dispatch globally, call runtime, call RuntimeHost, call RuntimeLoop, call EdiExecutionRuntime, or contain real recognition logic.
+
+No real Viewer is connected in RFC-1185.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1328,6 +1360,8 @@ The execution foundation must not depend on:
 - EDI View Model Snapshot is data, not Viewer UI.
 - EDI View Model Snapshot is validated as the Viewer boundary.
 - Viewer Exposure Foundation must read only EDI View Model Snapshot.
+- Viewer Exposure reads View Model Snapshot, not runtime.
+- Viewer Exposure is data, not final Viewer UI.
 
 ## Residual Risks
 
@@ -1359,6 +1393,7 @@ The execution foundation must not depend on:
 - Recognition Observable Flow has no automated tests yet.
 - GitHub remote synchronization still requires a dedicated local/remote verification before push.
 - Viewer exposure via View Model Snapshot is partially prepared, but no Viewer wiring exists.
+- Viewer Exposure Foundation exists, but no real Viewer is connected.
 - View Model Snapshot currently contains only recognition data.
 - Memory, reasoning, feedback, and planning sections are deferred.
 - Future real executors will require stricter domain boundaries and validation strategy.
@@ -1419,4 +1454,4 @@ The Decision Log should record:
 9. Define validation for Recognition Result Adapter once a project test pattern exists.
 10. Define validation for Recognition Observable Flow once a project test pattern exists.
 11. Define validation for EDI View Model Snapshot once a project test pattern exists.
-12. RFC-1185 - Viewer Exposure Foundation.
+12. Define validation for Viewer Exposure once a project test pattern exists.

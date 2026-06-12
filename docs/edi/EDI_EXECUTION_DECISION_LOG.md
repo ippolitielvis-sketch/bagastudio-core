@@ -54,6 +54,7 @@ Covered foundation:
 - Viewer Exposure Via View Model Snapshot
 - EDI View Model Snapshot Foundation
 - EDI View Model Snapshot Validation
+- Viewer Exposure Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1574,6 +1575,49 @@ Le sezioni memory, reasoning, feedback e planning restano future extension.
 - Snapshot resta immutable-style.
 - Memory, reasoning, feedback e planning sono sezioni future.
 - Nessun Viewer/UI/React state viene introdotto da questa validation.
+
+## DL-EXEC-036 - Viewer Exposure Foundation
+
+### Problema
+
+Dopo la validazione dello snapshot, serviva introdurre il primo boundary dati verso futuro Viewer senza collegare Viewer reale, UI, React state, runtime o dispatch.
+
+### Decisione
+
+Introdurre `EdiViewerExposure` come foundation minimale.
+
+La factory `createEdiViewerExposureFromSnapshot` riceve `EdiViewModelSnapshot` e produce una struttura Viewer-friendly.
+
+### Motivazione
+
+Il Viewer futuro deve leggere un layer di esposizione dedicato e non conoscere runtime, flow recognition o observable result.
+
+Separare View Model e Viewer Exposure mantiene EDI indipendente da componenti UI e da React state.
+
+### Alternative Scartate
+
+- Far leggere direttamente lo snapshot ai componenti Viewer reali.
+- Collegare Viewer reale in questa RFC.
+- Introdurre UI definitiva.
+- Introdurre React state globale.
+- Chiamare runtime, RuntimeHost o RuntimeLoop.
+- Collegare RecognitionObservableResult al Viewer.
+
+### Impatto Architetturale
+
+La futura esposizione Viewer ottiene un boundary dati dedicato.
+
+Non viene introdotto Viewer wiring reale.
+
+### Regole Permanenti Generate
+
+- Viewer Exposure legge EDI View Model Snapshot.
+- Viewer Exposure non legge runtime.
+- Viewer Exposure non legge RecognitionObservableResult direttamente.
+- Viewer Exposure non e UI definitiva.
+- Viewer Exposure non usa React state.
+- Viewer Exposure non chiama RuntimeHost o RuntimeLoop.
+- Viewer Exposure non contiene real recognition logic.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

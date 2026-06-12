@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1184
+- RFC-1126 to RFC-1185
 
 Architecture distinction:
 
@@ -740,6 +740,7 @@ RFC:
 - RFC-1182
 - RFC-1183
 - RFC-1184
+- RFC-1185
 
 ### Context
 
@@ -909,6 +910,14 @@ No type changes were required. Memory, reasoning, feedback, and planning remain 
 
 The next planned RFC is `RFC-1185 - Viewer Exposure Foundation`.
 
+RFC-1185 introduced the Viewer Exposure Foundation.
+
+`createEdiViewerExposureFromSnapshot` receives `EdiViewModelSnapshot` and produces `EdiViewerExposure` as a Viewer-friendly data shape.
+
+The exposure preserves id, timestamp, recognition status, recognition mode, execution result id, execution request id, and metadata useful for future Viewer reading.
+
+It does not connect real Viewer components, render UI, use React state, call runtime, call RuntimeHost, call RuntimeLoop, call EdiExecutionRuntime, dispatch globally, or contain real recognition logic.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -970,6 +979,9 @@ The next planned RFC is `RFC-1185 - Viewer Exposure Foundation`.
 - EDI View Model Snapshot is validated as Viewer boundary.
 - Viewer Exposure Foundation reads only EDI View Model Snapshot.
 - Memory, reasoning, feedback, and planning sections are future extensions.
+- Viewer Exposure Foundation exists as data boundary.
+- Viewer Exposure is not final Viewer UI.
+- Viewer Exposure does not read runtime.
 
 ## Current State
 
@@ -1034,6 +1046,7 @@ Implemented producer adapter foundation:
 - Viewer exposure is planned through EDI View Model Snapshot;
 - `createEdiViewModelSnapshotFromRecognitionObservableResult` exists as the View Model Snapshot foundation;
 - EDI View Model Snapshot is validated as ready for Viewer Exposure Foundation planning;
+- `createEdiViewerExposureFromSnapshot` exists as the Viewer Exposure foundation;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1052,7 +1065,8 @@ Not implemented today:
 - runtime result integration;
 - automatic execution and dispatch orchestration;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
-- Viewer exposure;
+- real Viewer wiring;
+- final Viewer UI;
 - memory/reasoning/feedback/planning View Model sections;
 - GitHub/local remote synchronization after this phase;
 - `runRealIntegration`.
