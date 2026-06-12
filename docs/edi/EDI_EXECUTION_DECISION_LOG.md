@@ -39,6 +39,7 @@ Covered foundation:
 - Real Producer Adapter Foundation
 - Producer Adapter Boundary Contract
 - Producer Adapter Request Factory
+- Producer Adapter Boundary Pipeline
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -904,3 +905,51 @@ RuntimeHost, RuntimeLoop, Executor e Consumer restano invariati.
 - Request Factory non chiama Consumer.
 - Request Factory non inferisce `targetDomain`.
 - Request creata dalla factory deve attraversare Integration Boundary.
+
+## DL-EXEC-021 — Producer Adapter Boundary Pipeline Is Pre-Runtime
+
+### Problema
+
+Dopo aver introdotto la request factory, mancava un helper neutrale per collegare `EdiProducerAdapterOutput` alla `EdiIntegrationBoundary` senza chiamare runtime, dispatcher, executor o consumer.
+
+### Decisione
+
+Introdurre `createEdiProducerAdapterBoundaryPipelineResult`.
+
+La pipeline:
+
+- riceve `EdiProducerAdapterOutput`;
+- crea una `EdiExecutionRequest`;
+- passa la request alla `EdiIntegrationBoundary`;
+- restituisce la request se valida;
+- restituisce validation result e metadata pre-runtime.
+
+### Motivazione
+
+Adapter output, request creation e boundary validation sono responsabilita pre-runtime. Devono restare separate dall'esecuzione, dal dispatch e dalla consumption.
+
+### Alternative Scartate
+
+- Chiamare execution runtime dalla pipeline.
+- Chiamare dispatcher dalla pipeline.
+- Chiamare executor o consumer dalla pipeline.
+- Collegare producer reali.
+- Introdurre recovery automatica.
+- Inferire automaticamente `targetDomain`.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+EDI ottiene un helper pre-runtime controllato per validare output adapter trasformati in request.
+
+RuntimeHost, RuntimeLoop, Executor, Consumer e Preview Integration restano invariati.
+
+### Regole Permanenti Generate
+
+- Producer Adapter Boundary Pipeline e pre-runtime.
+- Producer Adapter Boundary Pipeline non chiama runtime.
+- Producer Adapter Boundary Pipeline non chiama dispatcher.
+- Producer Adapter Boundary Pipeline non chiama executor.
+- Producer Adapter Boundary Pipeline non chiama consumer.
+- Producer Adapter Boundary Pipeline non introduce producer reali.
+- Producer Adapter Boundary Pipeline non inferisce `targetDomain`.

@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1169
+- RFC-1126 to RFC-1170
 
 Architecture distinction:
 
@@ -725,6 +725,7 @@ RFC:
 - RFC-1167
 - RFC-1168
 - RFC-1169
+- RFC-1170
 
 ### Context
 
@@ -788,6 +789,12 @@ RFC-1169 introduced the Producer Adapter Request Factory.
 
 The factory does not call RuntimeHost, RuntimeLoop, Executor, Consumer, real engines, Preview Integration, or Integration Boundary.
 
+RFC-1170 introduced the Producer Adapter Boundary Pipeline.
+
+`createEdiProducerAdapterBoundaryPipelineResult` composes adapter output, request factory, and boundary validation. It returns a validated request when valid, or validation issues when invalid.
+
+The pipeline is pre-runtime and does not execute, dispatch, consume, recover, infer `targetDomain`, or call real engines.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -810,6 +817,9 @@ The factory does not call RuntimeHost, RuntimeLoop, Executor, Consumer, real eng
 - Requests produced from adapter input must cross Integration Boundary.
 - Producer Adapter Request Factory converts adapter output to request.
 - Producer Adapter Request Factory does not call Boundary or Runtime.
+- Producer Adapter Boundary Pipeline is pre-runtime.
+- Producer Adapter Boundary Pipeline does not execute or dispatch.
+- Producer Adapter Boundary Pipeline does not infer targetDomain.
 
 ## Current State
 
@@ -861,6 +871,7 @@ Implemented producer adapter foundation:
 - `EdiProducerAdapter` contract exists;
 - `EdiProducerAdapterOutput.executionRequestInput` is compatible with future `createEdiExecutionRequest` usage;
 - `createEdiExecutionRequestFromProducerAdapterOutput` converts adapter output into `EdiExecutionRequest`;
+- `createEdiProducerAdapterBoundaryPipelineResult` converts adapter output into boundary validation result;
 - no concrete real producer exists;
 - no producer is wired to Integration Boundary;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.

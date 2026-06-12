@@ -83,6 +83,7 @@ This document covers:
 - RFC-1167: EDI Real Producer Adapter Foundation
 - RFC-1168: EDI Producer Adapter Boundary Contract Review
 - RFC-1169: EDI Producer Adapter Request Factory Foundation
+- RFC-1170: EDI Producer Adapter Boundary Pipeline Review
 
 ## Architecture Overview
 
@@ -147,6 +148,7 @@ Real Engine / Viewer / Import / Recognition
 -> executionRequestInput
 -> createEdiExecutionRequestFromProducerAdapterOutput
 -> EdiIntegrationBoundary
+-> validated request
 -> Execution Runtime
 ```
 
@@ -740,6 +742,28 @@ The factory does not call RuntimeHost, RuntimeLoop, Executor, Consumer, real eng
 
 The resulting `EdiExecutionRequest` must still cross `EdiIntegrationBoundary` before runtime execution.
 
+### EdiProducerAdapterBoundaryPipeline
+
+`EdiProducerAdapterBoundaryPipeline` introduces a neutral pre-runtime helper from `EdiProducerAdapterOutput` to boundary validation.
+
+It exports:
+
+- `EdiProducerAdapterBoundaryPipelineMetadata`;
+- `EdiProducerAdapterBoundaryPipelineResult`;
+- `createEdiProducerAdapterBoundaryPipelineResult`.
+
+The pipeline:
+
+- receives `EdiProducerAdapterOutput`;
+- creates an `EdiExecutionRequest` via `createEdiExecutionRequestFromProducerAdapterOutput`;
+- passes the request to `EdiIntegrationBoundary`;
+- returns the request only when boundary validation succeeds;
+- returns the validation result and pre-runtime metadata.
+
+It does not call RuntimeHost, RuntimeLoop, Executor, Consumer, dispatcher, Preview Integration, real engines, or `runRealIntegration`.
+
+It does not recover automatically and does not infer `targetDomain`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -907,6 +931,8 @@ The execution foundation must not depend on:
 - Producer Adapter does not call Executor or Consumer.
 - Producer Adapter Request Factory is not Integration.
 - Producer Adapter Request Factory does not call Boundary or Runtime.
+- Producer Adapter Boundary Pipeline is Pre-Runtime.
+- Producer Adapter Boundary Pipeline does not execute or dispatch.
 
 ## Residual Risks
 
@@ -926,6 +952,7 @@ The execution foundation must not depend on:
 - Producer adapter foundation exists as a contract only; no real producer is connected.
 - Producer adapter to boundary contract is documented, but no producer is wired operationally.
 - Producer adapter request factory exists, but no real producer calls it yet.
+- Producer adapter boundary pipeline exists, but no real producer or runtime calls it yet.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
