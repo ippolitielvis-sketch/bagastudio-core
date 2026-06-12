@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1187.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1189.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1187
+- RFC-1126 to RFC-1189
 
 Architecture distinction:
 
@@ -743,6 +743,8 @@ RFC:
 - RFC-1185
 - RFC-1186
 - RFC-1187
+- RFC-1188
+- RFC-1189
 
 ### Context
 
@@ -946,6 +948,28 @@ The first safe BagaStudio integration is a passive presentation adapter that rec
 
 The next recommended RFC is `RFC-1188 - BagaStudio EDI Presentation Adapter Review`.
 
+RFC-1188 defined the role of the future BagaStudio EDI Presentation Adapter.
+
+The planned flow is `EdiViewerExposure`, BagaStudio EDI Presentation Adapter, BagaStudio Presentation Model, and Viewer.
+
+The review clarified the difference between EDI View Model, Viewer Exposure, and BagaStudio Presentation Model. EDI owns observable results, View Model Snapshot, and Viewer Exposure. BagaStudio owns the Presentation Adapter and Presentation Model. Viewer remains a future presentation consumer, not a direct EDI consumer.
+
+The Viewer must not read `EdiViewerExposure` directly because that would expose EDI contracts, bypass BagaStudio ownership, and risk coupling UI evolution to EDI internals.
+
+Memory, Reasoning, Feedback, and Planning should follow the same adapter boundary in future RFCs.
+
+The next recommended RFC is `RFC-1189 - BagaStudio EDI Presentation Model Foundation`.
+
+RFC-1189 introduced the BagaStudio Presentation Model Foundation.
+
+`createBagaStudioPresentationModelFromEdiViewerExposure` receives `EdiViewerExposure` and produces `BagaStudioPresentationModel`.
+
+The model contains an `edi` section with source exposure id, timestamp, recognition status and mode when present, and metadata useful for future presentation.
+
+This model is BagaStudio-owned data. It is not Viewer UI, not React state, not runtime wiring, and not real recognition.
+
+No RuntimeHost, RuntimeLoop, Executor, Consumer, PreviewExecutionAndDispatch, Viewer, UI, dispatch, or engine real integration was introduced.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1021,6 +1045,21 @@ The next recommended RFC is `RFC-1188 - BagaStudio EDI Presentation Adapter Revi
 - Viewer must not read RecognitionObservableResult directly.
 - EdiViewerExposure is the EDI-side boundary for future BagaStudio presentation.
 - BagaStudio EDI Presentation Adapter requires a dedicated RFC.
+- BagaStudio Presentation Adapter translates EdiViewerExposure.
+- BagaStudio Presentation Model hides EDI internals from Viewer.
+- Viewer must not read EdiViewerExposure directly.
+- Viewer must not read EDI View Model directly.
+- Presentation Adapter does not render UI.
+- Presentation Adapter does not create React state.
+- Presentation Adapter does not call runtime or dispatch.
+- Memory, Reasoning, Feedback, and Planning enter presentation through the same adapter boundary.
+- BagaStudio Presentation Model belongs to BagaStudio.
+- BagaStudio Presentation Model receives EdiViewerExposure.
+- BagaStudio Presentation Model is data, not Viewer UI.
+- BagaStudio Presentation Model is not React state.
+- BagaStudio Presentation Model does not call runtime.
+- BagaStudio Presentation Model does not know RuntimeHost or RuntimeLoop.
+- BagaStudio Presentation Model does not contain real recognition logic.
 
 ## Current State
 
@@ -1093,6 +1132,10 @@ Implemented producer adapter foundation:
 - BagaStudio integration planning is documented;
 - `EdiViewerExposure` is the boundary for future BagaStudio presentation;
 - BagaStudio EDI Presentation Adapter is the next planned review;
+- BagaStudio EDI Presentation Adapter role is documented;
+- BagaStudio Presentation Model is the next planned foundation;
+- `createBagaStudioPresentationModelFromEdiViewerExposure` exists as the BagaStudio Presentation Model foundation;
+- `BagaStudioPresentationModel` exists with an EDI presentation section;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1115,6 +1158,7 @@ Not implemented today:
 - final Viewer UI;
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
+- Viewer consumption of BagaStudio Presentation Model;
 - memory/reasoning/feedback/planning View Model sections;
 - automated Observable Stack tests;
 - GitHub/local remote synchronization after this phase;

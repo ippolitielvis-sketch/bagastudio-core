@@ -57,6 +57,8 @@ Covered foundation:
 - Viewer Exposure Foundation
 - EDI Observable Stack Review
 - BagaStudio Integration Planning
+- BagaStudio EDI Presentation Adapter Review
+- BagaStudio Presentation Model Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1722,6 +1724,105 @@ La prima integrazione sicura sara un presentation adapter passivo, non un Viewer
 - EdiViewerExposure e il boundary EDI-side verso BagaStudio presentation.
 - BagaStudio EDI Presentation Adapter richiede RFC dedicata.
 - Nessuna UI, React state o Viewer wiring viene introdotta da questa planning RFC.
+
+## DL-EXEC-039 - BagaStudio Presentation Adapter Separates Viewer From EDI
+
+### Problema
+
+Dopo aver pianificato EDI come capability osservabile, serviva decidere come `EdiViewerExposure` potra diventare consumabile da BagaStudio senza esporre contratti interni EDI al Viewer.
+
+### Decisione
+
+Introdurre in una RFC futura un BagaStudio EDI Presentation Adapter.
+
+Il flusso previsto e:
+
+```text
+EdiViewerExposure
+BagaStudio EDI Presentation Adapter
+BagaStudio Presentation Model
+Viewer
+```
+
+Il Presentation Adapter appartiene a BagaStudio, non al runtime EDI.
+
+### Motivazione
+
+`EdiViewerExposure` e ancora un boundary EDI-side. Farlo leggere direttamente dal Viewer renderebbe il Viewer consapevole di dettagli EDI e indebolirebbe la separazione tra EDI e prodotto.
+
+Un Presentation Model BagaStudio puo nascondere dettagli EDI, stabilizzare la forma consumata dal Viewer futuro e preparare estensioni per Memory, Reasoning, Feedback e Planning.
+
+### Alternative Scartate
+
+- Far leggere `EdiViewerExposure` direttamente al Viewer.
+- Trasformare `EdiViewerExposure` in UI.
+- Introdurre React state in questa fase.
+- Collegare Viewer a EDI View Model.
+- Collegare Viewer a Recognition Observable Flow.
+- Inserire Memory, Reasoning, Feedback o Planning direttamente nel Viewer senza adapter.
+
+### Impatto Architetturale
+
+La futura integrazione BagaStudio avra un boundary dedicato tra EDI e presentazione prodotto.
+
+RFC-1188 non implementa UI, Viewer reale, React state o wiring operativo.
+
+La prossima RFC consigliata e `RFC-1189 - BagaStudio EDI Presentation Model Foundation`.
+
+### Regole Permanenti Generate
+
+- BagaStudio Presentation Adapter traduce EdiViewerExposure.
+- BagaStudio Presentation Model nasconde dettagli interni EDI.
+- Viewer non legge EdiViewerExposure direttamente.
+- Viewer non legge EDI View Model direttamente.
+- Presentation Adapter non renderizza UI.
+- Presentation Adapter non crea React state.
+- Presentation Adapter non chiama runtime, dispatch, RuntimeHost o RuntimeLoop.
+- Memory, Reasoning, Feedback e Planning entrano in presentazione attraverso lo stesso boundary.
+
+## DL-EXEC-040 - BagaStudio Presentation Model Is Product-Side Data
+
+### Problema
+
+Dopo aver definito il ruolo del Presentation Adapter, serviva introdurre un primo modello dati consumabile da BagaStudio senza esporre direttamente `EdiViewerExposure` o altri dettagli interni EDI al Viewer futuro.
+
+### Decisione
+
+Introdurre `BagaStudioPresentationModel` come modello dati BagaStudio-side.
+
+La factory `createBagaStudioPresentationModelFromEdiViewerExposure` riceve `EdiViewerExposure` e produce un modello con sezione `edi`.
+
+### Motivazione
+
+Il Presentation Model stabilizza il contratto prodotto-side e mantiene EDI separato da Viewer, UI, React state, runtime e recognition reale.
+
+Il modello conserva status, timestamp e metadata utili, ma non importa RuntimeHost, RuntimeLoop, EdiExecutionRuntime o componenti Viewer.
+
+### Alternative Scartate
+
+- Far leggere `EdiViewerExposure` direttamente al Viewer.
+- Usare `EdiViewerExposure` come modello prodotto definitivo.
+- Creare componenti UI in questa RFC.
+- Introdurre React state.
+- Collegare il modello a runtime, dispatch o Viewer reale.
+
+### Impatto Architetturale
+
+BagaStudio ottiene il primo modello presentazionale fondazionale per EDI.
+
+La foundation resta data-only e immutable-style.
+
+Non viene introdotto wiring operativo.
+
+### Regole Permanenti Generate
+
+- BagaStudio Presentation Model appartiene a BagaStudio.
+- BagaStudio Presentation Model riceve EdiViewerExposure.
+- BagaStudio Presentation Model non e Viewer UI.
+- BagaStudio Presentation Model non e React state.
+- BagaStudio Presentation Model non chiama runtime.
+- BagaStudio Presentation Model non conosce RuntimeHost o RuntimeLoop.
+- BagaStudio Presentation Model non contiene recognition reale.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

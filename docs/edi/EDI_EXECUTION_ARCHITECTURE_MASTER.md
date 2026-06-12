@@ -101,6 +101,8 @@ This document covers:
 - RFC-1185: EDI Viewer Exposure Foundation
 - RFC-1186: EDI Observable Stack Review
 - RFC-1187: BagaStudio Integration Planning
+- RFC-1188: BagaStudio EDI Presentation Adapter Review
+- RFC-1189: BagaStudio Presentation Model Foundation
 
 ## Architecture Overview
 
@@ -1290,6 +1292,112 @@ First safe BagaStudio integration:
 
 The next recommended RFC is `RFC-1188 - BagaStudio EDI Presentation Adapter Review`.
 
+### BagaStudio EDI Presentation Adapter Review
+
+RFC-1188 defines the role of the future BagaStudio EDI Presentation Adapter.
+
+Planned flow:
+
+```text
+EdiViewerExposure
+↓
+BagaStudio EDI Presentation Adapter
+↓
+BagaStudio Presentation Model
+↓
+Viewer
+```
+
+The Presentation Adapter is the first BagaStudio-owned translation layer after the EDI-side exposure boundary.
+
+It must translate `EdiViewerExposure` into a BagaStudio Presentation Model without exposing EDI internals directly to Viewer or UI layers.
+
+Layer distinction:
+
+- EDI View Model: EDI-owned snapshot of observable EDI data;
+- Viewer Exposure: EDI-owned boundary prepared for future product consumption;
+- BagaStudio Presentation Model: BagaStudio-owned shape intended for future presentation surfaces;
+- Viewer: future consumer of BagaStudio presentation data, not a direct EDI consumer.
+
+The Viewer must not read `EdiViewerExposure` directly because that would:
+
+- make Viewer aware of EDI-specific contracts;
+- bypass the BagaStudio ownership boundary;
+- risk coupling UI evolution to EDI internals;
+- encourage Viewer to call EDI flows or runtime paths directly;
+- make future Memory, Reasoning, Feedback, and Planning extensions harder to isolate.
+
+Future Memory, Reasoning, Feedback, and Planning should enter through the same pattern:
+
+```text
+EDI observable section
+↓
+EDI View Model Snapshot
+↓
+EdiViewerExposure
+↓
+BagaStudio EDI Presentation Adapter
+↓
+BagaStudio Presentation Model
+```
+
+Ownership:
+
+- EDI owns observable results, View Model Snapshot, and Viewer Exposure;
+- BagaStudio owns the Presentation Adapter and Presentation Model;
+- Viewer owns rendering and interaction only in a future UI RFC.
+
+RFC-1188 does not implement the adapter. It only defines the architectural boundary.
+
+The next recommended RFC is `RFC-1189 - BagaStudio EDI Presentation Model Foundation`.
+
+### BagaStudio Presentation Model Foundation
+
+RFC-1189 introduces the first BagaStudio-owned presentation model for EDI data.
+
+Implemented file:
+
+- `components/bagastudio/presentation/BagaStudioPresentationModel.ts`
+
+Public exports:
+
+- `BagaStudioPresentationModel`;
+- `BagaStudioPresentationMetadata`;
+- `BagaStudioEdiPresentationSection`;
+- `BagaStudioEdiPresentationRecognition`;
+- `createBagaStudioPresentationModelFromEdiViewerExposure`.
+
+The factory receives `EdiViewerExposure` and produces `BagaStudioPresentationModel`.
+
+The model preserves:
+
+- presentation id;
+- timestamp;
+- EDI section;
+- source exposure id;
+- recognition status and mode when present;
+- metadata useful for future presentation.
+
+Architectural meaning:
+
+- `EdiViewerExposure` is still EDI-owned;
+- `BagaStudioPresentationModel` is BagaStudio-owned;
+- Viewer should consume future BagaStudio presentation data, not EDI internals;
+- no Viewer component, UI, React state, runtime call, dispatch, or real recognition is introduced.
+
+Current shape:
+
+```text
+BagaStudioPresentationModel
+└─ edi
+   ├─ sourceExposureId
+   ├─ timestamp
+   └─ recognition?
+      ├─ status
+      ├─ mode
+      └─ metadata
+```
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1491,6 +1599,11 @@ The execution foundation must not depend on:
 - Viewer must consume EDI indirectly through a presentation boundary.
 - EdiViewerExposure is the EDI-side boundary for future BagaStudio presentation.
 - BagaStudio EDI Presentation Adapter requires a dedicated RFC.
+- BagaStudio Presentation Model must hide EDI internals from Viewer.
+- Viewer must not read EdiViewerExposure directly.
+- Memory, Reasoning, Feedback, and Planning must enter presentation through the same adapter boundary.
+- BagaStudio Presentation Model is BagaStudio-owned, not EDI runtime-owned.
+- BagaStudio Presentation Model is data, not UI or React state.
 
 ## Residual Risks
 
@@ -1528,7 +1641,10 @@ The execution foundation must not depend on:
 - Observable stack traceability and diagnostics remain minimal.
 - BagaStudio product integration is not planned in code yet.
 - BagaStudio EDI Presentation Adapter is not implemented yet.
+- BagaStudio Presentation Model exists, but no Viewer consumes it yet.
+- BagaStudio Presentation Model currently exposes only the EDI recognition presentation section.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
+- Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
@@ -1591,3 +1707,5 @@ The Decision Log should record:
 12. Define validation for Viewer Exposure once a project test pattern exists.
 13. RFC-1187 - BagaStudio Integration Planning.
 14. RFC-1188 - BagaStudio EDI Presentation Adapter Review.
+15. RFC-1189 - BagaStudio EDI Presentation Model Foundation.
+16. Define BagaStudio EDI Presentation Adapter behavior before Viewer wiring.
