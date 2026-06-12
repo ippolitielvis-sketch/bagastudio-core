@@ -27,6 +27,7 @@ Mappa delle RFC esplicite e delle milestone con ruolo equivalente a RFC implicit
 | RFC-1102 Shader Laboratory | `BagaStudio Shader Laboratory` (`conversations-005.json`) | laboratory -> Heart/Plasma/Magnetic/Particles/Glow | Non evolvere piu SVG; usare EDI Render Engine V2 | [16](16_EDI_VISUAL_ENGINE_HISTORY.md), [07](07_EDI_HISTORY.md) |
 | RFC-1214 Validation Support Builder Foundation | RFC-1214 | Validation Support Artifact -> Builder | Builder puro, stateless, senza approval/rejection/mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1215 Validation Support Traceability Foundation | RFC-1215 | Validation Support Builder -> Traceability | Audit data serializzabile, senza approval/rejection/mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
+| RFC-1216 Validation Support Evaluation Foundation | RFC-1216 | Validation Support Traceability -> Evaluation | Quality data descrittiva, senza approval/rejection/mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 
 ## Evoluzione RFC EDI
 

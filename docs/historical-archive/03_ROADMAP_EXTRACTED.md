@@ -205,3 +205,20 @@ Prima di introdurre approval, rejection, decisioni o Mutation, la traceability d
 
 # Prossimo passo consigliato
 EDI Validation Support Traceability Review and Mutation Boundary Planning.
+
+## Roadmap - Validation Support Evaluation Foundation
+
+# Contesto
+Validation Support dispone di artifact, builder e traceability fondazionali.
+
+# Stato raggiunto
+RFC-1216 introduce la evaluation pura per il Validation Support Layer.
+
+# Sequenza
+Validation Support Artifact -> Validation Support Builder -> Validation Support Traceability -> Validation Support Evaluation.
+
+# Regola roadmap
+Prima di introdurre approval, rejection, decisioni o Mutation, la evaluation deve restare quality data descrittiva e non deve chiamare runtime, executor, Viewer, UI, storage o retrieval.
+
+# Prossimo passo consigliato
+EDI Validation Support Evaluation Review and Mutation Boundary Planning.

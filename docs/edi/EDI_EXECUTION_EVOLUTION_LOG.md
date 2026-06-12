@@ -1239,6 +1239,14 @@ The factory `createEdiValidationSupportTraceability` uses explicit timestamp inp
 
 RFC-1215 clarified that Validation Support Traceability is audit data, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
 
+RFC-1216 introduced `EdiValidationSupportEvaluation` as the dedicated quality descriptor for the Validation Support layer.
+
+The evaluation foundation can represent completeness indicators, coverage indicators, risk coverage indicators, question quality indicators, traceability completeness indicators, and evaluation metadata.
+
+The factory `createEdiValidationSupportEvaluation` uses explicit timestamp input and defensively copies indicator arrays, notes, and metadata.
+
+RFC-1216 clarified that Validation Support Evaluation is quality data, not approval, not rejection, not automatic decision-making, not Mutation, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1442,6 +1450,9 @@ RFC-1215 clarified that Validation Support Traceability is audit data, not appro
 - Validation Support Traceability is audit data, not approval, rejection, decision, or Mutation.
 - Validation Support Traceability does not mutate Product Package or Project State.
 - Validation Support Traceability does not call executor, runtime, Viewer, UI, storage, or retrieval.
+- Validation Support Evaluation is quality data, not approval, rejection, decision, or Mutation.
+- Validation Support Evaluation does not mutate Product Package or Project State.
+- Validation Support Evaluation does not call executor, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1555,7 +1566,8 @@ Implemented producer adapter foundation:
 - Validation Support Artifact Foundation exists;
 - Validation Support Builder Foundation exists;
 - Validation Support Traceability Foundation exists;
-- Validation Support Traceability Review and Mutation Boundary Planning is the next recommended review;
+- Validation Support Evaluation Foundation exists;
+- Validation Support Evaluation Review and Mutation Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1601,6 +1613,7 @@ Not implemented today:
 - Proposal evaluation consumers;
 - Validation support builder consumers;
 - Validation support traceability consumers;
+- Validation support evaluation consumers;
 - Validation support approval/rejection workflow;
 - Validation support mutation boundary;
 - Optimization foundation;

@@ -3478,6 +3478,58 @@ La foundation prepara future review su Mutation Boundary e governance, ma non in
 - Validation Support Traceability non muta Product Package o Project State.
 - Validation Support Traceability non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
+## DL-EXEC-068 - Validation Support Evaluation Is Quality Data, Not Decision
+
+### Problema
+
+Dopo Validation Support Artifact, Builder e Traceability, serviva rappresentare la qualita di un Validation Support Artifact senza introdurre approvazione, rifiuto, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiValidationSupportEvaluation` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+La evaluation puo rappresentare:
+
+- completeness indicators;
+- coverage indicators;
+- risk coverage indicators;
+- question quality indicators;
+- traceability completeness indicators;
+- evaluation metadata.
+
+La factory `createEdiValidationSupportEvaluation` usa timestamp esplicito e copia difensivamente indicator arrays, notes e metadata.
+
+### Motivazione
+
+Validation Support ha bisogno di quality signals prima di qualsiasi Mutation Boundary o workflow BagaStudio-owned.
+
+La evaluation deve permettere auditability e review del support material senza diventare validator, approval engine, rejection engine, mutation path o source of truth.
+
+### Alternative Scartate
+
+- Usare evaluation come approval o rejection.
+- Usare evaluation come decision status.
+- Far prendere decisioni automatiche alla evaluation.
+- Collegare evaluation a Mutation Layer.
+- Collegare evaluation a executor, runtime, Viewer, UI, storage o retrieval.
+- Far mutare Product Package o Project State dalla evaluation.
+
+### Impatto Architetturale
+
+RFC-1216 aggiunge il primo quality descriptor cognitivo dedicato al Validation Support layer.
+
+La foundation prepara future review su Mutation Boundary e governance, ma non introduce nessuno di questi layer come comportamento operativo.
+
+### Regole Permanenti Generate
+
+- Validation Support Evaluation e quality data.
+- Validation Support Evaluation non e approval.
+- Validation Support Evaluation non e rejection.
+- Validation Support Evaluation non produce decisioni automatiche.
+- Validation Support Evaluation non e Mutation.
+- Validation Support Evaluation non muta Product Package o Project State.
+- Validation Support Evaluation non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

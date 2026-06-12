@@ -256,3 +256,38 @@ EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudi
 
 # Conversazioni utilizzate
 - RFC-1215 Validation Support Traceability Foundation
+
+## Milestone - RFC-1216 Validation Support Evaluation Foundation
+
+# Contesto
+Validation Support dispone di artifact, builder e traceability fondazionali. Serve ora descrivere la qualita del support material senza introdurre decisioni.
+
+# Problema
+Senza evaluation dedicata, completezza, copertura, copertura rischi, qualita delle domande e completezza della traceability restano non rappresentate.
+
+# Decisione
+Introdurre `EdiValidationSupportEvaluation` come struttura dati serializzabile, auditabile, domain-independent e non esecutiva.
+
+# Motivazione
+Validation Support deve poter esporre quality signals descrittivi prima di qualsiasi workflow di approval/rejection o Mutation Boundary.
+
+# Implementazione
+RFC-1216 crea `components/edi/validation/EdiValidationSupportEvaluation.ts` e documenta la evaluation nei documenti EDI principali.
+
+# Evoluzione
+La roadmap passa a review di Validation Support Evaluation e Mutation Boundary prima di introdurre approval/rejection workflow.
+
+# Impatto
+Il layer Validation Support ottiene quality data fondazionale, mantenendo separati supporto, decisione e mutation.
+
+# Regole permanenti nate
+- Validation Support Evaluation e quality data.
+- Validation Support Evaluation non approva, non rifiuta e non decide.
+- Validation Support Evaluation non muta Product Package o Project State.
+- Validation Support Evaluation non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+# Collegamenti con altri Engine
+EDI Cognitive, Validation Support, Proposal, Reasoning, Understanding, BagaStudio Validation futura.
+
+# Conversazioni utilizzate
+- RFC-1216 Validation Support Evaluation Foundation
