@@ -99,6 +99,8 @@ This document covers:
 - RFC-1183: EDI View Model Snapshot Foundation
 - RFC-1184: EDI View Model Snapshot Validation Review
 - RFC-1185: EDI Viewer Exposure Foundation
+- RFC-1186: EDI Observable Stack Review
+- RFC-1187: BagaStudio Integration Planning
 
 ## Architecture Overview
 
@@ -1167,6 +1169,127 @@ It does not create Viewer components, render UI, use React state, dispatch globa
 
 No real Viewer is connected in RFC-1185.
 
+### EDI Observable Stack Review
+
+RFC-1186 reviews the full EDI Observable Stack built up to RFC-1185.
+
+Reviewed stack:
+
+```text
+Recognition Producer Adapter
+↓
+Recognition Boundary Pipeline
+↓
+Recognition Runtime Adapter
+↓
+Recognition Result Adapter
+↓
+Recognition Observable Result
+↓
+EdiViewModelSnapshot
+↓
+EdiViewerExposure
+```
+
+Review outcome:
+
+- RuntimeHost remains separate;
+- RuntimeLoop remains separate;
+- Viewer remains separate;
+- Execution runtime remains injected and not globally owned by the stack;
+- Recognition remains a foundation flow, not real recognition;
+- Observable Result to View Model boundary is correct;
+- View Model to Viewer Exposure boundary is correct;
+- no Viewer code, UI, React state, dispatch, or real engine is introduced.
+
+Stable foundations:
+
+- EdiIntegrationBoundary;
+- EdiProducerAdapter;
+- EdiProducerAdapterRequestFactory;
+- EdiProducerAdapterBoundaryPipeline;
+- RecognitionProducerAdapter;
+- RecognitionProducerBoundaryPipeline;
+- RecognitionRuntimeAdapter;
+- RecognitionResultAdapter;
+- RecognitionObservableFlow;
+- EdiViewModelSnapshot;
+- EdiViewerExposure.
+
+Provisional foundations:
+
+- diagnostics and traceability remain foundation-level;
+- boundary failure fallback remains minimal;
+- View Model currently contains recognition only;
+- Viewer exposure is data-only and not connected to a real Viewer;
+- memory, reasoning, feedback, and planning sections are not implemented yet;
+- automated tests for the observable stack are not present yet.
+
+Readiness:
+
+- BagaStudio integration: ready for planning, not implementation;
+- Viewer exposure: ready for a dedicated foundation layer, not real UI wiring;
+- Memory/Reasoning integration: ready for architecture planning, not runtime wiring.
+
+The next recommended RFC is `RFC-1187 - BagaStudio Integration Planning`.
+
+### BagaStudio Integration Planning
+
+RFC-1187 plans how the reviewed EDI Observable Stack should enter BagaStudio without turning EDI into a Viewer controller.
+
+Decision:
+
+- EDI enters BagaStudio as an observable and consultable capability;
+- EDI does not control Viewer directly;
+- EDI does not own Project/Product state;
+- Viewer must consume EDI indirectly through a presentation boundary;
+- `EdiViewerExposure` remains the current EDI-side boundary;
+- a future BagaStudio EDI Presentation Adapter should translate `EdiViewerExposure` into a BagaStudio-presentable shape.
+
+Planned relationship:
+
+```text
+EDI Observable Stack
+↓
+EdiViewerExposure
+↓
+Future BagaStudio EDI Presentation Adapter
+↓
+Future BagaStudio presentation surface
+↓
+Viewer or UI consumer
+```
+
+The Viewer must not:
+
+- call Recognition Observable Flow;
+- call Recognition Runtime Adapter;
+- call EdiExecutionRuntime;
+- call RuntimeHost;
+- call RuntimeLoop;
+- read RecognitionObservableResult directly;
+- own EDI lifecycle;
+- infer runtime behavior from EDI data.
+
+The future Presentation Adapter may translate data for BagaStudio, but it must not:
+
+- render UI;
+- create React state;
+- call runtime;
+- call dispatch;
+- mutate Project/Product state;
+- execute recognition;
+- connect real engines.
+
+First safe BagaStudio integration:
+
+- a passive presentation adapter that receives `EdiViewerExposure`;
+- produces a BagaStudio-readable presentation model;
+- remains independent from Viewer implementation;
+- does not connect to RuntimeHost, RuntimeLoop, Executor, Consumer, or real engines.
+
+The next recommended RFC is `RFC-1188 - BagaStudio EDI Presentation Adapter Review`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1362,6 +1485,12 @@ The execution foundation must not depend on:
 - Viewer Exposure Foundation must read only EDI View Model Snapshot.
 - Viewer Exposure reads View Model Snapshot, not runtime.
 - Viewer Exposure is data, not final Viewer UI.
+- EDI Observable Stack is reviewed.
+- BagaStudio integration requires a dedicated planning RFC.
+- EDI is an observable capability, not a Viewer controller.
+- Viewer must consume EDI indirectly through a presentation boundary.
+- EdiViewerExposure is the EDI-side boundary for future BagaStudio presentation.
+- BagaStudio EDI Presentation Adapter requires a dedicated RFC.
 
 ## Residual Risks
 
@@ -1396,6 +1525,11 @@ The execution foundation must not depend on:
 - Viewer Exposure Foundation exists, but no real Viewer is connected.
 - View Model Snapshot currently contains only recognition data.
 - Memory, reasoning, feedback, and planning sections are deferred.
+- Observable stack traceability and diagnostics remain minimal.
+- BagaStudio product integration is not planned in code yet.
+- BagaStudio EDI Presentation Adapter is not implemented yet.
+- Viewer calling EDI flows directly would break the Observable Stack boundary.
+- Product state ownership rules still need a dedicated integration plan.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1455,3 +1589,5 @@ The Decision Log should record:
 10. Define validation for Recognition Observable Flow once a project test pattern exists.
 11. Define validation for EDI View Model Snapshot once a project test pattern exists.
 12. Define validation for Viewer Exposure once a project test pattern exists.
+13. RFC-1187 - BagaStudio Integration Planning.
+14. RFC-1188 - BagaStudio EDI Presentation Adapter Review.

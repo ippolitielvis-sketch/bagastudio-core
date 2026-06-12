@@ -55,6 +55,8 @@ Covered foundation:
 - EDI View Model Snapshot Foundation
 - EDI View Model Snapshot Validation
 - Viewer Exposure Foundation
+- EDI Observable Stack Review
+- BagaStudio Integration Planning
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1618,6 +1620,108 @@ Non viene introdotto Viewer wiring reale.
 - Viewer Exposure non usa React state.
 - Viewer Exposure non chiama RuntimeHost o RuntimeLoop.
 - Viewer Exposure non contiene real recognition logic.
+
+## DL-EXEC-037 - EDI Observable Stack Reviewed
+
+### Problema
+
+Dopo l'introduzione di Viewer Exposure Foundation, serviva revisionare l'intero Observable Stack per capire se fosse maturo abbastanza per pianificare integrazione BagaStudio senza introdurre ancora Viewer reale o codice operativo.
+
+### Decisione
+
+Classificare l'EDI Observable Stack come reviewed.
+
+Lo stack revisionato e:
+
+```text
+Recognition Producer Adapter
+Recognition Boundary Pipeline
+Recognition Runtime Adapter
+Recognition Result Adapter
+Recognition Observable Result
+EdiViewModelSnapshot
+EdiViewerExposure
+```
+
+### Motivazione
+
+La review conferma che RuntimeHost, RuntimeLoop, Viewer, Execution Runtime e Recognition restano separati.
+
+Le boundary Observable Result -> ViewModel e ViewModel -> Viewer Exposure sono corrette.
+
+### Alternative Scartate
+
+- Procedere direttamente a Viewer wiring.
+- Introdurre UI.
+- Introdurre dispatch globale.
+- Collegare RuntimeHost o RuntimeLoop.
+- Introdurre real recognition.
+- Introdurre Memory/Reasoning wiring senza planning.
+
+### Impatto Architetturale
+
+EDI observable foundation e matura abbastanza per planning BagaStudio.
+
+Non e ancora pronta per integrazione prodotto diretta.
+
+La prossima RFC consigliata e `RFC-1187 - BagaStudio Integration Planning`.
+
+### Regole Permanenti Generate
+
+- Observable Stack reviewed non significa Viewer integration.
+- BagaStudio integration richiede planning dedicato.
+- Viewer exposure reale richiede RFC dedicata.
+- Memory/Reasoning integration richiede planning dedicato.
+- Traceability e fallback restano foundation-level.
+- Nessun push/remoto senza verifica dedicata.
+
+## DL-EXEC-038 - EDI As Observable BagaStudio Capability
+
+### Problema
+
+Dopo la review dell'Observable Stack, serviva pianificare come EDI potra entrare in BagaStudio senza accoppiare EDI a Viewer, RuntimeHost, RuntimeLoop, React state o componenti UI.
+
+### Decisione
+
+EDI deve essere integrato in BagaStudio come capability osservabile e consultabile, non come controller diretto del Viewer.
+
+Il Viewer non deve leggere direttamente `RecognitionObservableResult` e non deve chiamare flow EDI.
+
+`EdiViewerExposure` resta il boundary EDI-side verso un futuro livello BagaStudio.
+
+La prossima RFC consigliata e `RFC-1188 - BagaStudio EDI Presentation Adapter Review`.
+
+### Motivazione
+
+Separare EDI da Viewer preserva il ruolo dell'Observable Stack come pipeline dati e impedisce che componenti UI o stato React diventino proprietari del runtime EDI.
+
+Un futuro BagaStudio EDI Presentation Adapter puo tradurre `EdiViewerExposure` in una forma presentabile senza introdurre Viewer wiring reale.
+
+### Alternative Scartate
+
+- Far chiamare `runRecognitionObservableFlow` al Viewer.
+- Far leggere `RecognitionObservableResult` direttamente al Viewer.
+- Collegare Viewer a `EdiExecutionRuntime`.
+- Collegare Viewer a RuntimeHost o RuntimeLoop.
+- Trasformare `EdiViewerExposure` in UI definitiva.
+- Mutare Project/Product state da EDI.
+
+### Impatto Architetturale
+
+EDI ottiene un percorso di integrazione BagaStudio pianificato ma non implementato.
+
+La prima integrazione sicura sara un presentation adapter passivo, non un Viewer component.
+
+### Regole Permanenti Generate
+
+- EDI e una capability osservabile, non un Viewer controller.
+- Viewer consuma EDI indirettamente.
+- Viewer non chiama flow EDI.
+- Viewer non legge RecognitionObservableResult.
+- Viewer non conosce RuntimeHost o RuntimeLoop.
+- EdiViewerExposure e il boundary EDI-side verso BagaStudio presentation.
+- BagaStudio EDI Presentation Adapter richiede RFC dedicata.
+- Nessuna UI, React state o Viewer wiring viene introdotta da questa planning RFC.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
