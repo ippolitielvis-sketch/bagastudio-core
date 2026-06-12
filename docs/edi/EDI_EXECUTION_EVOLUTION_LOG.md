@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1199.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1200.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1199
+- RFC-1126 to RFC-1200
 
 Architecture distinction:
 
@@ -1093,6 +1093,16 @@ The factory `createEdiMemoryEntryFromObservationSnapshot` creates a Memory Entry
 
 RFC-1199 prepares the path from Observation to Memory, and then to future Understanding and Reasoning, but does not implement those later steps.
 
+RFC-1200 reviewed the Observation to Memory flow before any Understanding, Reasoning, Proposal, storage, database, Viewer, UI, or runtime ingestion.
+
+The reviewed path is Product Package, Product Package Observation Adapter, Product Package Observation Snapshot, Memory Candidate, and EdiMemoryEntry.
+
+The review confirmed that Memory preserves contextual knowledge, not cache data. Observation Snapshot remains the point-in-time read-only evidence package. Memory Entry remains the retained contextual record with identity, source, timestamp, category, summary, traceability metadata, and a serializable snapshot reference.
+
+RFC-1200 confirmed readiness for `RFC-1201 - EDI Understanding Foundation Review`.
+
+It did not introduce Understanding, Reasoning, Proposal, storage, retrieval, mutation, runtime wiring, Viewer, UI, or React state.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1239,6 +1249,10 @@ RFC-1199 prepares the path from Observation to Memory, and then to future Unders
 - Memory Entry is a descriptor, not storage.
 - Memory Entry references Observation Snapshot metadata, not live Product Package.
 - Memory Entry does not trigger retrieval, reasoning, proposal, mutation, Viewer, UI, Factory, or runtime behavior.
+- Observation to Memory keeps Snapshot and Memory Entry separate.
+- Memory Entry preserves contextual knowledge, not cache data.
+- Understanding may consume Memory Entry only after a dedicated RFC.
+- Reasoning must not be triggered by Memory Entry creation.
 
 ## Current State
 
@@ -1335,6 +1349,9 @@ Implemented producer adapter foundation:
 - Product Package Observation Flow is reviewed;
 - EDI Memory Foundation Review is documented;
 - EDI Memory Entry Foundation exists;
+- Observation to Memory Flow is reviewed;
+- Observation Snapshot and Memory Entry separation is documented;
+- Understanding Foundation Review is the next recommended RFC;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1367,8 +1384,11 @@ Not implemented today:
 - EDI observation path over Product Package;
 - EDI proposal validation path;
 - Product Package Observation Adapter product workflow integration;
-- EDI Memory foundation;
+- Memory Candidate explicit contract;
+- EDI Understanding foundation;
 - Product Package Observation metadata serializability policy;
+- Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;
+- alignment between EdiMemoryEntry descriptor and older cognitive memory contracts;
 - real memory storage or database;
 - memory retention, retrieval, privacy, and governance policy;
 - Knowledge Graph;

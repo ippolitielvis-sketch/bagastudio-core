@@ -70,6 +70,7 @@ Covered foundation:
 - Product Package Observation Flow Review
 - EDI Memory Foundation Review
 - EDI Memory Entry Foundation
+- Observation to Memory Flow Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2575,6 +2576,66 @@ La prossima fase dovra revisionare la entry e pianificare ingestion/retrieval se
 - Memory Entry non conserva Product Package live.
 - Memory Entry non attiva retrieval, reasoning, proposal o mutation.
 - Memory Entry non conosce Viewer, UI, Factory o runtime.
+
+## DL-EXEC-052 - Observation To Memory Preserves Context Without Triggering Reasoning
+
+### Problema
+
+Dopo RFC-1199, serviva revisionare il percorso `Observation Snapshot -> Memory Entry` prima di progettare Understanding, Reasoning, Proposal, storage o ingestion runtime.
+
+La domanda centrale era se Memory conserva dati grezzi o conoscenza contestuale.
+
+### Decisione
+
+Approvare il percorso Observation to Memory come foundation documentale:
+
+```text
+Product Package
+Product Package Observation Adapter
+Product Package Observation Snapshot
+Memory Candidate
+EdiMemoryEntry
+```
+
+Memory conserva conoscenza contestuale derivata da osservazioni, non cache runtime.
+
+`ProductPackageObservationSnapshot` resta il pacchetto read-only di evidenza osservata.
+
+`EdiMemoryEntry` resta il record contestuale trattenuto, con summary, source, category, timestamp, metadata e riferimento serializzabile allo snapshot originale.
+
+### Motivazione
+
+Separare Snapshot e Memory Entry evita che l'osservazione diventi memoria viva o Source of Truth.
+
+La Memory Entry e sufficientemente tracciabile a livello foundation tramite id, timestamp, source, productPackageId, schema, sourceFormat e riferimento allo snapshot.
+
+Il modello e abbastanza domain-independent per pianificare Understanding futura, perche source e category non sono limitati al solo Product Package.
+
+### Alternative Scartate
+
+- Usare Observation Snapshot direttamente come Memory Entry.
+- Introdurre storage o database durante la review.
+- Introdurre Understanding o Reasoning subito dopo la creazione della entry.
+- Introdurre Proposal o Optimization operative.
+- Usare Memory Entry come cache runtime.
+- Salvare riferimenti live al Product Package.
+
+### Impatto Architetturale
+
+RFC-1200 conferma che Observation to Memory e pronto per planning Understanding, ma non per runtime ingestion, retrieval, reasoning operativo o proposal.
+
+Restano aperti deduplication, correlation, confidence, trust, freshness, retention, privacy, governance e allineamento con i contratti cognitivi memory piu vecchi.
+
+La prossima RFC consigliata e `RFC-1201 - EDI Understanding Foundation Review`.
+
+### Regole Permanenti Generate
+
+- Observation Snapshot e Memory Entry restano separati.
+- Memory conserva conoscenza contestuale, non cache dati.
+- Memory Entry non e Source of Truth.
+- Memory Entry non avvia Understanding, Reasoning, Proposal, Optimization, Mutation o runtime.
+- Future Understanding deve leggere Memory Entry solo tramite RFC dedicata.
+- Future Reasoning deve trattare Memory Entry come evidenza, non come trigger automatico.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 

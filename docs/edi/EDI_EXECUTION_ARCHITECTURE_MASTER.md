@@ -114,6 +114,7 @@ This document covers:
 - RFC-1197: Product Package Observation Flow Review
 - RFC-1198: EDI Memory Foundation Review
 - RFC-1199: EDI Memory Entry Foundation
+- RFC-1200: Observation to Memory Flow Review
 
 ## Architecture Overview
 
@@ -2033,6 +2034,49 @@ Observation
 
 The foundation does not perform Understanding or Reasoning yet. It only establishes the shape of the retained contextual record.
 
+### Observation to Memory Flow Review
+
+RFC-1200 reviews the path from product observation to memory before introducing Understanding, Reasoning, Proposal, storage, database, or runtime ingestion.
+
+Reviewed flow:
+
+```text
+Product Package
+-> Product Package Observation Adapter
+-> Product Package Observation Snapshot
+-> Memory Candidate
+-> EdiMemoryEntry
+```
+
+Review outcome:
+
+- Memory preserves contextual knowledge, not raw cache data.
+- `ProductPackageObservationSnapshot` remains the point-in-time read-only evidence package.
+- `EdiMemoryEntry` remains the retained contextual record derived from the snapshot.
+- The Memory Entry stores identity, source, timestamp, category, summary, traceability metadata, and a serializable snapshot reference.
+- The Memory Entry does not keep a live Product Package reference.
+- The flow is ready for Understanding architecture planning.
+- The flow is not ready for operational reasoning, retrieval, storage, proposal, mutation, Viewer, UI, or runtime ingestion.
+
+Snapshot and Memory Entry remain separate:
+
+- Snapshot answers what was observed.
+- Memory Entry answers what EDI retains as contextual knowledge.
+- Future Understanding may consume Memory Entries, but must not mutate them into Source of Truth.
+- Future Reasoning may use Memory Entries as evidence, but must not be triggered by entry creation.
+
+RFC-1200 confirms that the current traceability is sufficient at foundation level through snapshot id, snapshot timestamp, source, product package id, schema, source format, and metadata.
+
+Known limits remain:
+
+- no explicit Memory Candidate type exists yet;
+- no storage, retrieval, retention, ranking, or deduplication policy exists;
+- no confidence, trust, freshness, or privacy policy exists;
+- the relationship with the older cognitive memory contracts remains future alignment work;
+- generated summaries may lose context if richer observation evidence is required later.
+
+The next recommended RFC is `RFC-1201 - EDI Understanding Foundation Review`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2275,6 +2319,10 @@ The execution foundation must not depend on:
 - EDI Memory Entry is a descriptor, not storage.
 - EDI Memory Entry references Observation Snapshot metadata, not live Product Package references.
 - EDI Memory Entry must not trigger retrieval, reasoning, proposal, mutation, Viewer, UI, or runtime behavior.
+- Observation to Memory preserves the separation between Snapshot and Memory Entry.
+- Memory Entry stores contextual knowledge, not cache data.
+- Understanding may consume Memory Entries only after a dedicated Understanding RFC.
+- Reasoning must not be triggered by Memory Entry creation.
 
 ## Residual Risks
 
@@ -2340,6 +2388,11 @@ The execution foundation must not depend on:
 - EDI Memory Entry foundation exists, but no storage or retrieval uses it yet.
 - EDI Memory storage, database, retention, privacy, and retrieval policies are not implemented yet.
 - Memory to Reasoning flow is architecture-only.
+- Observation to Memory has no explicit Memory Candidate type yet.
+- Observation to Memory has no deduplication or correlation policy yet.
+- Memory Entry has no confidence, trust, freshness, or retention model yet.
+- Relationship between `components/edi/memory/EdiMemoryEntry` and older cognitive memory contracts requires future alignment.
+- Understanding contract is not defined yet.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2417,4 +2470,5 @@ The Decision Log should record:
 25. RFC-1197 - Product Package Observation Flow Review.
 26. RFC-1198 - EDI Memory Foundation Review.
 27. RFC-1199 - EDI Memory Entry Foundation.
-28. EDI Memory Entry Review and Memory ingestion planning.
+28. RFC-1200 - Observation to Memory Flow Review.
+29. RFC-1201 - EDI Understanding Foundation Review.
