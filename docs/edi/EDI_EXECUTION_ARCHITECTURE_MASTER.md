@@ -117,6 +117,7 @@ This document covers:
 - RFC-1200: Observation to Memory Flow Review
 - RFC-1201: EDI Understanding Foundation Review
 - RFC-1202: EDI Understanding Artifact Foundation
+- RFC-1203: Understanding to Reasoning Boundary Review
 
 ## Architecture Overview
 
@@ -2166,6 +2167,51 @@ The foundation intentionally does not introduce Reasoning, Proposal, mutation, r
 
 The artifact prepares future Reasoning by providing interpreted context, but it does not trigger Reasoning automatically.
 
+### Understanding to Reasoning Boundary Review
+
+RFC-1203 defines the boundary between Understanding and future Reasoning without introducing a Reasoning foundation, Proposal, runtime, UI, Viewer, storage, or operational behavior.
+
+Understanding owns interpreted meaning:
+
+- classifications;
+- relationships;
+- inferred meaning;
+- contextual notes;
+- semantic interpretation;
+- traceability back to Memory.
+
+Reasoning will own evaluation over understood context:
+
+- alternatives;
+- consequences;
+- tradeoffs;
+- constraints;
+- possible paths;
+- preparation for future Proposal.
+
+Transition rule:
+
+```text
+EdiUnderstandingArtifact
+-> future Reasoning input
+-> future Reasoning output
+-> future Proposal
+```
+
+A comprehension becomes reasoning only when EDI starts evaluating what follows from the interpreted meaning.
+
+Examples:
+
+- Product Package: Understanding can classify a product structure and relation between components; Reasoning may later evaluate whether the structure suggests risks, missing information, or alternative configurations.
+- Hardware: Understanding can identify that a memory entry describes hardware constraints; Reasoning may later compare compatible options and consequences.
+- DXF/DWG: Understanding can interpret an observed drawing as rooms, openings, obstacles, or dimensions; Reasoning may later evaluate layout implications.
+- Estimates: Understanding can interpret cost context and categories; Reasoning may later compare pricing consequences or missing estimate assumptions.
+- Production: Understanding can interpret materials, components, and process context; Reasoning may later evaluate manufacturing implications, nesting constraints, or waste risks.
+
+Reasoning output is not defined in RFC-1203. It is expected to prepare future Proposal, but must not create Proposal until a dedicated Proposal RFC exists.
+
+The next recommended RFC is `RFC-1204 - EDI Reasoning Foundation Review`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2419,6 +2465,9 @@ The execution foundation must not depend on:
 - Understanding Artifact is a descriptor of interpreted meaning, not a reasoning result.
 - Understanding Artifact references Memory Entries, not live memory storage.
 - Understanding Artifact must not trigger Reasoning, Proposal, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Understanding owns interpreted meaning; Reasoning owns evaluation over that meaning.
+- Reasoning must not be introduced inside Understanding Artifact.
+- Reasoning may prepare Proposal only after dedicated Reasoning and Proposal RFCs.
 
 ## Residual Risks
 
@@ -2495,6 +2544,9 @@ The execution foundation must not depend on:
 - Business and personal Understanding will require privacy and governance review before implementation.
 - Understanding Artifact exists, but no builder, classifier, reasoning consumer, storage, retrieval, or validation policy uses it yet.
 - Understanding Artifact metadata remains foundation-level and will need privacy/governance rules for business and personal contexts.
+- Understanding to Reasoning transition is documented but has no contract yet.
+- Reasoning output shape is not defined yet.
+- Proposal readiness is architecture-only and requires Reasoning first.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2575,4 +2627,5 @@ The Decision Log should record:
 28. RFC-1200 - Observation to Memory Flow Review.
 29. RFC-1201 - EDI Understanding Foundation Review.
 30. RFC-1202 - EDI Understanding Artifact Foundation.
-31. EDI Understanding Artifact Review and Reasoning Foundation Planning.
+31. RFC-1203 - Understanding to Reasoning Boundary Review.
+32. RFC-1204 - EDI Reasoning Foundation Review.

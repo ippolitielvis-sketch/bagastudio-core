@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1202.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1203.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1202
+- RFC-1126 to RFC-1203
 
 Architecture distinction:
 
@@ -1123,6 +1123,20 @@ The foundation clarified that Understanding Artifact is interpreted context. It 
 
 RFC-1202 prepares future Reasoning by creating a stable interpreted context descriptor, but it does not introduce Reasoning, Proposal, storage, retrieval, runtime, Viewer, UI, React state, or engine integration.
 
+RFC-1203 reviewed the boundary between Understanding and future Reasoning.
+
+The review clarified that Understanding owns interpreted meaning, classifications, relations, contextual notes, and semantic interpretation.
+
+Reasoning will own future evaluation over understood context: alternatives, consequences, tradeoffs, constraints, possible paths, and preparation for Proposal.
+
+The transition rule is that a comprehension becomes reasoning only when EDI moves from "what this means" to "what follows from this meaning".
+
+RFC-1203 documented examples for Product Package, hardware, DXF/DWG, estimates, and production.
+
+RFC-1203 confirmed readiness for `RFC-1204 - EDI Reasoning Foundation Review`.
+
+It did not introduce Reasoning Foundation, Proposal, runtime, Viewer, UI, storage, retrieval, or engine integration.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1280,6 +1294,10 @@ RFC-1202 prepares future Reasoning by creating a stable interpreted context desc
 - Understanding Artifact is interpreted context, not reasoning result.
 - Understanding Artifact references Memory Entries, not live Memory storage.
 - Understanding Artifact does not trigger Reasoning, Proposal, Mutation, runtime, Viewer, UI, storage, or retrieval.
+- Understanding owns interpreted meaning.
+- Reasoning owns evaluation over understood meaning.
+- Reasoning must not be embedded in Understanding Artifact.
+- Reasoning may prepare Proposal only after dedicated Reasoning and Proposal RFCs.
 
 ## Current State
 
@@ -1380,7 +1398,8 @@ Implemented producer adapter foundation:
 - Observation Snapshot and Memory Entry separation is documented;
 - Understanding Foundation Review is documented;
 - Understanding Artifact Foundation exists;
-- Understanding Artifact Review and Reasoning Foundation Planning is the next recommended review;
+- Understanding to Reasoning Boundary Review is documented;
+- Reasoning Foundation Review is the next recommended RFC;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1416,6 +1435,8 @@ Not implemented today:
 - Memory Candidate explicit contract;
 - EDI Understanding artifact runtime usage;
 - Reasoning foundation;
+- Reasoning output contract;
+- Proposal foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;
 - alignment between EdiMemoryEntry descriptor and older cognitive memory contracts;

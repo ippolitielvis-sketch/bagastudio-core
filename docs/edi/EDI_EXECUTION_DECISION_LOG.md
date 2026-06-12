@@ -73,6 +73,7 @@ Covered foundation:
 - Observation to Memory Flow Review
 - EDI Understanding Foundation Review
 - EDI Understanding Artifact Foundation
+- Understanding to Reasoning Boundary Review
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -2756,6 +2757,71 @@ Il layer e pronto per una review successiva su come Reasoning potra consumare ar
 - Understanding Artifact non produce Proposal, Mutation, runtime execution, Viewer output o UI.
 - Understanding Artifact conserva riferimenti serializzabili alle Memory Entry, non storage live.
 - Understanding Artifact non attiva Reasoning automaticamente.
+
+## DL-EXEC-055 - Reasoning Starts After Meaning, Not Inside Understanding
+
+### Problema
+
+Dopo aver introdotto `EdiUnderstandingArtifact`, serviva definire il confine con Reasoning prima di creare qualsiasi Reasoning Foundation, Proposal, runtime o UI.
+
+Il rischio era far diventare Understanding un motore decisionale, anticipando valutazioni, alternative, conseguenze o proposal.
+
+### Decisione
+
+Understanding appartiene al significato interpretato.
+
+Reasoning appartiene alla valutazione di quel significato.
+
+Understanding produce classificazioni, relazioni, significati e contesto.
+
+Reasoning futuro lavorera su classificazioni, relazioni e contesto per valutare alternative, conseguenze, vincoli, tradeoff e possibili percorsi.
+
+### Motivazione
+
+La separazione protegge il Core Cognitive Loop:
+
+```text
+Observation
+Memory
+Understanding
+Reasoning
+Proposal
+```
+
+Una comprensione diventa ragionamento solo quando EDI passa dal "cosa significa" al "cosa ne consegue".
+
+Reasoning potra preparare Proposal, ma non deve produrla prima di una RFC Proposal dedicata.
+
+### Esempi
+
+- Product Package: Understanding identifica struttura e relazioni; Reasoning futuro valuta rischi, mancanze o alternative.
+- Ferramenta: Understanding identifica vincoli hardware; Reasoning futuro confronta compatibilita e conseguenze.
+- DXF/DWG: Understanding interpreta ambienti, aperture, ostacoli o dimensioni; Reasoning futuro valuta implicazioni di layout.
+- Preventivi: Understanding interpreta categorie e contesto economico; Reasoning futuro valuta conseguenze di prezzo o assunzioni mancanti.
+- Produzione: Understanding interpreta materiali e componenti; Reasoning futuro valuta vincoli produttivi, nesting o scarti.
+
+### Alternative Scartate
+
+- Inserire Reasoning dentro `EdiUnderstandingArtifact`.
+- Far produrre Proposal a Understanding.
+- Introdurre subito un Reasoning output contract.
+- Collegare Understanding a runtime, Viewer, UI o engine reali.
+
+### Impatto Architetturale
+
+RFC-1203 conferma che `EdiUnderstandingArtifact` e pronto come input concettuale per Reasoning futuro.
+
+Reasoning Foundation resta una RFC successiva.
+
+La prossima RFC consigliata e `RFC-1204 - EDI Reasoning Foundation Review`.
+
+### Regole Permanenti Generate
+
+- Understanding descrive significato.
+- Reasoning valuta alternative e conseguenze.
+- Understanding Artifact non contiene Reasoning.
+- Reasoning non produce Proposal senza una RFC Proposal dedicata.
+- Reasoning non deve introdurre runtime, Viewer, UI o engine reali in questa fase.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
