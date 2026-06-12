@@ -1,5 +1,7 @@
+import { createEdiExecutionResult } from "../core/ExecutionResult";
 import type { EdiExecutionRequest } from "../core/executionRequestTypes";
 import type { EdiExecutionResult } from "../core/executionResultTypes";
+import { createEdiIntegrationBoundaryRequest } from "../integration/EdiIntegrationBoundary";
 import type { EdiExecutionRuntime } from "./EdiExecutionRuntime";
 import type { EdiExecutionResultConsumerRegistry } from "./ExecutionResultConsumerRegistry";
 import type { EdiExecutionResultDispatcher } from "./EdiExecutionResultDispatcher";
@@ -11,11 +13,53 @@ export type RunEdiPreviewExecutionAndDispatchInput = {
   consumerRegistry: EdiExecutionResultConsumerRegistry;
 };
 
+const createBoundaryValidationFailedResult = (
+  request: EdiExecutionRequest,
+  issues: readonly string[],
+): EdiExecutionResult =>
+  createEdiExecutionResult({
+    executionRequestId: request.id,
+    executionPlanId: request.executionPlanId,
+    actionIds: request.actionIds,
+    intentIds: request.intentIds,
+    contextIds: request.contextIds,
+    mode: request.mode,
+    status: "failed",
+    targetDomain: request.targetDomain,
+    error: {
+      code: "EDI_INTEGRATION_BOUNDARY_VALIDATION_FAILED",
+      message: "EDI integration boundary validation failed.",
+      details: {
+        issues,
+      },
+    },
+    metadata: {
+      source: "PreviewExecutionAndDispatch",
+      reason: "Integration boundary validation failed before preview execution.",
+    },
+  });
+
 export const runEdiPreviewExecutionAndDispatch = (
   input: RunEdiPreviewExecutionAndDispatchInput,
 ): EdiExecutionResult => {
+  const boundaryRequest = createEdiIntegrationBoundaryRequest(input.request);
+
+  if (!boundaryRequest.request) {
+    const result = createBoundaryValidationFailedResult(
+      input.request,
+      boundaryRequest.validation.issues,
+    );
+
+    input.executionResultDispatcher.dispatchResult({
+      result,
+      consumerRegistry: input.consumerRegistry,
+    });
+
+    return result;
+  }
+
   const result = input.executionRuntime.runExecution({
-    request: input.request,
+    request: boundaryRequest.request,
   });
 
   input.executionResultDispatcher.dispatchResult({

@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1164
+- RFC-1126 to RFC-1165
 
 Architecture distinction:
 
@@ -720,6 +720,7 @@ RFC:
 
 - RFC-1163
 - RFC-1164
+- RFC-1165
 
 ### Context
 
@@ -757,6 +758,10 @@ RFC-1164 clarified placement without adding operational wiring: the boundary mus
 
 It may be called by Preview Integration and future integration adapters, but not by RuntimeHost, RuntimeLoop, Executor, or Consumer.
 
+RFC-1165 connected Preview Integration to the boundary.
+
+`runEdiPreviewExecutionAndDispatch` now validates the request through `createEdiIntegrationBoundaryRequest` before calling execution runtime. Boundary validation failures produce a controlled failed `EdiExecutionResult` and are dispatched through the existing dispatcher.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -766,6 +771,8 @@ It may be called by Preview Integration and future integration adapters, but not
 - Integration Boundary validates without mutating request.
 - Integration Boundary stays before Runtime.
 - RuntimeHost and RuntimeLoop receive already validated requests.
+- Preview Integration calls Integration Boundary before execution runtime.
+- Boundary failure returns a controlled execution result.
 
 ## Current State
 
@@ -802,6 +809,13 @@ Documented placement:
 - future Import/Recognition Integration Adapters may call it;
 - future Viewer Integration Adapters may call it;
 - RuntimeHost, RuntimeLoop, Executor, and Consumer do not call it directly.
+
+Implemented preview wiring:
+
+- `runEdiPreviewExecutionAndDispatch` calls the boundary before execution runtime;
+- boundary-valid requests continue through the existing execution and dispatch flow;
+- boundary-invalid requests produce a failed `EdiExecutionResult`;
+- no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
 Not implemented today:
 

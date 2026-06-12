@@ -78,6 +78,7 @@ This document covers:
 - RFC-1161: EDI Preview Execution And Dispatch Helper Foundation
 - RFC-1163: EDI Integration Boundary Foundation
 - RFC-1164: EDI Integration Boundary Wiring Review
+- RFC-1165: EDI Preview Integration Boundary Wiring
 
 ## Architecture Overview
 
@@ -587,6 +588,18 @@ It does not create components, own state, retry, queue, publish events, call UI,
 
 This helper is preview integration because it connects execution and consumption for a single explicit caller-driven flow. It is not an orchestrator and it is not real integration.
 
+RFC-1165 wires this helper through `EdiIntegrationBoundary` before execution runtime is called.
+
+The preview flow is:
+
+Preview Integration
+-> `createEdiIntegrationBoundaryRequest`
+-> existing `EdiExecutionRequest`
+-> `EdiExecutionRuntime`
+-> `EdiExecutionResultDispatcher`
+
+If boundary validation fails, the helper returns and dispatches a controlled failed `EdiExecutionResult`. It does not throw destructively and does not call execution runtime with a boundary-invalid request.
+
 ### EdiIntegrationBoundary
 
 `EdiIntegrationBoundary` introduces the first architectural boundary between Preview Integration and future real runtime integration.
@@ -680,6 +693,7 @@ It is:
 - synchronous;
 - stateless;
 - preview-only;
+- boundary-validated before execution runtime;
 - disconnected from UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, and real engines.
 
 ### Real Integration
@@ -798,7 +812,8 @@ The execution foundation must not depend on:
 - `PreviewExecutionAndConsumptionWiring` exposes components together, but it does not execute or dispatch.
 - `runEdiPreviewExecutionAndDispatch` connects execution and dispatch only when explicitly called.
 - `EdiIntegrationBoundary` validates requests for boundary crossing but does not connect real runtime.
-- Boundary placement is documented, but no operational wiring has been introduced.
+- Boundary placement is documented, and only preview integration wiring has been introduced.
+- Preview Integration now uses the boundary before execution runtime, but no real runtime integration has been introduced.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

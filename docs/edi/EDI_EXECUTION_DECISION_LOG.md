@@ -34,6 +34,7 @@ Covered foundation:
 - Preview Execution And Dispatch Helper
 - Integration Boundary
 - Integration Boundary Wiring Rule
+- Preview Integration Boundary Wiring
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -644,3 +645,50 @@ Non viene introdotto nessun collegamento operativo nuovo.
 - Integration Boundary non e dispatcher.
 - Integration Boundary non e registry.
 - Integration Boundary non e runtime parallelo.
+
+## DL-EXEC-016 — Preview Integration Passa Dalla Boundary
+
+### Problema
+
+Dopo aver stabilito che la boundary deve stare prima del runtime, la Preview Integration doveva iniziare a usare `EdiIntegrationBoundary` senza introdurre real integration e senza modificare RuntimeHost o RuntimeLoop.
+
+### Decisione
+
+Collegare `runEdiPreviewExecutionAndDispatch` a `createEdiIntegrationBoundaryRequest` prima della chiamata a `EdiExecutionRuntime`.
+
+Il flow diventa:
+
+- Preview Integration;
+- `createEdiIntegrationBoundaryRequest`;
+- `EdiExecutionRequest` esistente;
+- `EdiExecutionRuntime`;
+- `EdiExecutionResultDispatcher`.
+
+### Motivazione
+
+La Preview Integration e il futuro mondo degli adapter sono i punti corretti per attraversare la boundary. RuntimeHost e RuntimeLoop devono restare neutrali e ricevere request gia validate.
+
+### Alternative Scartate
+
+- Importare la boundary in RuntimeHost.
+- Importare la boundary in RuntimeLoop.
+- Far validare la boundary agli executor.
+- Far validare la boundary ai consumer.
+- Introdurre `runRealIntegration`.
+- Collegare engine reali.
+
+### Impatto Architetturale
+
+La Preview Integration ora valida la request prima di chiamare execution runtime.
+
+Se la boundary non valida la request, il flow produce un `EdiExecutionResult` failed controllato e lo passa al dispatcher esistente. Non viene lanciato un errore distruttivo e non viene chiamato execution runtime con una request invalida.
+
+### Regole Permanenti Generate
+
+- Preview Integration puo chiamare Integration Boundary.
+- RuntimeHost non chiama Integration Boundary.
+- RuntimeLoop non chiama Integration Boundary.
+- Executor non chiama Integration Boundary.
+- Consumer non chiama Integration Boundary.
+- Boundary failure produce result controllato.
+- Preview boundary wiring non e real integration.
