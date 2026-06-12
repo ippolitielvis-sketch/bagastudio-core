@@ -125,6 +125,7 @@ This document covers:
 - RFC-1208: EDI Reasoning Evaluation Foundation
 - RFC-1209: EDI Proposal Artifact Foundation
 - RFC-1210: EDI Proposal Builder Foundation
+- RFC-1211: EDI Proposal Traceability Foundation
 
 ## Architecture Overview
 
@@ -2466,6 +2467,36 @@ It also supports `buildProposalArtifacts` for deterministic batch creation from 
 
 The builder does not change the public meaning of Proposal Artifact: it remains a proposal descriptor, not Validation, approval, Mutation, executor behavior, runtime wiring, Viewer output, UI, storage, or retrieval.
 
+### EDI Proposal Traceability Foundation
+
+RFC-1211 introduces `EdiProposalTraceability` as the dedicated audit trail data contract for Proposal artifacts.
+
+The proposal traceability foundation is serializable, audit-oriented, domain-independent, non-executive, and independent from future Validation and Mutation.
+
+Proposal Traceability can represent:
+
+- source artifact ids;
+- understanding references;
+- reasoning references;
+- proposal lineage references;
+- assumption references;
+- risk references;
+- derivation metadata.
+
+Proposal traceability creation path:
+
+```text
+explicit proposal traceability input
+-> createEdiProposalTraceability
+-> EdiProposalTraceability
+```
+
+The traceability factory uses explicit timestamp input and defensively copies arrays and reference metadata.
+
+`EdiProposalTraceability` does not validate proposals, approve proposals, make decisions, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, or access storage/retrieval.
+
+It exists so future Validation Support, Mutation planning, and governance review can inspect proposal lineage without turning traceability into authority.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -2744,6 +2775,9 @@ The execution foundation must not depend on:
 - Proposal Builder must delegate artifact creation to `createEdiProposalArtifact`.
 - Proposal Builder accepts explicit inputs only.
 - Proposal Builder must not validate, approve, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
+- Proposal Traceability is audit data, not Validation or Mutation.
+- Proposal Traceability must remain domain-independent and non-executive.
+- Proposal Traceability must not validate, approve, decide, mutate, call executor/runtime, call Viewer/UI, or access storage/retrieval.
 
 ## Residual Risks
 
@@ -2838,6 +2872,8 @@ The execution foundation must not depend on:
 - Proposal categories and types are foundation-level and may need expansion after domain-specific proposal review.
 - Proposal Builder exists, but no validation support, mutation path, executor, runtime, or UI consumes it yet.
 - Proposal Builder is deterministic only if callers provide deterministic inputs.
+- Proposal Traceability exists, but no validation support, mutation path, governance layer, executor, runtime, or UI consumes it yet.
+- Proposal Traceability schema is foundation-level and may need richer lineage categories after Validation Support planning.
 - Viewer calling EDI flows directly would break the Observable Stack boundary.
 - Viewer reading EdiViewerExposure directly would bypass BagaStudio ownership.
 - Product state ownership rules still need a dedicated integration plan.
@@ -2926,4 +2962,5 @@ The Decision Log should record:
 36. RFC-1208 - EDI Reasoning Evaluation Foundation.
 37. RFC-1209 - EDI Proposal Artifact Foundation.
 38. RFC-1210 - EDI Proposal Builder Foundation.
-39. EDI Proposal Builder Review and Validation Support Planning.
+39. RFC-1211 - EDI Proposal Traceability Foundation.
+40. EDI Proposal Traceability Review and Validation Support Planning.

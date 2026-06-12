@@ -4,7 +4,7 @@
 
 Foundation Complete.
 
-This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1210.
+This document records the chronological evolution of the EDI Execution Layer foundation built from RFC-1126 to RFC-1211.
 
 It documents implemented foundation and wiring only. Integration with UI, Viewer, real engines, project mutation, command bus, or product workflows is not implemented in this layer.
 
@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1210
+- RFC-1126 to RFC-1211
 
 Architecture distinction:
 
@@ -1199,6 +1199,14 @@ It supports single and batch artifact creation through `buildProposalArtifact` a
 
 RFC-1210 clarified that the builder is a foundational producer only. It does not validate proposals, make automatic decisions, mutate Product Package or Project State, call executor, call runtime, call Viewer, call UI, access storage, or perform retrieval.
 
+RFC-1211 introduced `EdiProposalTraceability` as the dedicated audit trail data contract for Proposal artifacts.
+
+The traceability foundation can represent source artifact ids, understanding references, reasoning references, proposal lineage references, assumption references, risk references, and derivation metadata.
+
+The factory `createEdiProposalTraceability` uses explicit timestamp input and defensively copies reference arrays and metadata.
+
+RFC-1211 clarified that Proposal Traceability is audit data, not Validation, not Mutation, not approval, not automatic decision-making, not executor/runtime behavior, not Viewer/UI, and not storage/retrieval.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -1383,6 +1391,10 @@ RFC-1210 clarified that the builder is a foundational producer only. It does not
 - Proposal Builder delegates to createEdiProposalArtifact.
 - Proposal Builder accepts explicit inputs only.
 - Proposal Builder does not validate, decide, mutate, call executor/runtime, call Viewer/UI, access storage, or perform retrieval.
+- Proposal Traceability is audit data, not Validation, Mutation, or approval.
+- Proposal Traceability does not produce decisions.
+- Proposal Traceability does not mutate Product Package or Project State.
+- Proposal Traceability does not call executor, runtime, Viewer, UI, storage, or retrieval.
 
 ## Current State
 
@@ -1491,7 +1503,8 @@ Implemented producer adapter foundation:
 - Reasoning Evaluation Foundation exists;
 - Proposal Artifact Foundation exists;
 - Proposal Builder Foundation exists;
-- Proposal Builder Review and Validation Support Planning is the next recommended review;
+- Proposal Traceability Foundation exists;
+- Proposal Traceability Review and Validation Support Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
@@ -1533,6 +1546,7 @@ Not implemented today:
 - Reasoning evaluation consumers;
 - Proposal validation support;
 - Proposal artifact runtime usage;
+- Proposal traceability consumers;
 - Optimization foundation;
 - Product Package Observation metadata serializability policy;
 - Memory deduplication, correlation, confidence, trust, freshness, retention, privacy, and governance policies;

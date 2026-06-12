@@ -81,6 +81,7 @@ Covered foundation:
 - EDI Reasoning Evaluation Foundation
 - EDI Proposal Artifact Foundation
 - EDI Proposal Builder Foundation
+- EDI Proposal Traceability Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -3207,6 +3208,60 @@ La foundation prepara future review su Validation Support, ma non introduce vali
 - Proposal Builder non prende decisioni automatiche.
 - Proposal Builder non muta Product Package o Project State.
 - Proposal Builder non chiama executor, runtime, Viewer, UI, storage o retrieval.
+
+## DL-EXEC-063 - Proposal Traceability Is Audit Data, Not Authority
+
+### Problema
+
+Dopo Proposal Artifact e Proposal Builder, serviva una struttura dedicata alla tracciabilita cognitiva delle Proposal senza introdurre Validation, decisioni automatiche, Mutation, executor, runtime wiring, Viewer, UI, storage o retrieval.
+
+### Decisione
+
+Introdurre `EdiProposalTraceability` come contratto dati serializzabile, auditabile, domain-independent e non esecutivo.
+
+La traceability puo rappresentare:
+
+- source artifact ids;
+- understanding references;
+- reasoning references;
+- proposal lineage references;
+- assumption references;
+- risk references;
+- derivation metadata.
+
+La factory `createEdiProposalTraceability` usa timestamp esplicito e copia difensivamente array e metadata dei riferimenti.
+
+### Motivazione
+
+Proposal ha bisogno di auditability prima di Validation Support.
+
+La traceability deve permettere di ispezionare origine, lineage, assumptions e risks senza diventare validator, approval engine, mutation path o source of truth.
+
+Separare traceability da Validation e Mutation mantiene Proposal consultabile ma non autoritativa.
+
+### Alternative Scartate
+
+- Inserire traceability dentro Validation futura.
+- Usare traceability come approval.
+- Collegare traceability a executor, runtime, Viewer, UI, storage o retrieval.
+- Usare traceability per generare decisioni automatiche.
+- Far mutare Product Package o Project State dalla traceability.
+
+### Impatto Architetturale
+
+RFC-1211 aggiunge il primo audit trail cognitivo dedicato al Proposal layer.
+
+La foundation prepara future review su Validation Support e governance, ma non introduce nessuno di questi layer come comportamento operativo.
+
+### Regole Permanenti Generate
+
+- Proposal Traceability e audit data.
+- Proposal Traceability non e Validation.
+- Proposal Traceability non e Mutation.
+- Proposal Traceability non e approval.
+- Proposal Traceability non produce decisioni automatiche.
+- Proposal Traceability non muta Product Package o Project State.
+- Proposal Traceability non chiama executor, runtime, Viewer, UI, storage o retrieval.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
