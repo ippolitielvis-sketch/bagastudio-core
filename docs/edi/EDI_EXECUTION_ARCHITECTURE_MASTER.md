@@ -84,6 +84,7 @@ This document covers:
 - RFC-1168: EDI Producer Adapter Boundary Contract Review
 - RFC-1169: EDI Producer Adapter Request Factory Foundation
 - RFC-1170: EDI Producer Adapter Boundary Pipeline Review
+- RFC-1171: EDI First Real Producer Adapter Review
 
 ## Architecture Overview
 
@@ -764,6 +765,18 @@ It does not call RuntimeHost, RuntimeLoop, Executor, Consumer, dispatcher, Previ
 
 It does not recover automatically and does not infer `targetDomain`.
 
+### First Concrete Producer Candidate
+
+The first planned concrete producer adapter is Recognition Producer Adapter Foundation.
+
+Recognition is the recommended first producer because it is semantically close to EDI cognitive observation and can start as a controlled adapter foundation.
+
+Import is deferred because it risks pulling parsing, geometry, scene graph, and model normalization too early.
+
+Viewer is deferred because it risks pulling UI state integration and product runtime ownership too early.
+
+The planned Recognition producer must remain a foundation adapter. It must produce `EdiProducerAdapterOutput` compatible with the pre-runtime pipeline, but it must not execute runtime, dispatch results, analyze real geometry, call real Recognition runtime, or introduce complete real recognition integration.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -953,6 +966,7 @@ The execution foundation must not depend on:
 - Producer adapter to boundary contract is documented, but no producer is wired operationally.
 - Producer adapter request factory exists, but no real producer calls it yet.
 - Producer adapter boundary pipeline exists, but no real producer or runtime calls it yet.
+- Recognition Producer Adapter Foundation is the planned next producer step, but it is not implemented yet.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 

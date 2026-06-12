@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1170
+- RFC-1126 to RFC-1171
 
 Architecture distinction:
 
@@ -726,6 +726,7 @@ RFC:
 - RFC-1168
 - RFC-1169
 - RFC-1170
+- RFC-1171
 
 ### Context
 
@@ -795,6 +796,12 @@ RFC-1170 introduced the Producer Adapter Boundary Pipeline.
 
 The pipeline is pre-runtime and does not execute, dispatch, consume, recover, infer `targetDomain`, or call real engines.
 
+RFC-1171 selected the first planned concrete producer adapter.
+
+The next producer candidate is Recognition Producer Adapter Foundation. It is preferred because Recognition is close to EDI cognitive semantics and can start as a controlled adapter foundation.
+
+Import and Viewer producers are deferred because they risk pulling parsing, geometry, scene graph, model normalization, UI state integration, or product runtime ownership too early.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -820,6 +827,9 @@ The pipeline is pre-runtime and does not execute, dispatch, consume, recover, in
 - Producer Adapter Boundary Pipeline is pre-runtime.
 - Producer Adapter Boundary Pipeline does not execute or dispatch.
 - Producer Adapter Boundary Pipeline does not infer targetDomain.
+- First concrete producer candidate is Recognition.
+- Recognition Producer must remain foundation-only.
+- Import and Viewer producers remain deferred.
 
 ## Current State
 
@@ -873,6 +883,7 @@ Implemented producer adapter foundation:
 - `createEdiExecutionRequestFromProducerAdapterOutput` converts adapter output into `EdiExecutionRequest`;
 - `createEdiProducerAdapterBoundaryPipelineResult` converts adapter output into boundary validation result;
 - no concrete real producer exists;
+- Recognition Producer Adapter Foundation is planned as RFC-1172;
 - no producer is wired to Integration Boundary;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 

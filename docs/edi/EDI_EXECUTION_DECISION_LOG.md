@@ -40,6 +40,7 @@ Covered foundation:
 - Producer Adapter Boundary Contract
 - Producer Adapter Request Factory
 - Producer Adapter Boundary Pipeline
+- First Real Producer Adapter Candidate
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -953,3 +954,60 @@ RuntimeHost, RuntimeLoop, Executor, Consumer e Preview Integration restano invar
 - Producer Adapter Boundary Pipeline non chiama consumer.
 - Producer Adapter Boundary Pipeline non introduce producer reali.
 - Producer Adapter Boundary Pipeline non inferisce `targetDomain`.
+
+## DL-EXEC-022 — Recognition Producer Adapter Come Primo Producer
+
+### Problema
+
+Dopo la Producer Adapter Boundary Pipeline serviva decidere quale producer adapter concreto introdurre per primo, senza implementarlo ancora.
+
+### Decisione
+
+Il primo producer adapter concreto previsto sara Recognition Producer Adapter Foundation.
+
+### Motivazione
+
+Recognition e piu vicina al dominio cognitivo EDI e puo partire come adapter controllato e minimale.
+
+Import viene rinviato perche rischia di introdurre parsing, geometria, scene graph e normalizzazione modello troppo presto.
+
+Viewer viene rinviato perche rischia di introdurre UI state integration e ownership del prodotto troppo presto.
+
+### Perimetro Prossima RFC
+
+La prossima RFC operativa sara:
+
+RFC-1172 — Recognition Producer Adapter Foundation.
+
+Dovra:
+
+- creare solo adapter foundation;
+- produrre `EdiProducerAdapterOutput` compatibile;
+- non eseguire runtime;
+- non chiamare dispatch;
+- non analizzare geometria reale;
+- non introdurre real recognition completa;
+- non modificare RuntimeHost o RuntimeLoop.
+
+### Alternative Scartate
+
+- Import Producer Adapter come primo producer.
+- Viewer Producer Adapter come primo producer.
+- Recognition real completa.
+- Collegamento diretto a runtime.
+- Collegamento a dispatch.
+- Introduzione di `runRealIntegration`.
+
+### Impatto Architetturale
+
+La roadmap dei producer reali parte dal dominio meno invasivo e piu vicino al layer cognitivo.
+
+Nessun producer reale viene introdotto in questa RFC.
+
+### Regole Permanenti Generate
+
+- First concrete producer candidate is Recognition.
+- Recognition Producer deve essere foundation, non real recognition completa.
+- Import Producer resta rinviato.
+- Viewer Producer resta rinviato.
+- Producer RFC non modifica RuntimeHost o RuntimeLoop.
