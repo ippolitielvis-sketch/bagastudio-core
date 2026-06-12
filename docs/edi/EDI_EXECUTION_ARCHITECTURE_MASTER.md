@@ -93,6 +93,7 @@ This document covers:
 - RFC-1177: EDI Recognition Runtime Result Dispatch Review
 - RFC-1178: EDI Recognition Result Adapter Foundation
 - RFC-1179: EDI Recognition Observable Flow Review
+- RFC-1180: EDI First Observable Recognition Flow Foundation
 
 ## Architecture Overview
 
@@ -987,6 +988,33 @@ The planned next RFC is `RFC-1180 - First Observable Recognition Flow Foundation
 
 RFC-1180 must create a controlled helper that accepts `RecognitionProducerAdapterInput`, uses the recognition boundary pipeline, handles boundary validation failures with a controlled flow result, calls `RecognitionRuntimeAdapter` only when boundary validation succeeds, uses `RecognitionResultAdapter`, and returns `RecognitionObservableResult` or a controlled flow result.
 
+### RecognitionObservableFlow
+
+`RecognitionObservableFlow` introduces the first end-to-end observable recognition flow foundation.
+
+It exports:
+
+- `RunRecognitionObservableFlowInput`;
+- `RecognitionObservableFlowResult`;
+- `runRecognitionObservableFlow`.
+
+The flow receives:
+
+- `recognitionInput: RecognitionProducerAdapterInput`;
+- `executionRuntime: EdiExecutionRuntime`.
+
+The flow composes:
+
+- `createRecognitionProducerBoundaryPipelineResult`;
+- `runRecognitionRuntimeAdapter`;
+- `createRecognitionObservableResult`.
+
+If boundary validation fails, the flow returns a controlled `RecognitionObservableFlowResult` with status `boundary-invalid`, validation details, and no runtime execution.
+
+If boundary validation succeeds, the flow calls the recognition runtime adapter, creates the observable recognition result, and returns status `succeeded`.
+
+It does not dispatch globally, render UI, wire Viewer, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, inspect scene graph, or introduce `runRealIntegration`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1170,6 +1198,8 @@ The execution foundation must not depend on:
 - Recognition Result Adapter does not dispatch.
 - Recognition Observable Flow is not Viewer Integration.
 - Recognition Observable Flow must stay helper-driven.
+- Recognition Observable Flow handles boundary failure without runtime execution.
+- Recognition Observable Flow returns observable data, not UI.
 
 ## Residual Risks
 
@@ -1195,7 +1225,7 @@ The execution foundation must not depend on:
 - Recognition Producer Pipeline Validation is documented, but no automated test framework has been introduced for it.
 - Recognition Runtime Adapter exists as a foundation, but it does not perform real recognition or dispatch.
 - Recognition Result Adapter exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
-- Recognition Observable Flow is documented but not implemented.
+- Recognition Observable Flow exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
@@ -1252,4 +1282,4 @@ The Decision Log should record:
 7. Define a future explicit result consumption integration RFC before connecting consumers to runtime output.
 8. Define validation for Recognition Runtime Adapter once a project test pattern exists.
 9. Define validation for Recognition Result Adapter once a project test pattern exists.
-10. RFC-1180 - First Observable Recognition Flow Foundation.
+10. Define validation for Recognition Observable Flow once a project test pattern exists.

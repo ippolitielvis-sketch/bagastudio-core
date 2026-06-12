@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1179
+- RFC-1126 to RFC-1180
 
 Architecture distinction:
 
@@ -735,6 +735,7 @@ RFC:
 - RFC-1177
 - RFC-1178
 - RFC-1179
+- RFC-1180
 
 ### Context
 
@@ -864,6 +865,14 @@ The flow must remain a controlled helper, not Viewer integration, UI, global dis
 
 The next planned RFC is `RFC-1180 - First Observable Recognition Flow Foundation`.
 
+RFC-1180 introduced the First Observable Recognition Flow Foundation.
+
+`runRecognitionObservableFlow` receives `RecognitionProducerAdapterInput` and an injected `EdiExecutionRuntime`.
+
+The helper uses `createRecognitionProducerBoundaryPipelineResult`, stops with a controlled `boundary-invalid` result when boundary validation fails, calls `runRecognitionRuntimeAdapter` only when validation succeeds, then creates `RecognitionObservableResult` through `createRecognitionObservableResult`.
+
+The flow does not dispatch globally, render UI, wire Viewer, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, or inspect scenes.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -912,6 +921,8 @@ The next planned RFC is `RFC-1180 - First Observable Recognition Flow Foundation
 - Recognition Observable Flow is helper-driven.
 - Recognition Observable Flow is not Viewer integration.
 - Recognition Observable Result is not UI.
+- Recognition Observable Flow handles boundary failure without runtime execution.
+- Recognition Observable Flow returns observable data, not UI.
 
 ## Current State
 
@@ -970,7 +981,7 @@ Implemented producer adapter foundation:
 - Recognition Producer Pipeline Validation is documented as a checklist;
 - `runRecognitionRuntimeAdapter` exists as the Recognition Runtime Adapter foundation;
 - `createRecognitionObservableResult` exists as the Recognition Result Adapter foundation;
-- Recognition Observable Flow is documented but not implemented yet;
+- `runRecognitionObservableFlow` exists as the first observable recognition flow foundation;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -988,7 +999,6 @@ Not implemented today:
 - automatic result consumption;
 - runtime result integration;
 - automatic execution and dispatch orchestration;
-- Recognition Observable Flow helper;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
 - `runRealIntegration`.
 

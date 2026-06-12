@@ -49,6 +49,7 @@ Covered foundation:
 - Recognition Runtime Result Adapter Boundary
 - Recognition Result Adapter Foundation
 - Recognition Observable Flow Boundary
+- First Observable Recognition Flow Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1381,6 +1382,52 @@ La prossima RFC operativa sara `RFC-1180 - First Observable Recognition Flow Fou
 - Recognition Observable Flow e helper controllato.
 - Recognition Observable Flow non e Viewer integration.
 - Recognition Observable Result non e UI.
+- Recognition Observable Flow non fa dispatch globale.
+- Recognition Observable Flow non chiama RuntimeHost o RuntimeLoop.
+- Recognition Observable Flow non introduce recognition reale.
+
+## DL-EXEC-031 - First Observable Recognition Flow Foundation
+
+### Problema
+
+Serviva assemblare il primo flow recognition osservabile end-to-end usando solo le foundation esistenti, senza introdurre Viewer, UI, dispatch globale, RuntimeHost, RuntimeLoop o recognition reale.
+
+### Decisione
+
+Introdurre `RecognitionObservableFlow` come helper controllato.
+
+Il helper riceve `RecognitionProducerAdapterInput` e `EdiExecutionRuntime`, usa `RecognitionProducerBoundaryPipeline`, chiama `RecognitionRuntimeAdapter` solo se la boundary validation passa, usa `RecognitionResultAdapter` e restituisce `RecognitionObservableFlowResult`.
+
+### Motivazione
+
+Il flow consente di validare la composizione end-to-end mantenendo separati producer, boundary, runtime adapter e result adapter.
+
+La boundary failure resta controllata e non chiama runtime.
+
+### Alternative Scartate
+
+- Collegare Viewer o UI.
+- Fare dispatch globale.
+- Chiamare RuntimeHost o RuntimeLoop.
+- Chiamare Consumer.
+- Unire flow helper e dispatch.
+- Introdurre recognition reale.
+- Analizzare geometria o scene.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+Recognition ottiene il primo observable flow foundation completo, ma nessuna real integration.
+
+Il flow resta helper-driven e caller-controlled.
+
+### Regole Permanenti Generate
+
+- Recognition Observable Flow accetta `RecognitionProducerAdapterInput`.
+- Recognition Observable Flow usa la boundary pipeline prima del runtime.
+- Recognition Observable Flow non chiama runtime quando boundary validation fallisce.
+- Recognition Observable Flow produce un result controllato.
+- Recognition Observable Flow restituisce observable data, non UI.
 - Recognition Observable Flow non fa dispatch globale.
 - Recognition Observable Flow non chiama RuntimeHost o RuntimeLoop.
 - Recognition Observable Flow non introduce recognition reale.
