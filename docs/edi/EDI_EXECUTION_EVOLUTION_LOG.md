@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1180
+- RFC-1126 to RFC-1181
 
 Architecture distinction:
 
@@ -736,6 +736,7 @@ RFC:
 - RFC-1178
 - RFC-1179
 - RFC-1180
+- RFC-1181
 
 ### Context
 
@@ -873,6 +874,12 @@ The helper uses `createRecognitionProducerBoundaryPipelineResult`, stops with a 
 
 The flow does not dispatch globally, render UI, wire Viewer, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, or inspect scenes.
 
+RFC-1181 reviewed the Observable Recognition Flow.
+
+The review confirmed that boundary failure does not call runtime, validation success calls `RecognitionRuntimeAdapter`, `RecognitionResultAdapter` produces `RecognitionObservableResult`, the observable result is not UI, the flow does not call Viewer, RuntimeHost, RuntimeLoop, or global dispatch.
+
+The post-review state is: First Observable Recognition Flow reviewed, EDI observable foundation complete enough for next planning, Viewer exposure requires a dedicated RFC, and GitHub/local remote synchronization requires a dedicated verification before push.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -923,6 +930,9 @@ The flow does not dispatch globally, render UI, wire Viewer, call RuntimeHost, c
 - Recognition Observable Result is not UI.
 - Recognition Observable Flow handles boundary failure without runtime execution.
 - Recognition Observable Flow returns observable data, not UI.
+- First Observable Recognition Flow is reviewed.
+- Viewer exposure requires a dedicated RFC.
+- Push/remoto requires dedicated verification.
 
 ## Current State
 
@@ -982,6 +992,8 @@ Implemented producer adapter foundation:
 - `runRecognitionRuntimeAdapter` exists as the Recognition Runtime Adapter foundation;
 - `createRecognitionObservableResult` exists as the Recognition Result Adapter foundation;
 - `runRecognitionObservableFlow` exists as the first observable recognition flow foundation;
+- First Observable Recognition Flow is reviewed;
+- EDI observable foundation is complete enough for next planning;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1000,6 +1012,8 @@ Not implemented today:
 - runtime result integration;
 - automatic execution and dispatch orchestration;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
+- Viewer exposure;
+- GitHub/local remote synchronization after this phase;
 - `runRealIntegration`.
 
 The current layer is safe for architectural validation and future integration planning. It is not a real operational execution system yet.

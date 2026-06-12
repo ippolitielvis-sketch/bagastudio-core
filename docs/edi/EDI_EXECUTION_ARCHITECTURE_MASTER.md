@@ -94,6 +94,7 @@ This document covers:
 - RFC-1178: EDI Recognition Result Adapter Foundation
 - RFC-1179: EDI Recognition Observable Flow Review
 - RFC-1180: EDI First Observable Recognition Flow Foundation
+- RFC-1181: EDI Observable Recognition Flow Review
 
 ## Architecture Overview
 
@@ -1015,6 +1016,27 @@ If boundary validation succeeds, the flow calls the recognition runtime adapter,
 
 It does not dispatch globally, render UI, wire Viewer, call RuntimeHost, call RuntimeLoop, call Consumer, perform real recognition, analyze geometry, inspect scene graph, or introduce `runRealIntegration`.
 
+### Observable Recognition Flow Review
+
+RFC-1181 reviews the first observable recognition flow introduced by RFC-1180.
+
+Review outcome:
+
+- boundary failure does not call runtime;
+- validation success calls `RecognitionRuntimeAdapter`;
+- result adapter produces `RecognitionObservableResult`;
+- observable result is data, not UI;
+- flow does not call Viewer;
+- flow does not call RuntimeHost or RuntimeLoop;
+- flow does not dispatch globally.
+
+Post-review state:
+
+- First Observable Recognition Flow: reviewed;
+- EDI observable foundation: complete enough for next planning;
+- Viewer exposure requires a dedicated future RFC;
+- local/remote synchronization requires a dedicated verification before push.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -1200,6 +1222,8 @@ The execution foundation must not depend on:
 - Recognition Observable Flow must stay helper-driven.
 - Recognition Observable Flow handles boundary failure without runtime execution.
 - Recognition Observable Flow returns observable data, not UI.
+- First Observable Recognition Flow is reviewed.
+- Viewer exposure requires a dedicated RFC.
 
 ## Residual Risks
 
@@ -1226,6 +1250,10 @@ The execution foundation must not depend on:
 - Recognition Runtime Adapter exists as a foundation, but it does not perform real recognition or dispatch.
 - Recognition Result Adapter exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
 - Recognition Observable Flow exists as a foundation, but it is not connected to Viewer, UI, dispatch, or real recognition.
+- Recognition Observable Flow traceability is foundation-level and may need richer diagnostics before Viewer exposure.
+- Recognition Observable Flow fallback is controlled but minimal.
+- Recognition Observable Flow has no automated tests yet.
+- GitHub remote synchronization still requires a dedicated local/remote verification before push.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
