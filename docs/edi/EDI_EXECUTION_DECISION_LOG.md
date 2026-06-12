@@ -42,6 +42,7 @@ Covered foundation:
 - Producer Adapter Boundary Pipeline
 - First Real Producer Adapter Candidate
 - Recognition Producer Adapter Foundation
+- Recognition Producer Boundary Pipeline
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1061,3 +1062,47 @@ RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch resta
 - Recognition Producer Adapter non chiama dispatcher.
 - Recognition Producer Adapter non analizza geometria reale.
 - Recognition Producer Adapter non modifica RuntimeHost o RuntimeLoop.
+
+## DL-EXEC-024 - Recognition Producer Boundary Pipeline
+
+### Problema
+
+Dopo l'introduzione di `RecognitionProducerAdapter`, serviva chiarire come il producer foundation attraversa la Producer Adapter Boundary Pipeline senza diventare runtime integration.
+
+### Decisione
+
+Introdurre `RecognitionProducerBoundaryPipeline` come helper pre-runtime specifico per Recognition.
+
+Il helper riceve `RecognitionProducerAdapterInput`, crea `EdiProducerAdapterOutput` tramite `createRecognitionProducerAdapterOutput`, lo passa a `createEdiProducerAdapterBoundaryPipelineResult` e restituisce il boundary pipeline result esistente.
+
+### Motivazione
+
+La composizione mantiene separati producer foundation, request factory, boundary validation ed execution runtime.
+
+Il risultato resta `EdiProducerAdapterBoundaryPipelineResult`, non `EdiExecutionResult`.
+
+### Alternative Scartate
+
+- Chiamare direttamente `EdiExecutionRuntime`.
+- Chiamare dispatcher, executor o consumer.
+- Creare un execution result dalla pipeline recognition.
+- Introdurre recognition runtime reale.
+- Analizzare geometria o scene reali.
+- Introdurre cognitive reasoning reale.
+- Introdurre `runRealIntegration`.
+
+### Impatto Architetturale
+
+Recognition ottiene un passaggio pre-runtime controllato verso la boundary pipeline.
+
+RuntimeHost, RuntimeLoop, Executor, Consumer e PreviewExecutionAndDispatch restano invariati.
+
+### Regole Permanenti Generate
+
+- Recognition Producer Boundary Pipeline e pre-runtime.
+- Recognition Producer Boundary Pipeline non e runtime integration.
+- Recognition Producer Boundary Pipeline restituisce boundary pipeline result, non execution result.
+- Recognition Producer Boundary Pipeline non chiama runtime.
+- Recognition Producer Boundary Pipeline non chiama dispatcher.
+- Recognition Producer Boundary Pipeline non chiama executor o consumer.
+- Recognition Producer Boundary Pipeline non introduce recognition reale.

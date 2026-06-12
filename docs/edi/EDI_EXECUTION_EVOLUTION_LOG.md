@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1172
+- RFC-1126 to RFC-1173
 
 Architecture distinction:
 
@@ -728,6 +728,7 @@ RFC:
 - RFC-1170
 - RFC-1171
 - RFC-1172
+- RFC-1173
 
 ### Context
 
@@ -809,6 +810,14 @@ RFC-1172 introduced the Recognition Producer Adapter Foundation.
 
 It does not call recognition runtime, analyze geometry, inspect scenes, trigger cognitive reasoning, execute runtime, dispatch results, or call real engines.
 
+RFC-1173 introduced the Recognition Producer Boundary Pipeline.
+
+`createRecognitionProducerBoundaryPipelineResult` composes `createRecognitionProducerAdapterOutput` with `createEdiProducerAdapterBoundaryPipelineResult`.
+
+It returns the existing boundary pipeline result, not an execution result.
+
+It does not call runtime, dispatch, executor, consumer, recognition runtime, geometry recognition, scene recognition, cognitive reasoning, or real engines.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -840,6 +849,8 @@ It does not call recognition runtime, analyze geometry, inspect scenes, trigger 
 - Recognition Producer Adapter Foundation exists.
 - Recognition Producer Adapter is not real recognition.
 - Recognition Producer Adapter does not execute or dispatch.
+- Recognition Producer Boundary Pipeline is pre-runtime.
+- Recognition Producer Boundary Pipeline returns boundary validation, not execution result.
 
 ## Current State
 
@@ -894,7 +905,8 @@ Implemented producer adapter foundation:
 - `createEdiProducerAdapterBoundaryPipelineResult` converts adapter output into boundary validation result;
 - no concrete real producer exists;
 - `recognitionProducerAdapter` exists as foundation output producer;
-- no producer is wired to Integration Boundary;
+- `createRecognitionProducerBoundaryPipelineResult` exists as pre-runtime boundary pipeline helper;
+- no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
 Not implemented today:

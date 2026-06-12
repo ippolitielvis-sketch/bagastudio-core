@@ -86,6 +86,7 @@ This document covers:
 - RFC-1170: EDI Producer Adapter Boundary Pipeline Review
 - RFC-1171: EDI First Real Producer Adapter Review
 - RFC-1172: EDI Recognition Producer Adapter Foundation
+- RFC-1173: EDI Recognition Producer Boundary Pipeline Review
 
 ## Architecture Overview
 
@@ -802,6 +803,25 @@ It does not call recognition runtime, geometry recognition, scene recognition, c
 
 The output remains compatible with the pre-runtime producer adapter boundary pipeline.
 
+### RecognitionProducerBoundaryPipeline
+
+`RecognitionProducerBoundaryPipeline` is a domain-specific pre-runtime helper for the recognition producer foundation.
+
+It exports:
+
+- `createRecognitionProducerBoundaryPipelineResult`.
+
+The helper:
+
+- receives `RecognitionProducerAdapterInput`;
+- creates `EdiProducerAdapterOutput` via `createRecognitionProducerAdapterOutput`;
+- passes the output to `createEdiProducerAdapterBoundaryPipelineResult`;
+- returns the existing `EdiProducerAdapterBoundaryPipelineResult`.
+
+The result is a boundary pipeline result, not an `EdiExecutionResult`.
+
+It does not call runtime, dispatcher, executor, consumer, recognition runtime, geometry recognition, scene recognition, cognitive reasoning, real engines, or `runRealIntegration`.
+
 ## Foundation vs Wiring vs Integration
 
 ### Foundation
@@ -971,6 +991,8 @@ The execution foundation must not depend on:
 - Producer Adapter Request Factory does not call Boundary or Runtime.
 - Producer Adapter Boundary Pipeline is Pre-Runtime.
 - Producer Adapter Boundary Pipeline does not execute or dispatch.
+- Recognition Producer Boundary Pipeline is Pre-Runtime.
+- Recognition Producer Boundary Pipeline returns boundary validation, not execution result.
 
 ## Residual Risks
 
@@ -992,6 +1014,7 @@ The execution foundation must not depend on:
 - Producer adapter request factory exists, but no real producer calls it yet.
 - Producer adapter boundary pipeline exists, but no real producer or runtime calls it yet.
 - Recognition Producer Adapter Foundation exists, but recognition real integration is not implemented.
+- Recognition Producer Boundary Pipeline exists, but it remains pre-runtime and does not dispatch or execute.
 - Future real executors will require stricter domain boundaries and validation strategy.
 - Future integration will need explicit ownership rules before connecting to product workflows.
 
