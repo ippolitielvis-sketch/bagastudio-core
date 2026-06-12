@@ -12,7 +12,7 @@ It documents implemented foundation and wiring only. Integration with UI, Viewer
 
 Covered RFC range:
 
-- RFC-1126 to RFC-1182
+- RFC-1126 to RFC-1183
 
 Architecture distinction:
 
@@ -738,6 +738,7 @@ RFC:
 - RFC-1180
 - RFC-1181
 - RFC-1182
+- RFC-1183
 
 ### Context
 
@@ -891,6 +892,14 @@ The View Model Snapshot is planned as immutable, not live state. It must remain 
 
 The next planned RFC is `RFC-1183 - EDI View Model Snapshot Foundation`.
 
+RFC-1183 introduced the EDI View Model Snapshot Foundation.
+
+`createEdiViewModelSnapshotFromRecognitionObservableResult` receives `RecognitionObservableResult` and produces `EdiViewModelSnapshot` with a recognition section.
+
+The snapshot preserves id, timestamp, execution result id, execution request id, mode, status, and metadata useful for future Viewer reading.
+
+It does not call Viewer, render UI, use React state, call runtime, dispatch globally, mutate project state, or contain real recognition logic.
+
 ### Permanent Rules Born
 
 - Integration Boundary is not Real Integration.
@@ -947,6 +956,8 @@ The next planned RFC is `RFC-1183 - EDI View Model Snapshot Foundation`.
 - Viewer reads View Model Snapshot, not RecognitionObservableResult.
 - EDI View Model Snapshot is immutable, not live state.
 - View Model does not render UI.
+- EDI View Model Snapshot exists as foundation.
+- EDI View Model Snapshot is data, not React state.
 
 ## Current State
 
@@ -1009,6 +1020,7 @@ Implemented producer adapter foundation:
 - First Observable Recognition Flow is reviewed;
 - EDI observable foundation is complete enough for next planning;
 - Viewer exposure is planned through EDI View Model Snapshot;
+- `createEdiViewModelSnapshotFromRecognitionObservableResult` exists as the View Model Snapshot foundation;
 - no producer is wired operationally to runtime or dispatch;
 - no RuntimeHost, RuntimeLoop, Executor, Consumer, Viewer, UI, or engine real integration was added.
 
@@ -1028,7 +1040,6 @@ Not implemented today:
 - automatic execution and dispatch orchestration;
 - real integration with UI, Viewer, RuntimeHost, RuntimeLoop, cognitive runtime, or real engines;
 - Viewer exposure;
-- EDI View Model Snapshot;
 - GitHub/local remote synchronization after this phase;
 - `runRealIntegration`.
 

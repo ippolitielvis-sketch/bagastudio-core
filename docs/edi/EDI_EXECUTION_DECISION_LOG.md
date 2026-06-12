@@ -52,6 +52,7 @@ Covered foundation:
 - First Observable Recognition Flow Foundation
 - Observable Recognition Flow Review
 - Viewer Exposure Via View Model Snapshot
+- EDI View Model Snapshot Foundation
 
 ## DL-EXEC-001 — Execution Runtime Neutro
 
@@ -1488,6 +1489,48 @@ La prossima RFC operativa sara `RFC-1183 - EDI View Model Snapshot Foundation`.
 - View Model non possiede real recognition logic.
 - View Model non renderizza UI.
 - View Model deve restare estendibile a recognition, memory, reasoning, feedback e planning.
+
+## DL-EXEC-034 - EDI View Model Snapshot Foundation
+
+### Problema
+
+Serviva introdurre il primo contratto dati tra `RecognitionObservableResult` e futura esposizione Viewer, senza collegare Viewer, UI, React state, runtime o dispatch globale.
+
+### Decisione
+
+Introdurre `EdiViewModelSnapshot` come foundation minimale.
+
+La factory `createEdiViewModelSnapshotFromRecognitionObservableResult` riceve `RecognitionObservableResult` e produce uno snapshot con sezione `recognition`.
+
+### Motivazione
+
+Lo snapshot rende esplicito il confine tra observable data e futura lettura Viewer.
+
+Mantenerlo immutable-style evita live state prematuro e impedisce di accoppiare EDI ai componenti React.
+
+### Alternative Scartate
+
+- Collegare direttamente Viewer a `RecognitionObservableResult`.
+- Introdurre React state.
+- Introdurre UI/rendering.
+- Chiamare runtime o dispatch.
+- Inserire logica recognition reale nel View Model.
+
+### Impatto Architetturale
+
+Il View Model Snapshot diventa il primo boundary dati verso futura Viewer exposure.
+
+Non viene introdotto Viewer wiring.
+
+### Regole Permanenti Generate
+
+- EDI View Model Snapshot riceve observable data.
+- EDI View Model Snapshot produce dati leggibili dal futuro Viewer.
+- EDI View Model Snapshot e immutable-style.
+- EDI View Model Snapshot non e React state.
+- EDI View Model Snapshot non renderizza UI.
+- EDI View Model Snapshot non chiama runtime.
+- EDI View Model Snapshot non contiene real recognition logic.
 
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
