@@ -36,6 +36,7 @@ import RoomPanel from "./viewer-ui/RoomPanel";
 import RoomOrientationOverlay from "./viewer-ui/RoomOrientationOverlay";
 import EdiObservationPanel, {
   type EdiProductPackageObservationSummary,
+  type EdiSelectionObservationSummary,
 } from "./viewer-ui/EdiObservationPanel";
 import { createProductPackageObservationAdapterResult } from "./edi/observation/ProductPackageObservationAdapter";
 import ViewerToolsPanel from "./viewer-ui/ViewerToolsPanel";
@@ -3086,6 +3087,51 @@ const createEdiProductPackageObservationSummary = (
     origin: source.origin,
     nativeModuleCount: source.nativeModuleCount,
     importedModuleCount: source.importedModuleCount,
+  };
+};
+
+const readViewerSelectionOrigin = (sourceKind?: string) => {
+  if (sourceKind === "parametric-module-v1") return "nativo";
+  if (sourceKind === "imported-product-v1") return "importato";
+  if (sourceKind) return sourceKind;
+  return "viewer-runtime";
+};
+
+const createEdiSelectionObservationSummary = ({
+  selectedRuntimePartId,
+  selectedRuntimeComponent,
+  activeSceneModule,
+}: {
+  selectedRuntimePartId?: string | null;
+  selectedRuntimeComponent?: BagaStudioRuntimeComponent | null;
+  activeSceneModule?: any;
+}): EdiSelectionObservationSummary => {
+  if (selectedRuntimePartId) {
+    return {
+      hasSelection: true,
+      selectedName:
+        selectedRuntimeComponent?.displayName ||
+        selectedRuntimeComponent?.originalName ||
+        selectedRuntimeComponent?.meshName ||
+        selectedRuntimePartId,
+      origin: selectedRuntimePartId === "imported-product-main" ? "importato" : "viewer-runtime",
+      observationActive: true,
+    };
+  }
+
+  if (activeSceneModule?.id) {
+    return {
+      hasSelection: true,
+      selectedName: String(activeSceneModule.name || activeSceneModule.id),
+      origin: readViewerSelectionOrigin(activeSceneModule?.source?.kind),
+      observationActive: true,
+    };
+  }
+
+  return {
+    hasSelection: false,
+    origin: "non disponibile",
+    observationActive: false,
   };
 };
 
@@ -10876,6 +10922,15 @@ productMaterials?.length
       null
     );
   }, [selectedRuntimePartId, viewerRuntimeComponents]);
+  const ediSelectionObservationSummary = useMemo(
+    () =>
+      createEdiSelectionObservationSummary({
+        selectedRuntimePartId,
+        selectedRuntimeComponent: selectedViewerRuntimeComponent,
+        activeSceneModule: activeSceneModuleV1,
+      }),
+    [activeSceneModuleV1, selectedRuntimePartId, selectedViewerRuntimeComponent]
+  );
 
   const effectiveProductModel = runtimeImportedModel?.url || productModel;
   const effectiveProductModelFormat = useMemo(
@@ -11183,6 +11238,7 @@ productMaterials?.length
         observableComponentCount={Math.max(viewerRuntimeComponents.length, ediProductPackageObservationSummary.componentCount)}
         lastImporterEvent={runtimeImportedModel ? "import attivo" : ""}
         productPackageObservationSummary={ediProductPackageObservationSummary}
+        selectionSummary={ediSelectionObservationSummary}
       />
 
       <ViewerMiniTab

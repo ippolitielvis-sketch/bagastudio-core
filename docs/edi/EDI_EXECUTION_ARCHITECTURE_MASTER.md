@@ -137,6 +137,7 @@ This document covers:
 - RFC-1220: First Real Understanding Foundation
 - RFC-1221: First Real Insight Foundation
 - RFC-1222: Product Package Observation Summary Foundation
+- RFC-1223: Focused Observation / Selection Awareness Foundation
 
 ## Architecture Overview
 
@@ -3260,6 +3261,35 @@ Product Package / Viewer runtime / Scene Composer modules
 
 This is the first bridge that lets EDI visibly observe native BagaStudio modules in addition to imported models. Native modules are still observed only as read-only presentation summary data; no Product Package mutation, Project State mutation, semantic interpretation, Memory, Reasoning, Proposal, Validation, Decision, or runtime integration is introduced.
 
+## Focused Observation / Selection Awareness Foundation
+
+RFC-1223 adds first Viewer selection awareness to the visible EDI panel.
+
+The focus summary is created in `Viewer3D` from selection state that already exists:
+
+- `selectedRuntimePartId`;
+- `selectedViewerRuntimeComponent`;
+- `activeSceneModuleV1`.
+
+`EdiObservationPanel` receives only a serializable `selectionSummary` prop. It does not import EDI Core, call EDI runtime, create EDI artifacts, write Product Package, write Project State, call LLM or AI services, or trigger Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support, Decision, or Mutation.
+
+The panel shows a `FOCUS` section with:
+
+- no selected element when selection is empty;
+- selected element name when available;
+- native/imported/runtime origin when available;
+- active/non-active observation state.
+
+Permanent boundary:
+
+```text
+Viewer selection state
+-> presentation-safe selection summary
+-> EdiObservationPanel FOCUS
+```
+
+This is selection awareness, not operational focus. It does not select, apply, execute, validate, approve, reject, or mutate anything.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3354,4 +3384,5 @@ The Decision Log should record:
 48. RFC-1220 - First Real Understanding Foundation.
 49. RFC-1221 - First Real Insight Foundation.
 50. RFC-1222 - Product Package Observation Summary Foundation.
-51. EDI Decision Support Artifact Review and Decision Boundary Planning.
+51. RFC-1223 - Focused Observation / Selection Awareness Foundation.
+52. EDI Decision Support Artifact Review and Decision Boundary Planning.

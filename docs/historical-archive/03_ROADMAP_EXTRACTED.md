@@ -324,3 +324,20 @@ Il summary deve restare presentation-safe: adapter fuori dal pannello, props ser
 
 # Prossimo passo consigliato
 Product Package Observation Summary Review before Memory-backed observation or Product Package Observation Flow integration.
+
+## Roadmap - Focused Observation / Selection Awareness Foundation
+
+# Contesto
+EDI e visibile nel Viewer e riceve summary Product Package presentation-safe.
+
+# Stato raggiunto
+RFC-1223 introduce una sezione `FOCUS` alimentata dalla selezione Viewer gia esistente.
+
+# Sequenza
+Product Package Observation Summary -> Focused Observation -> Focused Observation Review.
+
+# Regola roadmap
+Il focus deve restare presentation-level: niente artifact EDI, niente runtime, niente LLM/AI, niente Memory, Reasoning, Proposal, Validation, Decision o mutation.
+
+# Prossimo passo consigliato
+Focused Observation Review before EDI Core backed focus memory or selection-driven reasoning.

@@ -3825,6 +3825,46 @@ Il confine diventa Product Package Observation Adapter fuori dal pannello -> sum
 - Product Package Observation Summary non muta Product Package o Project State.
 - Product Package Observation Summary non attiva Memory, Reasoning, Proposal, Validation Support, Decision Support o Decision.
 
+## DL-EXEC-075 - Viewer Selection Awareness Is Presentation-Level
+
+### Problema
+
+Il pannello EDI poteva osservare il contesto Viewer generale, ma non era ancora consapevole dell'elemento attualmente selezionato.
+
+### Decisione
+
+Introdurre una sezione `FOCUS` nel pannello EDI alimentata da un `selectionSummary` serializzabile creato in `Viewer3D`.
+
+Il summary usa solo selezione Viewer gia esistente: `selectedRuntimePartId`, `selectedViewerRuntimeComponent` e `activeSceneModuleV1`.
+
+### Motivazione
+
+La selection awareness rende EDI piu utile e contestuale senza collegare runtime EDI, artifact cognitivi, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+### Alternative Scartate
+
+- Importare EDI Core nel pannello.
+- Creare un artifact EDI di focus.
+- Collegare Memory, Understanding Core, Reasoning o Proposal.
+- Usare LLM o AI.
+- Mutare Product Package o Project State.
+- Trasformare il focus in action/apply/execute.
+
+### Impatto Architetturale
+
+RFC-1223 introduce focus presentation-level nel Viewer.
+
+Il confine resta Viewer selection state -> summary presentation-safe -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- Viewer Selection Awareness e presentation-level.
+- Viewer Selection Awareness non crea artifact EDI.
+- Viewer Selection Awareness non chiama runtime EDI.
+- Viewer Selection Awareness non usa LLM o AI.
+- Viewer Selection Awareness non introduce action, apply, execute o commit.
+- Viewer Selection Awareness non muta Product Package o Project State.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

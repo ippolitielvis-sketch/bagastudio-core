@@ -510,3 +510,40 @@ Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
 
 # Conversazioni utilizzate
 - RFC-1222 Product Package Observation Summary Foundation
+
+## Milestone - RFC-1223 Focused Observation / Selection Awareness Foundation
+
+# Contesto
+Il pannello EDI vedeva gia contesto Viewer, insight e Product Package Observation Summary, ma non la selezione corrente.
+
+# Problema
+Serviva rendere EDI consapevole del focus dell'utente senza collegare EDI Core, runtime, artifact, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+# Decisione
+Introdurre una sezione `FOCUS` nel pannello EDI alimentata da un selection summary presentation-safe creato in `Viewer3D`.
+
+# Motivazione
+La consapevolezza della selezione rende EDI piu contestuale e utile, restando read-only e deterministica.
+
+# Implementazione
+RFC-1223 usa `selectedRuntimePartId`, `selectedViewerRuntimeComponent` e `activeSceneModuleV1` per mostrare nome elemento selezionato, origine e stato osservazione.
+
+# Evoluzione
+La roadmap puo distinguere selection awareness presentation-level da futuri focus artifact, Memory o Reasoning.
+
+# Impatto
+EDI mostra il focus corrente del Viewer senza mutare Product Package, Project State o selezione.
+
+# Regole permanenti nate
+- Focused Observation e presentation-level.
+- Focused Observation non crea artifact EDI.
+- Focused Observation non chiama runtime EDI.
+- Focused Observation non usa LLM o AI.
+- Focused Observation non introduce action, apply, execute o commit.
+- Focused Observation non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
+
+# Conversazioni utilizzate
+- RFC-1223 Focused Observation / Selection Awareness Foundation

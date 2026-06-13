@@ -6,6 +6,7 @@ type EdiObservationPanelProps = {
   observableComponentCount?: number;
   lastImporterEvent?: string;
   productPackageObservationSummary?: EdiProductPackageObservationSummary;
+  selectionSummary?: EdiSelectionObservationSummary;
 };
 
 export type EdiProductPackageObservationSummary = {
@@ -16,6 +17,13 @@ export type EdiProductPackageObservationSummary = {
   origin?: string;
   nativeModuleCount?: number;
   importedModuleCount?: number;
+};
+
+export type EdiSelectionObservationSummary = {
+  hasSelection: boolean;
+  selectedName?: string;
+  origin?: string;
+  observationActive: boolean;
 };
 
 const formatAvailability = (available: boolean) => (available ? "disponibile" : "non disponibile");
@@ -115,6 +123,7 @@ export default function EdiObservationPanel({
   observableComponentCount,
   lastImporterEvent,
   productPackageObservationSummary,
+  selectionSummary,
 }: EdiObservationPanelProps) {
   const componentCount =
     typeof observableComponentCount === "number" && Number.isFinite(observableComponentCount)
@@ -138,6 +147,10 @@ export default function EdiObservationPanel({
     snapshotAvailable: false,
     productPackageObserved: false,
     componentCount: 0,
+  };
+  const selectionObservation = selectionSummary ?? {
+    hasSelection: false,
+    observationActive: false,
   };
 
   return (
@@ -233,6 +246,36 @@ export default function EdiObservationPanel({
         <div className="mt-2 text-[10px] font-semibold leading-relaxed text-lime-100/90">
           Nativi: {productPackageObservation.nativeModuleCount ?? 0} · Importati:{" "}
           {productPackageObservation.importedModuleCount ?? 0}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-cyan-300/16 bg-cyan-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-cyan-200">
+          FOCUS
+        </span>
+        <div className="mt-2 grid gap-2 text-[10px] font-semibold text-slate-100">
+          <div>
+            <span className="block uppercase tracking-[0.12em] text-slate-500">Elemento</span>
+            <span className="mt-0.5 block truncate font-bold text-white">
+              {selectionObservation.hasSelection
+                ? selectionObservation.selectedName || "elemento selezionato"
+                : "nessun elemento selezionato"}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="block uppercase tracking-[0.12em] text-slate-500">Origine</span>
+              <span className="mt-0.5 block truncate font-bold text-white">
+                {selectionObservation.origin || "non disponibile"}
+              </span>
+            </div>
+            <div>
+              <span className="block uppercase tracking-[0.12em] text-slate-500">Osservazione</span>
+              <span className="mt-0.5 block font-bold text-white">
+                {selectionObservation.observationActive ? "attiva" : "non attiva"}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
