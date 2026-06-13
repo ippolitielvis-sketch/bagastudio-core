@@ -117,6 +117,59 @@ const createViewerInsightMessages = ({
   return insights;
 };
 
+const createViewerContextMessages = ({
+  importedModelName,
+  componentCount,
+  productPackageObservation,
+  selectionObservation,
+}: {
+  importedModelName?: string;
+  componentCount: number;
+  productPackageObservation: EdiProductPackageObservationSummary;
+  selectionObservation: EdiSelectionObservationSummary;
+}) => {
+  const contexts: string[] = [];
+  const selectedName = selectionObservation.selectedName?.trim();
+  const normalizedSelectedName = selectedName?.toLowerCase() || "";
+  const hasImportedModel = Boolean(importedModelName?.trim());
+
+  if (selectionObservation.hasSelection && normalizedSelectedName.includes("front")) {
+    contexts.push("Stai lavorando sui frontali.");
+  } else if (
+    selectionObservation.hasSelection &&
+    (normalizedSelectedName.includes("lavello") || normalizedSelectedName.includes("sink"))
+  ) {
+    contexts.push("Focus corrente: zona lavello.");
+  } else if (
+    selectionObservation.hasSelection &&
+    (normalizedSelectedName.includes("main") ||
+      normalizedSelectedName.includes("principale") ||
+      selectionObservation.origin === "importato")
+  ) {
+    contexts.push("Focus corrente: modulo principale.");
+  } else if (selectionObservation.hasSelection) {
+    contexts.push(`Focus corrente: ${selectedName || "elemento selezionato"}.`);
+  }
+
+  if (productPackageObservation.productPackageObserved && (productPackageObservation.nativeModuleCount ?? 0) > 0) {
+    contexts.push("Contesto nativo BagaStudio disponibile.");
+  }
+
+  if (hasImportedModel || (productPackageObservation.importedModuleCount ?? 0) > 0) {
+    contexts.push("Contesto import rilevato.");
+  }
+
+  if (contexts.length === 0 && componentCount > 0) {
+    contexts.push("Contesto Viewer disponibile.");
+  }
+
+  if (contexts.length === 0) {
+    contexts.push("Contesto non determinabile.");
+  }
+
+  return contexts;
+};
+
 export default function EdiObservationPanel({
   productPackageAvailable,
   importedModelName,
@@ -152,6 +205,12 @@ export default function EdiObservationPanel({
     hasSelection: false,
     observationActive: false,
   };
+  const contexts = createViewerContextMessages({
+    importedModelName,
+    componentCount,
+    productPackageObservation,
+    selectionObservation,
+  });
 
   return (
     <aside className="absolute bottom-20 right-4 z-[68] w-[320px] rounded-2xl border border-emerald-300/22 bg-slate-950/92 p-4 text-xs text-slate-100 shadow-[0_24px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl">
@@ -277,6 +336,20 @@ export default function EdiObservationPanel({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-fuchsia-300/16 bg-fuchsia-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-fuchsia-200">
+          CONTESTO
+        </span>
+        <ul className="mt-2 space-y-1.5">
+          {contexts.map((context) => (
+            <li key={context} className="flex gap-2 text-[11px] font-semibold leading-snug text-slate-100">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-fuchsia-300" />
+              <span>{context}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       <div className="mt-3 rounded-xl border border-emerald-300/16 bg-emerald-400/8 px-3 py-2">

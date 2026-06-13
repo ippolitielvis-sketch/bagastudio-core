@@ -341,3 +341,20 @@ Il focus deve restare presentation-level: niente artifact EDI, niente runtime, n
 
 # Prossimo passo consigliato
 Focused Observation Review before EDI Core backed focus memory or selection-driven reasoning.
+
+## Roadmap - First Context Awareness Foundation
+
+# Contesto
+EDI e visibile nel Viewer e riceve summary Product Package e focus selection presentation-safe.
+
+# Stato raggiunto
+RFC-1224 introduce una sezione `CONTESTO` alimentata da regole deterministiche su props gia disponibili.
+
+# Sequenza
+Focused Observation -> Context Awareness -> Context Awareness Review.
+
+# Regola roadmap
+Il contesto deve restare presentation-level: niente artifact EDI, niente runtime, niente LLM/AI, niente Memory, Reasoning, Proposal, Validation, Decision o mutation.
+
+# Prossimo passo consigliato
+Context Awareness Review before EDI Core backed contextual memory or reasoning.

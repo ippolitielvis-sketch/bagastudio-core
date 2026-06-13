@@ -547,3 +547,40 @@ Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
 
 # Conversazioni utilizzate
 - RFC-1223 Focused Observation / Selection Awareness Foundation
+
+## Milestone - RFC-1224 First Context Awareness Foundation
+
+# Contesto
+Il pannello EDI mostrava osservazioni, comprensione, insight, Product Package Observation Summary e focus selezione, ma non una sintesi esplicita del contesto corrente.
+
+# Problema
+Serviva rendere EDI capace di descrivere il contesto visibile senza collegare EDI Core, runtime, artifact, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+# Decisione
+Introdurre una sezione `CONTESTO` nel pannello EDI alimentata da regole deterministiche su props gia presentation-safe.
+
+# Motivazione
+Il contesto rende EDI piu leggibile nel Viewer, mantenendo il comportamento read-only e spiegabile.
+
+# Implementazione
+RFC-1224 usa `selectionSummary`, Product Package observation summary, nome modello importato e component count per generare messaggi di contesto.
+
+# Evoluzione
+La roadmap puo distinguere context awareness presentation-level da futuri context artifact, Memory o Reasoning.
+
+# Impatto
+EDI mostra il contesto corrente del Viewer senza mutare Product Package, Project State o selezione.
+
+# Regole permanenti nate
+- Context Awareness e presentation-level.
+- Context Awareness non crea artifact EDI.
+- Context Awareness non chiama runtime EDI.
+- Context Awareness non usa LLM o AI.
+- Context Awareness non introduce action, apply, execute o commit.
+- Context Awareness non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
+
+# Conversazioni utilizzate
+- RFC-1224 First Context Awareness Foundation

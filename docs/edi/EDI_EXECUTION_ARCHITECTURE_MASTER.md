@@ -138,6 +138,7 @@ This document covers:
 - RFC-1221: First Real Insight Foundation
 - RFC-1222: Product Package Observation Summary Foundation
 - RFC-1223: Focused Observation / Selection Awareness Foundation
+- RFC-1224: First Context Awareness Foundation
 
 ## Architecture Overview
 
@@ -3290,6 +3291,34 @@ Viewer selection state
 
 This is selection awareness, not operational focus. It does not select, apply, execute, validate, approve, reject, or mutate anything.
 
+## First Context Awareness Foundation
+
+RFC-1224 adds first deterministic Viewer context awareness to the visible EDI panel.
+
+The context is generated inside `EdiObservationPanel` from props that are already presentation-safe:
+
+- `selectionSummary`;
+- Product Package observation summary;
+- imported model name;
+- observable component count.
+
+The panel shows a `CONTESTO` section with deterministic messages such as:
+
+- current focus context when a selection is available;
+- native BagaStudio context when the Product Package summary reports native modules;
+- import context when imported model data is available;
+- fallback `Contesto non determinabile` when no context can be inferred from presentation-safe props.
+
+Permanent boundary:
+
+```text
+Viewer / Product Package presentation summaries
+-> deterministic context rules
+-> EdiObservationPanel CONTESTO
+```
+
+This is presentation-level context awareness. It does not import EDI Core, call EDI runtime, create EDI artifacts, write Product Package, write Project State, call LLM or AI services, or trigger Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support, Decision, or Mutation.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3385,4 +3414,5 @@ The Decision Log should record:
 49. RFC-1221 - First Real Insight Foundation.
 50. RFC-1222 - Product Package Observation Summary Foundation.
 51. RFC-1223 - Focused Observation / Selection Awareness Foundation.
-52. EDI Decision Support Artifact Review and Decision Boundary Planning.
+52. RFC-1224 - First Context Awareness Foundation.
+53. EDI Decision Support Artifact Review and Decision Boundary Planning.

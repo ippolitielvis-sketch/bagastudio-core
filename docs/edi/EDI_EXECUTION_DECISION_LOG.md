@@ -3865,6 +3865,47 @@ Il confine resta Viewer selection state -> summary presentation-safe -> pannello
 - Viewer Selection Awareness non introduce action, apply, execute o commit.
 - Viewer Selection Awareness non muta Product Package o Project State.
 
+## DL-EXEC-076 - Viewer Context Awareness Is Presentation-Level
+
+### Problema
+
+Il pannello EDI poteva mostrare osservazioni, comprensione, insight e focus, ma non aveva ancora una sintesi esplicita del contesto corrente.
+
+### Decisione
+
+Introdurre una sezione `CONTESTO` nel pannello EDI generata con regole deterministiche da props gia presentation-safe.
+
+Le fonti consentite sono `selectionSummary`, Product Package observation summary, nome modello importato e conteggio componenti osservabili.
+
+### Motivazione
+
+Il contesto rende EDI piu leggibile nel Viewer senza collegare EDI Core, runtime, artifact cognitivi, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+### Alternative Scartate
+
+- Importare EDI Core nel pannello.
+- Creare un artifact EDI di contesto.
+- Collegare Memory, Understanding Core, Reasoning o Proposal.
+- Usare LLM o AI.
+- Mutare Product Package o Project State.
+- Trasformare il contesto in action/apply/execute.
+
+### Impatto Architetturale
+
+RFC-1224 introduce context awareness presentation-level nel Viewer.
+
+Il confine resta Viewer / Product Package presentation summaries -> deterministic context rules -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- Viewer Context Awareness e presentation-level.
+- Viewer Context Awareness non crea artifact EDI.
+- Viewer Context Awareness non chiama runtime EDI.
+- Viewer Context Awareness non usa LLM o AI.
+- Viewer Context Awareness non introduce action, apply, execute o commit.
+- Viewer Context Awareness non muta Product Package o Project State.
+- Viewer Context Awareness non sostituisce Understanding Artifact, Reasoning o Proposal.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

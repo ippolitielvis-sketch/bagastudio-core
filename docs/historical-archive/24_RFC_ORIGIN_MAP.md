@@ -35,6 +35,7 @@ Mappa delle RFC esplicite e delle milestone con ruolo equivalente a RFC implicit
 | RFC-1221 First Real Insight Foundation | RFC-1221 | Viewer understanding messages -> Viewer insight messages | Insight rule-based presentation-level, senza Reasoning, Decision, AI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1222 Product Package Observation Summary Foundation | RFC-1222 | Viewer insight messages -> Product Package observation summary | Summary read-only da Product Package / Viewer runtime, senza mutation o artifact nel pannello | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 | RFC-1223 Focused Observation / Selection Awareness Foundation | RFC-1223 | Product Package observation summary -> Viewer selection focus | Focus selection summary presentation-safe, senza artifact EDI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
+| RFC-1224 First Context Awareness Foundation | RFC-1224 | Viewer selection focus -> Viewer context awareness | Context messages rule-based presentation-level, senza EDI Core, AI o mutation | [02](02_DECISION_LOG.md), [03](03_ROADMAP_EXTRACTED.md) |
 
 ## Evoluzione RFC EDI
 
