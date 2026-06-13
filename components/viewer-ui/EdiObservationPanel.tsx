@@ -26,6 +26,11 @@ export type EdiSelectionObservationSummary = {
   observationActive: boolean;
 };
 
+type EdiInsightExplanation = {
+  insight: string;
+  evidences: string[];
+};
+
 const formatAvailability = (available: boolean) => (available ? "disponibile" : "non disponibile");
 
 const createViewerObservationMessages = ({
@@ -170,6 +175,47 @@ const createViewerContextMessages = ({
   return contexts;
 };
 
+const createViewerInsightExplanations = ({
+  insights,
+  importedModelName,
+  componentCount,
+  productPackageObservation,
+}: {
+  insights: string[];
+  importedModelName?: string;
+  componentCount: number;
+  productPackageObservation: EdiProductPackageObservationSummary;
+}): EdiInsightExplanation[] => {
+  const normalizedModelName = importedModelName?.trim();
+  const importedModelCount = Math.max(
+    productPackageObservation.importedModuleCount ?? 0,
+    normalizedModelName ? 1 : 0
+  );
+  const commonEvidences = [
+    `Componenti osservati: ${componentCount}`,
+    `Moduli nativi: ${productPackageObservation.nativeModuleCount ?? 0}`,
+    `Modelli importati: ${importedModelCount}`,
+  ];
+
+  return insights.map((insight) => {
+    if (insight.includes("modello esterno")) {
+      return {
+        insight,
+        evidences: [
+          `Nome modello: ${normalizedModelName || "non disponibile"}`,
+          "Origine: importata",
+          ...commonEvidences,
+        ],
+      };
+    }
+
+    return {
+      insight,
+      evidences: commonEvidences,
+    };
+  });
+};
+
 export default function EdiObservationPanel({
   productPackageAvailable,
   importedModelName,
@@ -201,6 +247,12 @@ export default function EdiObservationPanel({
     productPackageObserved: false,
     componentCount: 0,
   };
+  const insightExplanations = createViewerInsightExplanations({
+    insights,
+    importedModelName,
+    componentCount,
+    productPackageObservation,
+  });
   const selectionObservation = selectionSummary ?? {
     hasSelection: false,
     observationActive: false,
@@ -392,6 +444,27 @@ export default function EdiObservationPanel({
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-rose-300/16 bg-rose-400/8 px-3 py-2">
+        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-rose-200">
+          PERCHÉ?
+        </span>
+        <div className="mt-2 space-y-2">
+          {insightExplanations.map((explanation) => (
+            <div key={explanation.insight} className="rounded-lg border border-white/8 bg-white/[0.035] px-2 py-2">
+              <div className="text-[10px] font-bold leading-snug text-white">{explanation.insight}</div>
+              <ul className="mt-1.5 space-y-1">
+                {explanation.evidences.map((evidence) => (
+                  <li key={evidence} className="flex gap-2 text-[10px] font-semibold leading-snug text-rose-50/90">
+                    <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-rose-200" />
+                    <span>{evidence}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="mt-3 rounded-xl border border-amber-300/18 bg-amber-400/8 px-3 py-2 text-[10px] font-semibold leading-relaxed text-amber-100">

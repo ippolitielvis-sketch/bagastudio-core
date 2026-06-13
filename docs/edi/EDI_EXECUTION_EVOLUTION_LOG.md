@@ -1595,6 +1595,8 @@ Implemented producer adapter foundation:
 - EDI panel receives a presentation-safe selection summary from existing Viewer selection state;
 - First Context Awareness Foundation exists;
 - EDI panel derives deterministic context messages from presentation-safe Viewer and Product Package summaries;
+- First Explainability Foundation exists;
+- EDI panel links visible insights to deterministic presentation-safe evidence;
 - Decision Support Artifact Review and Decision Boundary Planning is the next recommended review;
 - Memory storage and retrieval remain future;
 - no producer is wired operationally to runtime or dispatch;
@@ -1626,6 +1628,7 @@ Not implemented today:
 - full EDI Core backed Product Package Observation Flow into Memory;
 - EDI Core backed focus artifact or selection memory;
 - EDI Core backed context artifact or contextual memory;
+- EDI Core backed explainability artifact or reasoning-backed explanation;
 - BagaStudio product integration;
 - BagaStudio EDI Presentation Adapter;
 - Viewer consumption of BagaStudio Presentation Model;

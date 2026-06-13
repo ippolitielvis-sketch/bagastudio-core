@@ -104,6 +104,7 @@ RFC EDI esplicite:
 - RFC-1222 Product Package Observation Summary Foundation
 - RFC-1223 Focused Observation / Selection Awareness Foundation
 - RFC-1224 First Context Awareness Foundation
+- RFC-1225 First Explainability Foundation
 
 Milestone equivalenti a RFC implicite:
 - Viewer Recovery Foundation

@@ -358,3 +358,20 @@ Il contesto deve restare presentation-level: niente artifact EDI, niente runtime
 
 # Prossimo passo consigliato
 Context Awareness Review before EDI Core backed contextual memory or reasoning.
+
+## Roadmap - First Explainability Foundation
+
+# Contesto
+EDI e visibile nel Viewer e mostra insight e contesto presentation-level.
+
+# Stato raggiunto
+RFC-1225 introduce una sezione `PERCHÉ?` che collega gli insight visibili a evidenze deterministiche.
+
+# Sequenza
+Context Awareness -> Explainability -> Explainability Review.
+
+# Regola roadmap
+La explainability deve restare presentation-level: niente artifact EDI, niente runtime, niente LLM/AI, niente Memory, Reasoning, Proposal, Validation, Decision o mutation.
+
+# Prossimo passo consigliato
+Explainability Review before EDI Core backed explanation artifact or reasoning-backed explanation.

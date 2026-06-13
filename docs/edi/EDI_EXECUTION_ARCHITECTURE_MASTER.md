@@ -139,6 +139,7 @@ This document covers:
 - RFC-1222: Product Package Observation Summary Foundation
 - RFC-1223: Focused Observation / Selection Awareness Foundation
 - RFC-1224: First Context Awareness Foundation
+- RFC-1225: First Explainability Foundation
 
 ## Architecture Overview
 
@@ -3319,6 +3320,35 @@ Viewer / Product Package presentation summaries
 
 This is presentation-level context awareness. It does not import EDI Core, call EDI runtime, create EDI artifacts, write Product Package, write Project State, call LLM or AI services, or trigger Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support, Decision, or Mutation.
 
+## First Explainability Foundation
+
+RFC-1225 adds first presentation-level explainability to the visible EDI panel.
+
+The explainability is generated inside `EdiObservationPanel` from the same presentation-safe inputs already available to the panel:
+
+- insight messages already displayed;
+- imported model name;
+- observable component count;
+- Product Package observation summary.
+
+The panel shows a `PERCHÉ?` section that links each visible insight to deterministic evidence such as:
+
+- observed component count;
+- native module count;
+- imported model count;
+- imported model name when available;
+- imported origin when the insight concerns an external model.
+
+Permanent boundary:
+
+```text
+Visible Viewer insight
+-> deterministic evidence list
+-> EdiObservationPanel PERCHÉ?
+```
+
+This is presentation-level explainability. It does not import EDI Core, call EDI runtime, create EDI artifacts, write Product Package, write Project State, call LLM or AI services, or trigger Memory, Understanding Core, Reasoning, Proposal, Validation Support, Decision Support, Decision, or Mutation.
+
 ## Links To Evolution Log
 
 The Evolution Log should record a milestone:
@@ -3415,4 +3445,5 @@ The Decision Log should record:
 50. RFC-1222 - Product Package Observation Summary Foundation.
 51. RFC-1223 - Focused Observation / Selection Awareness Foundation.
 52. RFC-1224 - First Context Awareness Foundation.
-53. EDI Decision Support Artifact Review and Decision Boundary Planning.
+53. RFC-1225 - First Explainability Foundation.
+54. EDI Decision Support Artifact Review and Decision Boundary Planning.

@@ -3906,6 +3906,46 @@ Il confine resta Viewer / Product Package presentation summaries -> deterministi
 - Viewer Context Awareness non muta Product Package o Project State.
 - Viewer Context Awareness non sostituisce Understanding Artifact, Reasoning o Proposal.
 
+## DL-EXEC-077 - Viewer Insight Explainability Is Presentation-Level
+
+### Problema
+
+Il pannello EDI poteva mostrare insight, ma non spiegava ancora perche un insight era stato mostrato.
+
+### Decisione
+
+Introdurre una sezione `PERCHÉ?` nel pannello EDI che collega ogni insight visibile a evidenze deterministiche.
+
+Le fonti consentite sono solo props gia presentation-safe: insight visibili, nome modello importato, conteggio componenti osservabili e Product Package observation summary.
+
+### Motivazione
+
+La explainability rende EDI piu trasparente senza collegare EDI Core, runtime, artifact cognitivi, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+### Alternative Scartate
+
+- Usare LLM, AI call o prompt per spiegare gli insight.
+- Creare artifact EDI di explainability.
+- Collegare Reasoning, Validation Support o Decision Support.
+- Importare EDI Core nel pannello.
+- Trasformare le evidenze in scoring, policy, action o command.
+
+### Impatto Architetturale
+
+RFC-1225 introduce explainability presentation-level nel Viewer.
+
+Il confine resta visible insight -> deterministic evidence list -> pannello read-only.
+
+### Regole Permanenti Generate
+
+- Viewer Insight Explainability e presentation-level.
+- Viewer Insight Explainability non crea artifact EDI.
+- Viewer Insight Explainability non chiama runtime EDI.
+- Viewer Insight Explainability non usa LLM, AI call o prompt.
+- Viewer Insight Explainability non introduce action, apply, execute o commit.
+- Viewer Insight Explainability non muta Product Package o Project State.
+- Viewer Insight Explainability non sostituisce Reasoning, Validation Support o Decision Support.
+
 ## DL-EXEC-031 - First Observable Recognition Flow Foundation
 
 ### Problema

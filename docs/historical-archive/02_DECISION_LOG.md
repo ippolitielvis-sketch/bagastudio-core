@@ -584,3 +584,40 @@ Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
 
 # Conversazioni utilizzate
 - RFC-1224 First Context Awareness Foundation
+
+## Milestone - RFC-1225 First Explainability Foundation
+
+# Contesto
+Il pannello EDI mostrava insight presentation-level, ma non esponeva ancora le evidenze deterministiche usate per renderli comprensibili.
+
+# Problema
+Serviva spiegare perche un insight viene mostrato senza collegare EDI Core, runtime, artifact, Memory, Reasoning, Proposal, Validation, Decision o Mutation.
+
+# Decisione
+Introdurre una sezione `PERCHÉ?` nel pannello EDI che collega ogni insight visibile a una lista di evidenze deterministiche.
+
+# Motivazione
+La explainability rende EDI piu trasparente, mantenendo il comportamento read-only, spiegabile e presentation-safe.
+
+# Implementazione
+RFC-1225 usa insight visibili, nome modello importato, component count e Product Package observation summary per mostrare evidenze come componenti osservati, moduli nativi, modelli importati, nome modello e origine.
+
+# Evoluzione
+La roadmap puo distinguere explainability presentation-level da futuri explainability artifact o Reasoning-backed explanation.
+
+# Impatto
+EDI spiega gli insight correnti senza mutare Product Package, Project State o selezione.
+
+# Regole permanenti nate
+- Explainability e presentation-level.
+- Explainability non crea artifact EDI.
+- Explainability non chiama runtime EDI.
+- Explainability non usa LLM, AI call o prompt.
+- Explainability non introduce action, apply, execute o commit.
+- Explainability non muta Product Package o Project State.
+
+# Collegamenti con altri Engine
+Viewer, Scene Composer, Product Package Observation, EDI Observation futura.
+
+# Conversazioni utilizzate
+- RFC-1225 First Explainability Foundation
